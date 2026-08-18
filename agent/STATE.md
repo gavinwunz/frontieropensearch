@@ -35,7 +35,8 @@ layer is being built ahead of it, since it needs no build to test.
   34 unit tests green. None of it touches a Gecko API, so it runs under `node
   --test` in about a second — `browser/components/fos/tests/node/run.sh`. The
   directory has a `moz.build` but is **not** yet in `browser/components/moz.build`,
-  which is what keeps it clear of the running build.
+  which is what keeps it clear of the running build. `./mach lint -l eslint
+  browser/components/fos/` is clean.
 - `./mach configure` passes. Verified in `config.status`:
   `MOZ_APP_DISPLAYNAME='Frontier OpenSearch'`, `MOZ_APP_NAME='frontieropensearch'`,
   `MOZ_APP_BASENAME='FrontierOpenSearch'`, `MOZ_APP_VENDOR='Frontier'`,
@@ -99,6 +100,17 @@ restart cannot reach them. `agent/logs/<name>.current` symlinks the live log.
 ## Blockers
 
 None.
+
+## Gotchas worth not rediscovering
+
+- `./mach lint`'s default stylish formatter crashes on this tree with
+  `TypeError: unhashable type: 'dict'` in `formatters/stylish.py` whenever a
+  finding carries a dict hint. The lint itself is fine — pass `-f unix` and it
+  reports normally. Do not read the traceback as a broken lint setup.
+- `node --test <dir>` only scans a directory whose name matches node's own test
+  patterns, which `tests/node` does not; it treats the path as a module and
+  fails with `MODULE_NOT_FOUND`. Pass the files, or use the `run.sh` in that
+  directory.
 
 ## Failure counters
 
