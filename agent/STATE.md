@@ -18,6 +18,8 @@ Keep it short — this is state, not a log. History belongs in `JOURNAL.md`.
   `CLAUDE.md` are the fork's. Upstream's `CLAUDE.md` was only a pointer to
   `AGENTS.md`, which survives untouched.
 - `./mach bootstrap` complete. Toolchains in `/data/.mozbuild`.
+- `context-engine/SCHEMA.md` written — tables, migration policy, and the three
+  design decisions that are easy to get wrong.
 - `browser/branding/frontieropensearch/` created from `unofficial`: brand
   strings, prefs with update/telemetry off, and `generate-mark.py`, which is the
   single source of truth for the mark — it emits the SVG and every PNG size.
@@ -41,8 +43,13 @@ Keep it short — this is state, not a log. History belongs in `JOURNAL.md`.
 
 ## Background jobs
 
-- `./mach build` — log `agent/logs/build-1787051116.log` — started
-  2026-08-18T11:05Z. Expect 1–2 hours on 8 cores.
+- `./mach build` — PID 1321471 — log `agent/logs/build-1787051116.log` —
+  started 2026-08-18T11:05Z. Expect 1–2 hours on 8 cores. Compiling normally as
+  of 11:25Z, no errors. Note the build detects an agent and limits the log to
+  warnings and errors, so an uneventful log is the healthy case.
+- Chunked push of upstream history to `origin/agent/dev` — log
+  `agent/logs/push-1787051326.log`. Pushes 40k commits at a time; a single 5G
+  push would exceed GitHub's per-push limit. Ends with the line `PUSH COMPLETE`.
 
 ## Blockers
 
