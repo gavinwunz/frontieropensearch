@@ -28,6 +28,14 @@ name=${1:?usage: bg.sh <name> <command...>}
 shift
 [ $# -gt 0 ] || { echo "bg.sh: no command given" >&2; exit 2; }
 
+# A single argument holding spaces is a shell line, not a program name. Two
+# jobs have already been lost to `bg.sh push 'git push origin agent/dev'`
+# failing with exit 127 an hour after the run that started it had ended, which
+# is the most expensive way possible to find out about a quoting mistake.
+if [ $# -eq 1 ] && [ "${1#*[[:space:]]}" != "$1" ]; then
+  set -- bash -c "$1"
+fi
+
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 unit="fos-job-$name"
 mkdir -p "$root/agent/logs"
