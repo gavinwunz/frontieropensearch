@@ -29,10 +29,8 @@ export const COMMANDS = "commands";
 export const ERROR = "error";
 
 /** Error codes, so callers can phrase their own messages. */
-export const E_EXPECTED_MARK = "expected-mark";
 export const E_DEAD_MARK = "dead-mark";
 export const E_WRONG_TYPE = "wrong-type";
-export const E_TRAILING = "trailing-input";
 
 function tokenize(input) {
   const tokens = [];
@@ -66,6 +64,29 @@ function tokenize(input) {
 export function parse(input, { marks = null } = {}) {
   const text = String(input ?? "");
 
+  // A line is a command only if the whole line parses as one. The moment a
+  // token cannot continue the parse, the line was never a command and is
+  // prose — so it becomes a query rather than an error.
+  //
+  // This matters far more than it looks. Eight of the twelve action words are
+  // ordinary English (`what`, `back`, `up`, `name`, `field`, `context`,
+  // `branch`, `pack`), so the queries that collide with them are not exotic:
+  // "what is a memex", "back pain", "field of view", "branch prediction".
+  // Reporting those as a syntax error would hand the user nothing at all for
+  // the most natural thing they could type.
+  //
+  // Chrome shipped the opposite default and retreated from it: before 88.0.4324
+  // a keyword plus a space invoked the keyword's engine, and it now takes a
+  // deliberate Tab, so `g foo` searches for "g foo". A bare prefix does not get
+  // to steal the line. Our rule is that same judgement with more room —
+  // an unambiguous complete command still wins, and only the ambiguous
+  // remainder falls back to search.
+  //
+  // The line is drawn at syntax, not semantics: `enter cap` naming a dead or
+  // wrong-typed mark is a well-formed command the user plainly meant, so it
+  // stays an error instead of silently becoming a web search.
+  const asQuery = () => result(QUERY, { query: text.trim() });
+
   // The typed shorthand for `search`. Sugar, resolved before tokenizing so
   // that `?enter cap` is a query for "enter cap" and not a command.
   if (text.trimStart().startsWith(QUERY_PREFIX)) {
@@ -98,10 +119,7 @@ export function parse(input, { marks = null } = {}) {
     const word = tokens[i].value;
     const spec = actionSpec(word);
     if (!spec) {
-      return result(ERROR, {
-        commands,
-        error: { code: E_TRAILING, token: tokens[i].raw, at: tokens[i].start },
-      });
+      return asQuery();
     }
     i++;
 
@@ -128,10 +146,7 @@ export function parse(input, { marks = null } = {}) {
           cmd.target = letter;
           i++;
         } else if (spec.target === "required") {
-          return result(ERROR, {
-            commands,
-            error: { code: E_EXPECTED_MARK, token: tok.raw, at: tok.start },
-          });
+          return asQuery();
         }
         // Optional target, and the token is not a mark. It therefore begins
         // the free text, and the verb applies to the current object. This is
@@ -158,10 +173,7 @@ export function parse(input, { marks = null } = {}) {
     commands.push(cmd);
 
     if (i < tokens.length && !isActionWord(tokens[i].value)) {
-      return result(ERROR, {
-        commands,
-        error: { code: E_TRAILING, token: tokens[i].raw, at: tokens[i].start },
-      });
+      return asQuery();
     }
   }
 

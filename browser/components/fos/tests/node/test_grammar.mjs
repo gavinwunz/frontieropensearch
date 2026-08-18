@@ -34,10 +34,8 @@ import {
   QUERY,
   COMMANDS,
   ERROR,
-  E_EXPECTED_MARK,
   E_DEAD_MARK,
   E_WRONG_TYPE,
-  E_TRAILING,
 } from "../../FOSCommandParser.sys.mjs";
 
 test("the alphabet covers a-z with distinct speakable words", () => {
@@ -277,23 +275,53 @@ test("an optional target may simply be absent", () => {
   );
 });
 
-test("a required target must be a mark", () => {
+test("a required target that is not a mark makes the line prose", () => {
   const r = parse("enter gecko");
-  assert.equal(r.type, ERROR);
-  assert.equal(r.error.code, E_EXPECTED_MARK);
-  assert.equal(r.error.token, "gecko");
-  assert.equal(r.error.at, 6);
+  assert.equal(r.type, QUERY);
+  assert.equal(r.query, "enter gecko");
 });
 
-test("junk after a complete command is reported, not swallowed", () => {
+test("a token that cannot continue the parse makes the line prose", () => {
   const r = parse("field gecko");
+  assert.equal(r.type, QUERY);
+  assert.equal(r.query, "field gecko");
+});
+
+// The rule above is not a corner case. Most action words are ordinary English,
+// so the queries that collide with them are the most obvious things a user
+// could type. Every one of these used to come back as a syntax error.
+test("ordinary queries that open with an action word still search", () => {
+  for (const q of [
+    "what is a memex",
+    "back pain",
+    "field of view",
+    "branch prediction",
+    "up arrow unicode",
+    "context switching in linux",
+    "pack rat",
+    "enter the dragon",
+  ]) {
+    const r = parse(q);
+    assert.equal(r.type, QUERY, `${q} should be a query`);
+    assert.equal(r.query, q);
+  }
+});
+
+test("falling back to prose never invents a partial command", () => {
+  const r = parse("field gecko");
+  assert.deepEqual(r.commands, [], "a query carries no commands");
+  assert.equal(r.error, null);
+});
+
+// The line is syntax, not semantics: a well-formed command naming a mark that
+// is dead or wrong-typed is what the user meant, and must not quietly become a
+// web search.
+test("a semantic mark failure stays an error rather than becoming a query", () => {
+  const marks = new MarkRegistry();
+  marks.assign("g1", { label: "gecko", type: "card" });
+  const r = parse("enter cap", { marks });
   assert.equal(r.type, ERROR);
-  assert.equal(r.error.code, E_TRAILING);
-  assert.deepEqual(
-    r.commands,
-    [{ action: "field", target: null, text: null }],
-    "the good prefix survives"
-  );
+  assert.equal(r.error.code, E_DEAD_MARK);
 });
 
 test("marks are checked against the live registry when one is supplied", () => {

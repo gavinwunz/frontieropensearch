@@ -116,6 +116,47 @@ action `search <text>` — not a new mechanism, so it is reachable hands-free li
 everything else — with `?` as typed sugar for the same thing. `search enter the
 dragon` and `?enter the dragon` produce one identical command.
 
+### A line is a command only if the whole line parses as one
+
+The rule above left a hole that only showed up once the parser ran against real
+sentences: it says prose is anything not *beginning* with an action word, so
+`what is a memex` began with `what`, parsed as the zero-argument context verb,
+hit `is`, and came back a syntax error. The user asked the most natural question
+they could and got nothing.
+
+This is not a corner case, because eight of the twelve action words are ordinary
+English. `back pain`, `field of view`, `branch prediction`, `up arrow unicode`,
+`context switching in linux`, `pack rat`, `name generator`, `enter the dragon` —
+all of them collided.
+
+So the test is the whole line, not the first word:
+
+> **A line is a command only if every token parses as one. The moment a token
+> cannot continue the parse, the line was never a command, and it is a query.**
+
+Chrome is the evidence that this is the right way round. Before 88.0.4324 a
+custom-search keyword followed by a space invoked that keyword's engine;
+Google changed it so that triggering takes a deliberate <kbd>Tab</kbd>, and
+`g foo` now searches for the literal string "g foo". A bare prefix does not get
+to steal the line. Keyword users complained, which is the real cost and worth
+naming — but Google had the usage data and still chose search as the safe
+default, because the failure it prevents (a query silently hijacked) is worse
+than the one it causes (a command needing one more keystroke).
+
+Our rule is that judgement with more room. A complete, unambiguous command still
+wins outright with no confirming gesture at all, because unlike a bare keyword
+it cannot be mistaken for prose. Only the ambiguous remainder falls back.
+
+**The line is drawn at syntax, not semantics.** `enter cap` where `cap` is dead
+or names a context rather than a card is a well-formed command that the user
+plainly meant; it stays an error and must never quietly become a web search.
+Only `E_DEAD_MARK` and `E_WRONG_TYPE` survive as errors — the two syntactic
+codes are gone, because no input can reach them any more.
+
+The free-text verbs stay greedy and no syntax can fix that: `name generator`
+names the current trail "generator". `?name generator` is the escape, and the
+cost is the same one keystroke Chrome settled on.
+
 ## 4. Actions
 
 Marks and the grammar are shared; the verbs are where each pillar shows up. The

@@ -540,3 +540,40 @@ branch, bookmark graveyards. Real complaints beat invented personas.
   never moves a letter already held. Degrades honestly: an untitled object just takes the next
   free letter, which is where an arbitrary allocator would have started anyway.
 - **Phase:** 2, built — `FOSMarks.sys.mjs`.
+
+### Chrome retreated from space-triggered keywords, and it settles our fallback rule
+
+Searched for how shipped omniboxes disambiguate a command from a search when the
+two collide. Chrome is the strongest datapoint available: before 88.0.4324.150
+(February 2021) typing a custom-search keyword followed by a space invoked that
+keyword's engine, and the change made triggering require a deliberate <kbd>Tab</kbd>
+instead, so `g foo` now searches for the literal "g foo".
+<https://scarff.id.au/blog/2021/chrome-omnibox-keyword-search-broken/>
+
+Keyword users were unhappy — the blog above is one of them, and the workaround
+was to disable the `omnibox-keyword-search-button` flag. That complaint is the
+honest cost and worth recording rather than glossing. But Google had the usage
+data and still chose it, which says the asymmetry is real: a search silently
+hijacked by a prefix the user did not mean as a command is a worse failure than
+a command that needs one more keystroke.
+
+**Verdict: adopt, adapted.** Not the Tab gesture — a keypress has no spoken form,
+which is the same objection that killed the `>` prefix. What transfers is the
+priority: a bare prefix does not get to steal the line. Our version tests the
+*whole* line rather than the first token — a complete unambiguous command still
+wins with no gesture, because unlike a bare keyword it cannot be confused with
+prose, and only a line that fails to parse falls back to search.
+
+This closed a live bug rather than decorating the design. GRAMMAR.md §3 said
+prose is anything not *beginning* with an action word, and the parser implemented
+exactly that, so `what is a memex` parsed `what` as the context verb and returned
+a syntax error. Eight of the twelve action words are ordinary English, so the
+collisions are the most obvious things anyone would type: `back pain`, `field of
+view`, `branch prediction`, `up arrow unicode`, `pack rat`, `enter the dragon`.
+Every one of them returned an error before this change and returns a search now.
+
+Worth noting how it was found: the node tests were 34/34 green across two runs
+and never caught it, because they asserted the specified behaviour. It surfaced
+the first time the modules were imported into a real Gecko runtime and fed a
+sentence a person would actually type. Test the specification and you only ever
+confirm the specification.
