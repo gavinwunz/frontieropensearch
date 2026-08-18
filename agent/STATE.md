@@ -31,25 +31,36 @@ Keep it short — this is state, not a log. History belongs in `JOURNAL.md`.
 
 ## In progress
 
-- First full `./mach build`. See background jobs.
+- First full `./mach build`, restarted under `bg.sh` with sccache enabled.
+- Chunked push of history to `origin/agent/dev`, resumed from where run 1 died.
 
 ## Next task
 
-1. Check the build log. If it failed, fix and restart; if it succeeded, run
-   `./mach run` and confirm Phase 0's acceptance criterion — a browser launches.
-2. Then Phase 1: the remaining user-visible "Firefox" strings. The branding
+1. Run `./agent/bg-status.sh` first. It reports each job as finished with an
+   exit code, still running, or killed without a marker.
+2. If the build succeeded, run `./mach run` and confirm Phase 0's acceptance
+   criterion — a browser launches. That closes Phase 0.
+3. Then Phase 1: the remaining user-visible "Firefox" strings. The branding
    directory and app constants are already done, so what is left is the l10n
    override path and the about dialog. Do not mass-sed the tree.
+4. Do not edit anything under `browser/` or `toolkit/` while a full build is in
+   flight — research and the `agent/` and `context-engine/` docs are the safe
+   work. Both were edited freely this run; build inputs were not.
 
 ## Background jobs
 
-- `./mach build` — PID 1321471 — log `agent/logs/build-1787051116.log` —
-  started 2026-08-18T11:05Z. Expect 1–2 hours on 8 cores. Compiling normally as
-  of 11:25Z, no errors. Note the build detects an agent and limits the log to
-  warnings and errors, so an uneventful log is the healthy case.
-- Chunked push of upstream history to `origin/agent/dev` — log
-  `agent/logs/push-1787051326.log`. Pushes 40k commits at a time; a single 5G
-  push would exceed GitHub's per-push limit. Ends with the line `PUSH COMPLETE`.
+Started with `./agent/bg.sh <name> <cmd>`; check with `./agent/bg-status.sh`.
+Both survive an agent restart, which the run-1 versions did not.
+
+- `./mach build` — log `agent/logs/build-1787051660.log`, pid in
+  `agent/logs/build.pid` — started 2026-08-18T11:14Z. Expect 1–2 hours on 8
+  cores. The build detects an agent and limits output to warnings and errors,
+  so a quiet log is the healthy case — judge it by the `=== EXIT n ===` marker,
+  not by the tail.
+- `./agent/push-chunked.sh` — log `agent/logs/push-1787051713.log`. Pushes 40k
+  commits at a time because a single 5G push exceeds GitHub's limit. Resumable:
+  it reads where origin is and continues. Ends with `PUSH COMPLETE`. At 317k of
+  990k commits as of 11:31Z.
 
 ## Blockers
 
@@ -60,7 +71,8 @@ None.
 <!-- Task name → consecutive failures. At 3, stop retrying the same way, write the
      analysis below, and change approach or task. -->
 
-None.
+None. Run 1's build and push both died, but from being killed rather than from
+any fault of their own, so nothing is counted against them.
 
 ## Decisions taken
 
@@ -86,3 +98,14 @@ None.
 - 2026-08-18 — The hands-free path is voice via a local Whisper model on that
   same runtime, push-to-talk. Gecko's Web Speech API is cloud-only and is
   therefore unusable here. See `IDEAS.md`.
+- 2026-08-18 — Long jobs start via `agent/bg.sh`, never a bare `nohup ... &`.
+  The supervisor kills the agent's process group on restart, which silently
+  took run 1's build and push with it. `setsid` detaches them; an explicit exit
+  marker in the log distinguishes a killed job from a finished one.
+- 2026-08-18 — sccache enabled, cache on `/data`. Turned on while the build was
+  only six minutes in, so the restart cost almost nothing and every later
+  clobber is cheap.
+- 2026-08-18 — Voice input is no longer treated as settled. `text-to-speech` is
+  a supported task on the in-tree engine but `automatic-speech-recognition` is
+  not listed, so a small capture-to-transcript spike gates the voice work. See
+  `IDEAS.md`.
