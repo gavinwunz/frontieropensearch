@@ -819,3 +819,77 @@ Field invites dragging — any edge set drawn over an arrangement people rearran
 becomes spaghetti within a session. Lineage is derived on focus, so there is
 nothing to maintain and nothing to tangle.
 
+
+### The 30-second dwell threshold, and why it is a floor rather than a fact
+- **Found:** 2026-08-18, the click-satisfaction and dwell-time literature (Kim, Hassan,
+  White et al., *Modeling Dwell Time to Predict Click-level Satisfaction*, WSDM 2014, and
+  the industrial practice it describes).
+- **What it is:** Industrial search systems treat a click with 30s or more of dwell as a
+  "satisfied click", and use it as the implicit relevance signal where no human judgement
+  exists.
+- **Verdict:** adopt the number, adopt the caveat with it.
+- **Why:** `SCHEMA.md` needs `visit.outcome` to be `bounced | read | saved` and the
+  boundary had to come from somewhere. 30s is the only number in this area with a large
+  body of evidence behind it, so inventing one would have been strictly worse. But the
+  same literature is clear that a single fixed threshold is crude: the satisfying duration
+  moves with the document, peaking near 30s at a medium reading level and past 50s at a
+  difficult one. So this will call a skimmed reference page bounced and a slowly-read hard
+  page bounced too. It is written down as `READ_DWELL_MS` with the limitation in the
+  comment and an override on the function, so the day there is per-page evidence the fix
+  is a parameter rather than an excavation.
+- **Phase:** 2C, done. Improving it needs real usage data, which is exactly what the
+  engine is now collecting.
+
+### Task boundaries cannot be found with a clock — which is why a context is provenance
+- **Found:** 2026-08-18, the search-task-extraction literature: Lucchese, Orlando, Perego,
+  Silvestri and Tolomei, *Identifying Task-based Sessions in Search Engine Query Logs*
+  (WSDM 2011), and the session-boundary work it surveys.
+- **What it is:** Three families of session-boundary detection — time-based, content-based
+  and heuristic. The measured result that matters: timeouts, whatever their length, are of
+  limited utility for *task* boundaries, topping out around 70% precision, and about 75% of
+  submitted queries are issued while the user is multi-tasking.
+- **Verdict:** adopt, as the argument against the obvious design.
+- **Why:** This is the run's most useful finding because it killed the thing I would
+  otherwise have built. "The active context is whatever you have been doing for the last
+  N minutes" is the natural first implementation, it is what a recency window gives you
+  almost for free, and it is wrong most of the time it matters — if three quarters of
+  queries are interleaved with another task, a single clock-derived context is mislabelling
+  the majority of them. What the browser has that a query log does not is provenance: the
+  user already partitioned their work by opening a tab, and that is a statement rather than
+  an inference. So a trail is a context, membership is attributed `provenance`, and the
+  explicit `context <mark>` is how the user overrides it. Embedding-based merging across
+  trails is a real improvement to make later, and it rests on this floor instead of
+  replacing it — `context_member.source` is what keeps the two tellable apart afterwards.
+- **Phase:** 2C, done as the seeding rule.
+
+### A shallow entity extractor earns its keep on titles, not on queries
+- **Found:** 2026-08-18, building `FOSContextSignals` and then watching it run on real
+  queries in a browser window.
+- **What it is:** Without a model, the only entity evidence in plain text is punctuation
+  and capitalisation: quoted phrases, runs of capitals, and everything else.
+- **Verdict:** adopt as the floor, with the limit stated.
+- **Why:** It ranks salience honestly and refuses to guess `kind`, which matters because
+  the context pack is built to be read by a language model and a column of confidently
+  wrong `person`/`org` labels is worse than no column. But the limit found by running it
+  is sharper than the one I designed for: **queries are typed in lower case**, so the
+  capitalisation signal is absent from exactly the input that carries the user's intent,
+  and "vannevar bush memex" yields three plain words rather than a name. Page titles are
+  capitalised and are where it currently earns its keep. This is the strongest argument
+  yet for the embedding pass, and it is a specific one: the gap is query understanding,
+  not page understanding.
+- **Phase:** 2C for the floor; the embedding pass is the next step and now has a concrete
+  target.
+
+### A context pack is an untrusted-input surface, even with no network
+- **Found:** 2026-08-18, writing the export and asking who reads it.
+- **What it is:** The pack's consumer is a language model, and its content is page titles
+  and page-supplied text — which the page controls.
+- **Verdict:** adopt as a rule for anything the engine exports.
+- **Why:** A page can call itself `[click here](http://elsewhere)` or append an
+  instruction, and a brief built by pasting titles straight through would carry both into a
+  model's context as though the engine had vouched for them. It costs nothing to neutralise
+  markdown at the boundary and to state plainly in the footer that a page appearing in the
+  brief means it was open, not that it was right. Worth recording as a general shape: this
+  component has no network access at all, and it still has an injection surface, because
+  the untrusted input arrived through the browser and leaves through the clipboard.
+- **Phase:** 2C, done, with a test that a forged link does not render as a link.

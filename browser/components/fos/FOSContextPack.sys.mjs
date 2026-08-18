@@ -160,8 +160,10 @@ function summarise({ title, queries, pages, now }) {
 function pageLine(page) {
   const label = escapeInline(page.title?.trim() || page.url);
   const parts = [`[${label}](${page.url})`];
+  // A sub-second dwell renders as "0s", which reads as a measurement when it
+  // is really an absence. Below a second there is nothing worth telling a model.
   const dwell = Number(page.dwell_ms);
-  if (dwell > 0) {
+  if (dwell >= 1000) {
     parts.push(`— ${humanDuration(dwell)}`);
   }
   if (page.trail_name) {

@@ -186,3 +186,11 @@ test("the export date is stamped when one is given, and omitted when not", () =>
 test("a context with no rows at all is a programming error, not empty output", () => {
   assert.throws(() => buildContextPack({}), /no context/);
 });
+
+test("a sub-second dwell is not reported as a measurement", () => {
+  // Seen in a real export: a page left immediately rendered "— 0s", which reads
+  // as a number when it is really an absence.
+  const brief = contents();
+  brief.pages[0].dwell_ms = 400;
+  assert.ok(!buildContextPack(brief, { now: null }).includes("0s"));
+});

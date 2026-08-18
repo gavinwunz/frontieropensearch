@@ -78,6 +78,23 @@ is never edited once it has shipped — correct it with a new one.
 |---|---|---|
 | 1 | `001-initial.sql` | Everything below. |
 
+The files are packaged into the browser jar and read at runtime over
+`chrome://browser/content/fos/migrations/`, so they stay `.sql` rather than
+becoming string literals in a module: a shipped migration is immutable, and a
+numbered file that is only ever added to is what makes that auditable — and
+when something has gone wrong, the schema can be applied and diffed by hand
+with `sqlite3` instead of being extracted from JavaScript.
+
+Statements within a file are separated by a line containing only `--@`. A split
+on `;` is the obvious thing and is wrong: a semicolon is legal inside a trigger
+body and inside a string literal, so a naive split cuts a statement in half and
+the corruption surfaces as a syntax error in something that looks correct.
+
+`PRAGMA user_version` is set *outside* the transaction that applies a
+migration, because it is not transactional in SQLite — written inside one it
+would survive a rollback and leave the database claiming a version it does not
+have.
+
 ## Tables
 
 ### `trail`
@@ -223,6 +240,27 @@ Where a card sits in the Field, and whether a human put it there.
 | `y` | REAL | |
 | `pinned` | INTEGER | 1 if the user fixed it in place. |
 | `moved_by_user_at` | INTEGER | Null if auto-placed. This is what makes the placement evidence. |
+
+## Deriving a context
+
+Membership is seeded by **provenance**: each trail gets a context, and its nodes
+and queries join that one. `context_member.source` records this as `provenance`,
+so an embedding pass added later is distinguishable from it rather than layered
+invisibly on top.
+
+Provenance rather than a recency window, and the search-log literature is why. A
+context inferred from a time gap would be wrong most of the time it mattered:
+around 75% of queries are issued while the user is multi-tasking (Lucchese et
+al., *Identifying Task-based Sessions in Search Engine Query Logs*, WSDM 2011),
+and timeout-based boundary detection tops out near 70% precision on task
+boundaries whatever the timeout. Which trail a page is on is not an inference at
+all — the user stated it by opening a tab — and `context <mark>` is how they say
+otherwise outright.
+
+The active context is therefore **derived, not stored**: it is the context of
+the trail you are on, unless you have pinned one. Held as a field it can only
+drift, and it did — set once at the first trail, it left a second tab's queries
+filed under the first tab's topic.
 
 ## Export
 

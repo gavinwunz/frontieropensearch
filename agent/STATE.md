@@ -84,31 +84,55 @@ execution, not invention: all three pillars have a written design.
   `browser/components/fos/tests/node/run.sh`. Wired into
   `browser/components/moz.build`.
 
+- **The Context Engine, and pillar C's data layer end to end.**
+  `context-engine/migrations/001-initial.sql` is the schema as a versioned
+  migration, packaged into the browser jar and read over `chrome://` at open.
+  `FOSContextStore.sys.mjs` opens `context-engine.sqlite` in the profile and
+  records trails, nodes, queries, visits, entities, contexts and placements;
+  `FOSContextSignals.sys.mjs` holds the three pure derivations (normalised
+  intent, entities, outcome) and `FOSContextPack.sys.mjs` the markdown export.
+  `FOSContextEngine.sys.mjs` reconciles the in-memory tree into the database
+  off the trail session, times visits with the clock stopped while the window
+  is unfocused, and wires `context`, `pack` and `what`. **All twelve verbs in
+  the action table are now wired** — `actions.unwired()` returns empty, and a
+  test asserts it. 121 node tests, 39 xpcshell checks, 174 browser-chrome
+  checks. Screenshot in `agent/reports/context-what.png`.
+
 ## In progress
 
 Nothing running. Tree fully pushed; `main`, `agent/dev` and both tags on origin.
 
 ## Next task
 
-Phase 2 execution. Pillar C is what remains, plus two deferred pieces of A and B.
+Pillar C exists but is one third built: it records well and surfaces thinly.
+In rough order of value.
 
-1. **The Context Engine.** The only pillar with no code at all. `context-engine/
-   SCHEMA.md` is written; `context`, `pack` and `what` are the three unwired
-   verbs, and `browser_commandbar.js` prints the live list. Wiring a pillar into
-   the bar is two calls: register its objects on `bar.marks`, and
-   `bar.actions.register(verb, fn)` per verb.
-2. **`prune`, and an export surface.** `IDEAS.md`'s acceptance bar for 2B is
-   that every action is performable *on* the tree — re-enter, rename, prune,
-   export. Re-entry, rename and graft are done and `toJSON` exists, but there is
-   no prune at all and no surface for export. Deliberately deferred rather than
-   forgotten: both need a new verb, the verb list is asserted by
-   `browser_commandbar.js` and specified in `GRAMMAR.md` §4, so it should be
-   done as a considered grammar change and not as a side effect of building a
-   rail.
-3. **The voice path.** Not blocked — see the ASR entry in `IDEAS.md`. The
-   remaining unknowns are model size and latency on this hardware, not
-   availability. Measure those; do not re-litigate whether ASR is possible.
-4. Browser-chrome tests for each of the above **as it lands, not after**.
+1. **Rehydrate the trail tree from the database at startup.** This is the
+   biggest hole and it is not in the Context Engine — it is pillar B. The
+   in-memory `TrailStore` is session-scoped and numbers its ids from 1 each
+   launch, so a restart still opens an empty Field and an empty rail while the
+   database holds everything. The engine keeps a session-scoped id mapping
+   precisely because of this. Until it is fixed, "never lose a page" is true
+   within a session only, which is the weakest thing about the fork right now.
+2. **The context sidebar** — `SCHEMA.md`'s second surface, "what you know so
+   far". `what` currently answers in one sentence, which is deliberately the
+   smaller thing and not a stand-in. `contextContents()` already returns
+   everything it needs, and `crossings(url)` is written and has no consumer at
+   all yet — "you have reached this page from three different trails" is the
+   memex's compounding effect and is the sidebar's best row.
+3. **Rank the command bar by active context.** The first of the three surfaces
+   in the phase plan and the only one with no code: the bar still has no
+   suggestion ranking of any kind. This is what "not global frecency" means and
+   it needs the store's read side, which is now there.
+4. **The embedding pass**, on `EmbeddingsGenerator` and `ClusterAlgos`. It now
+   has a concrete target rather than a vague one: query understanding, because
+   the shallow extractor gets nothing from a lower-case query. It should merge
+   contexts across trails with `source = 'embedding'`, never replacing the
+   provenance floor.
+5. **`prune`, and an export surface for trails** — still deferred from run 10,
+   still a considered grammar change.
+6. **The voice path.** Unchanged: measure model size and latency; do not
+   re-litigate availability.
 
 **Test in Gecko, not only in node.** Two bugs this project has shipped were
 invisible to green node tests: a grammar bug found in one minute once the modules
@@ -186,6 +210,28 @@ read as "provenance" as strongly as a spread would. A tie-break change is a
 model change with tests at 40 cards behind it — do it deliberately or not at
 all.
 
+**A named context can fail to get a mark under real mark pressure.** Contexts
+take letters only after being named, and only from what the active trail and
+the Field's retained cards have left. That is the right priority — pages are
+where addressing actually happens — but it means that in the session where
+switching context matters most, a Field holding forty cards, `context <mark>`
+may have no mark to offer. Caught by a test that passed alone and failed in the
+full suite. The candidate fix is to reserve a small number of letters for named
+contexts on the argument that the user named them deliberately and there are
+few of them; that is a budget change with cross-pillar blast radius and it
+wants a decision, not a patch. Search by name is the other answer and is what
+`GRAMMAR.md` §2 already specifies for going past 26.
+
+**A query is attached to the next node created after it.** That is right in the
+ordinary case — you search, a page opens — and it is a guess if several nodes
+are written in one reconciliation pass. Nothing better is available without
+matching a search URL against its query, which is engine-specific and brittle.
+
+**Recording is fire-and-forget by design.** A failed write is logged and the row
+is dropped rather than retried, because the alternative is a queue that can
+stall browsing. So the database is a very good record and not a guaranteed one;
+do not build anything that assumes a row must exist.
+
 ## Gotchas worth not rediscovering
 
 - **A screenshot of the chrome, without touching the real display.** The X-grab
@@ -198,6 +244,25 @@ all.
   Every visual defect this project has shipped was found this way and by no
   other means.
 
+- **A test that passes alone and fails in the suite is usually telling you
+  something true.** Three separate failures this run only appeared when the
+  whole component suite ran in one window, and none was a test-isolation
+  nuisance: unnamed contexts were eating the letters pages needed, the active
+  context never moved off the first trail, and a global row lookup was finding
+  an earlier task's nodes. Run `./mach test browser/components/fos/` before
+  believing a green single file.
+- **A derived value that could drift will drift.** `activeContextId` was a
+  field set once when the first trail appeared, and it silently filed every
+  later tab's work under the first tab's topic. It is a getter now, computed
+  from the trail the user is on. Same lesson as reconciling the tree by walking
+  it rather than mirroring events: if it can be recomputed, recompute it.
+- **`PRAGMA user_version` is not transactional in SQLite.** Set it outside the
+  transaction that applies a migration, or a rollback leaves the database
+  claiming a version it does not have.
+- **A single-letter word at the start of free text parses as a mark.** `name a
+  research context` set no name, because `a` was read as the optional target.
+  Real behaviour of the grammar rather than a bug, and a trap when writing
+  tests.
 - **An invariant about what the user sees has to be asserted against what is
   drawn.** `FieldModel.overlaps()` was green while the rendered cards overlapped,
   because the caption hung below the box the invariant was checked against. The
@@ -334,6 +399,30 @@ repeated failure even when each run has a new explanation for it.
 
 ## Decisions taken
 
+- 2026-08-18 — **A context is seeded by provenance, never by a clock.** A
+  recency window is the obvious implementation and is wrong most of the time it
+  matters: around 75% of queries are issued while multi-tasking, and
+  timeout-based task-boundary detection tops out near 70% precision. Which
+  trail a page is on is a statement the user made by opening a tab, not an
+  inference. `context <mark>` is the override, and it pins.
+- 2026-08-18 — **The active context is derived, not stored.** Computed from the
+  trail you are on each time it is asked for. Held as a field it was set once
+  at the first trail and never moved.
+- 2026-08-18 — **A context earns a mark by being named.** An unnamed context is
+  the trail you are already on, so there is nothing to switch to and the letter
+  would buy nothing. This is also what stops contexts spending the alphabet
+  pages need — it was found by a node on example.com being addressed as `t`.
+- 2026-08-18 — **Migrations stay `.sql` files, packaged and read at runtime.**
+  A shipped migration is immutable, and a numbered file that is only ever added
+  to is what makes that auditable; it also means the schema can be applied by
+  hand with `sqlite3` when something has gone wrong.
+- 2026-08-18 — **Recording never blocks browsing.** Every write is queued and
+  nothing on the navigation path awaits it; a failed write is dropped rather
+  than retried. A lost row is a far smaller harm than a stalled page load.
+- 2026-08-18 — **The context pack neutralises markdown from page titles and
+  says it vouches for nothing.** Its consumer is a language model and its input
+  is page-controlled, so it is an injection surface even though the component
+  has no network access at all.
 - 2026-08-18 — **The rail may not hide where you are.** Collapse is honoured
   everywhere except on the *ancestors* of the current node, which always render
   open; the stored state is untouched and takes effect again once the user moves
