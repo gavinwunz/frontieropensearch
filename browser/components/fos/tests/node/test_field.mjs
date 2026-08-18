@@ -428,3 +428,85 @@ test("a busy region still accepts an ordinary drag rather than refusing it", () 
   }
   assert.ok(refusals < 20, `every drag into a busy region was refused`);
 });
+
+test("a region at exactly its lattice capacity still accepts a drag", () => {
+  // The case the busy-region test above misses, and the perf harness found by
+  // counting committed moves and noticing it was measuring refusals. At 45
+  // cards there is a free seat, so the chain that reaches an edge re-seats
+  // into it; at 56 there is none, and every pointer move was refused —
+  // including a move of less than one seat-step, because the dragged card had
+  // not yet cleared the minimum distance from the seat it vacated, so its own
+  // seat was not free either.
+  const { trails, field } = setup();
+  const { cards } = trailWith(trails, field, 56);
+  const region = field.regionFor(field.getCard(cards[0].id).region_id);
+  assert.equal(field.cards().length, 56, "the lattice is exactly full");
+
+  const card = field.getCard(cards[0].id);
+  const from = { x: card.x, y: card.y };
+  const to = { x: region.width / 2, y: region.height / 2 };
+  const refused = [];
+  for (let step = 1; step <= 60; step++) {
+    const result = field.moveCard(
+      card.id,
+      from.x + (to.x - from.x) * (step / 60),
+      from.y + (to.y - from.y) * (step / 60),
+      { pin: false }
+    );
+    if (!result.ok) {
+      refused.push(`${step}:${result.reason}`);
+    }
+    assert.deepEqual(field.overlaps(), [], `overlap at step ${step}`);
+  }
+  assert.deepEqual(refused, [], "no pointer move in the drag was refused");
+});
+
+test("a drag out of room grows the region by a row, not by a pointer move", () => {
+  // §6: a drag climbs the capacity ladder to growth, and skips eviction —
+  // eviction bounds the card count against a page arriving, and a drag brings
+  // nothing. So the count is unchanged and the height went up once.
+  const { trails, field } = setup();
+  const { cards } = trailWith(trails, field, 56);
+  const region = field.regionFor(field.getCard(cards[0].id).region_id);
+  const before = region.height;
+  const row = field.geometry.cardHeight + field.geometry.minGap;
+
+  const card = field.getCard(cards[0].id);
+  const from = { x: card.x, y: card.y };
+  for (let step = 1; step <= 60; step++) {
+    field.moveCard(
+      card.id,
+      from.x,
+      from.y + (region.height / 2 - from.y) * (step / 60),
+      { pin: false }
+    );
+  }
+  assert.equal(field.cards().length, 56, "no card was dismissed to make room");
+  assert.equal(
+    region.height,
+    before + row,
+    "one drag cost exactly one lattice row"
+  );
+});
+
+test("a refused drag leaves the region the height it was", () => {
+  // Growth is part of the arrangement, so it has to be as atomic as the
+  // positions are: a drag refused for a pinned conflict must not leave a
+  // taller region behind as the only trace of it.
+  const { trails, field } = setup();
+  const { cards } = trailWith(trails, field, 56);
+  const region = field.regionFor(field.getCard(cards[0].id).region_id);
+  // Pin everything but the first card, so any push at all is refused.
+  for (const card of cards.slice(1)) {
+    const live = field.getCard(card.id);
+    field.moveCard(live.id, live.x, live.y);
+  }
+  const before = region.height;
+
+  const card = field.getCard(cards[0].id);
+  const neighbour = field.getCard(cards[1].id);
+  const result = field.moveCard(card.id, neighbour.x, neighbour.y);
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, REFUSED.PINNED);
+  assert.equal(region.height, before, "the region did not grow on a refusal");
+});

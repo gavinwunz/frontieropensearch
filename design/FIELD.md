@@ -211,6 +211,34 @@ and the order is the design:
 refuses to open a page because a canvas is untidy is not a browser. That is why
 step 3 has no exit other than success.
 
+**A drag climbs the same ladder, but skips the middle rung.** The re-seat rule
+above answers "the push chain reached an edge"; it does not answer "and there
+was no free seat", which is what a region at exactly its lattice capacity
+always is. That case was reached by the drag path and refused, so 56 cards on
+56 seats meant every drag was refused — not only a drag across the region, but
+a drag of less than one seat-step, because until the dragged card has cleared
+the minimum distance from the seat it vacated its own seat is not free either.
+"You may not move anything" is not a corner of this design, it is the negation
+of it: §2 says the user owns the layout.
+
+So a drag that runs out of seats **grows the region**, on the same grounds step
+3 already stands on. It does not evict. Eviction exists to bound the card count
+against a page *arriving*, and a drag brings nothing — dismissing somebody's
+page because they tidied would be a surprise the ladder never promised. A drag
+seeds or grows, and never trades.
+
+Growth is bounded by the arrangement rather than by the pointer: one added row
+is a whole row of free seats, so the next pointer move of the same drag finds
+one and grows nothing. Measured over twenty successive drags in a full region,
+the region gained four rows and then stopped, and every refusal left was
+`would-displace-pinned` — the one refusal this section wrote a rule for.
+
+Open, and deliberately not decided here: a region's height only ever goes up.
+Making it the smallest whole number of lattice rows that contains every card
+would be tidier and cannot drift, but it is a derived quantity that changes
+mid-drag, so it can rescale the region twice in one gesture. That is a worse
+promise to break than an untidy height.
+
 ## 7. The card
 
 A card carries three things, and the reason for each is measured.

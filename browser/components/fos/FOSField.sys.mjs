@@ -518,10 +518,16 @@ export class FieldModel {
     scratch.get(cardId).x = x;
     scratch.get(cardId).y = y;
 
-    const result = this.#push(scratch, cardId, region);
+    // The extent the arrangement is resolved against is provisional: §6's
+    // capacity ladder ends in growth, and the push front is allowed to reach
+    // for it. Nothing is committed until the whole arrangement is legal, so a
+    // refused drag leaves the region exactly the height it was.
+    const extent = { width: region.width, height: region.height };
+    const result = this.#push(scratch, cardId, extent);
     if (!result.ok) {
       return result;
     }
+    region.height = extent.height;
 
     const moved = [];
     for (const id of result.displaced) {
@@ -539,13 +545,14 @@ export class FieldModel {
   }
 
   /**
-   * Spread the push front. Mutates `scratch` only.
+   * Spread the push front. Mutates `scratch` and `extent` only.
    *
    * @param {Map<number, object>} scratch
    * @param {number} sourceId
-   * @param {object} region
+   * @param {{width: number, height: number}} extent The region's extent, which
+   *   this may grow. The caller commits it only if the whole push settles.
    */
-  #push(scratch, sourceId, region) {
+  #push(scratch, sourceId, extent) {
     const queue = [sourceId];
     const displaced = new Set([sourceId]);
     let steps = 0;
@@ -573,7 +580,7 @@ export class FieldModel {
         const shift = this.#separation(pusher, other);
         other.x += shift.dx;
         other.y += shift.dy;
-        if (!this.#inBounds(other, region)) {
+        if (!this.#inBounds(other, extent)) {
           // The push front reached the edge of the region. Refusing here would
           // be wrong: in a region that is merely busy, every chain eventually
           // reaches an edge, and the user would find that most drags simply do
@@ -582,13 +589,7 @@ export class FieldModel {
           // An unpinned card has no position anybody chose, so the system is
           // free to re-seat it exactly as it was free to seed it. Refusal is
           // reserved for the case it was written for: a position the user owns.
-          const seat = this.#firstFreeSeat(
-            region,
-            { x: other.x, y: other.y },
-            [...scratch.entries()]
-              .filter(([id]) => id !== otherId)
-              .map(([, c]) => c)
-          );
+          const seat = this.#reseat(extent, other, scratch, otherId);
           if (!seat) {
             return { ok: false, reason: REFUSED.BOUNDS };
           }
@@ -600,6 +601,50 @@ export class FieldModel {
       }
     }
     return { ok: true, displaced };
+  }
+
+  /**
+   * Find somewhere for a card the push front has driven out of the region,
+   * growing the region if there is nowhere.
+   *
+   * The re-seat above answers "the chain reached an edge"; this answers the
+   * case underneath it, which the perf harness found by counting committed
+   * moves and noticing it was measuring refusals: **when the lattice is
+   * exactly full, there is no free seat at all, and every drag is refused.**
+   * Not only a drag across the region — 56 cards on 56 seats and a drag of
+   * less than one seat-step still refuses, because the dragged card has not
+   * yet cleared the minimum distance from the seat it vacated, so its own
+   * seat is not free either. "You may not move anything" was the whole of the
+   * behaviour, on the surface the pillar rests on.
+   *
+   * §6 already answers this for placement: seed, then evict, then grow. The
+   * drag path implemented the first rung and stopped, and the fix is to let it
+   * reach the third. Not the second — eviction exists to bound the card count
+   * against a page *arriving*, and a drag brings nothing, so dismissing
+   * somebody's page because they tidied would be a surprise the ladder never
+   * promised. A drag therefore seeds or grows, and never trades.
+   *
+   * Growth is bounded in practice as well as by `MAX_REGION_GROWTH`: one added
+   * row is a whole row of free seats, so the next pointer move of the same
+   * drag finds one and grows nothing. A drag costs at most a row.
+   *
+   * @param {{width: number, height: number}} extent Grown in place.
+   * @param {{x: number, y: number}} card The card that left the region.
+   * @param {Map<number, object>} scratch
+   * @param {number} cardId `card`'s id, so it does not block its own seat.
+   * @returns {{x: number, y: number} | null}
+   */
+  #reseat(extent, card, scratch, cardId) {
+    const occupied = [...scratch.entries()]
+      .filter(([id]) => id !== cardId)
+      .map(([, c]) => c);
+    const anchor = { x: card.x, y: card.y };
+    let seat = this.#firstFreeSeat(extent, anchor, occupied);
+    for (let i = 0; i < MAX_REGION_GROWTH && !seat; i++) {
+      extent.height += this.#geom.cardHeight + this.#geom.minGap;
+      seat = this.#firstFreeSeat(extent, anchor, occupied);
+    }
+    return seat;
   }
 
   /**
