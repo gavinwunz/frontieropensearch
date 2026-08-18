@@ -314,3 +314,101 @@ reachable in both modalities; Tab reaches no action, it only shortens the path t
 one a voice user would say outright. A completion affordance is not a command —
 worth stating plainly, because "just add a keyboard-only shortcut" is exactly how
 the separate accessibility mode §5 forbids would get built by accident.
+
+---
+
+## 8. Rules the voice front end forced
+
+§5 promised that a transcript and a keystroke meet as one token stream. Building
+the front end that produces the transcript settled six things the promise leaves
+open. All six hold the same line §5 and §7 hold: whatever cannot be modality-
+blind is pushed *out* of the grammar rather than into it, and lives in the input
+adapter where it can be replaced.
+
+### The turn is a press, not a wake word
+
+Push-to-talk first: a press makes the microphone's state something the user did
+rather than something they trust, and eliminates false wakes outright. The
+genuinely handless case needs a wake word, and gets one as a second layer on the
+same path — in both cases what comes out is a transcript handed to
+`FOSCommandParser`, so building the press first costs the wake word nothing.
+
+The stages are `arming`, `listening`, `transcribing`, and they are visible
+because they answer the question a voice user actually has, which is not "did it
+understand" but "is it listening yet". A key that comes up before the microphone
+opened is a tap, not a turn, and is refused with the same reason a recording too
+short to be a word gets — to the user it is the same mistake.
+
+### The echo is the latency budget
+
+A voice turn feels natural inside ~1s of the end of the utterance and tolerable
+to 2s. The thing that buys the second second is showing the words as they are
+recognised, and this fork gets it for nothing: the command bar is already a text
+surface with the parse in front of the user, so speech is echoed into the same
+input the keyboard writes into. No second surface, no "voice mode" — the "no
+separate accessibility mode" property of §5 falling out of the design rather than
+being bolted onto it.
+
+### Cancel works from every state, including after the transcript arrives
+
+The failure people fear about voice is the misheard command that runs. Escape
+therefore abandons a turn from any stage, and a transcript that arrives after a
+cancel does nothing — the model finishing is not the user's decision.
+
+### Typing wins
+
+Two modalities writing one field is the single place where "the same surface"
+could turn from a promise into a collision. If the user touches the keyboard
+mid-utterance the turn is abandoned, nothing executes, and the input is left
+exactly as the keystroke left it. Restoring anything there would delete what they
+are in the middle of writing.
+
+Voice therefore writes the whole line: the bar's text is snapshotted on press and
+restored on anything but a usable transcript. **Open:** appending to a half-typed
+line — type `name `, then speak the name — is the more interesting mixed-modality
+behaviour and probably the right end state, but it is not guessed at before it
+has been used in a browser.
+
+### Silence is not a transcript
+
+Whisper does not answer silence with nothing. It answers with a confident
+sentence — "thank you", "thanks for watching" — because captioned video taught it
+to, and its own `no_speech_prob` defence is documented as insufficient precisely
+because the hallucinations come out confident. So "the model returned a string"
+is not evidence that anyone spoke.
+
+Two defences, in this order: a recording too short or too quiet or too steady is
+never sent to the model at all, and a transcript that is exactly a known artifact
+is refused after. The second is not belt and braces — a door slamming in a quiet
+room clears every audio gate and is exactly what gets answered with a sentence.
+
+The reason this is worth two defences rather than one is not the wrong command.
+It is that a phantom utterance is also recorded by the Context Engine as a query
+the user asked, and a context poisoned by enquiries nobody made is a great deal
+harder to notice, and to undo, than a search that ran and looked odd.
+
+### A misheard word is offered, not repaired
+
+The tempting next step is to snap a near-miss onto the vocabulary — `cab` to
+`cap`. It is refused, for a reason that is structural rather than cautious.
+§6 makes free text terminal: `name` and `search` take the rest of the utterance
+verbatim, so a repair pass would have to know where free text begins, which is to
+say it would have to know the grammar. That is exactly the knowledge §5 forbids
+the input adapter to have, and the adapter is where a repair would live.
+
+Talon, which has more standing on this than anyone, does not snap either — it
+offers a menu of homophones and lets the user pick. This fork already has that
+surface: §7's candidate list narrows live from the same parse. So the answer to a
+misheard word is the list the user is already looking at, and the adapter's job
+stays what §5 says it is — produce a token stream, and stop.
+
+### Nothing needs a confirmation step
+
+Executing a transcript directly, with no "did you mean", is safe here by a
+property of the action table rather than by optimism. Every verb in it is cheap
+and reversible by construction: `dismiss` leaves the page on its trail and one
+`enter` brings the card back, `back` destroys no forward branch, `graft` moves a
+node rather than deleting one. The one destructive thing a browser normally
+offers a voice user — closing a window with unsaved work — has no verb, because
+the Field replaced it. A confirmation step would be the honest answer to a
+grammar with a destructive verb in it; the better answer was not to have one.
