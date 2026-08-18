@@ -460,3 +460,66 @@ add_task(
     marks.clear();
   }
 );
+
+add_task(async function a_background_arrival_does_not_move_where_you_are() {
+  // `onLocationChange` fires for every browser in the window, not just the one
+  // in front, and `#setCurrent` took the trail of whichever browser it was
+  // handed. So a page finishing in a background tab became "where you are": the
+  // active trail followed it, `#syncMarks` re-lettered to that trail, and with
+  // the letters went the context sidebar, what `name` names, and the tiers the
+  // command bar ranks by.
+  //
+  // The mark registry is the sharpest way to see it. Marks are the fork's
+  // addressing scheme and GRAMMAR.md §2 makes stickiness the rule that gives
+  // them their value — a letter that moves because a page the user never looked
+  // at finished loading is the failure that rule is about, arriving from the
+  // one direction nothing was watching.
+  const tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, PAGE_A);
+  const trail = session();
+  await goTo(PAGE_B);
+
+  const beforeTrail = trail.activeTrailId;
+  const beforeNode = trail.currentNodeId;
+  const marks = trail.marks;
+  const beforeMark = marks.markOf(nodeKey(beforeNode));
+  Assert.ok(beforeMark, "the page in front holds a letter to begin with");
+
+  // A second tab, in the background, loading a page of its own. It gets its
+  // own trail, which is exactly what makes this visible.
+  const background = BrowserTestUtils.addTab(gBrowser, PAGE_C);
+  await BrowserTestUtils.browserLoaded(background.linkedBrowser, false, PAGE_C);
+
+  const arrival = trail.nodeForBrowser(background.linkedBrowser);
+  Assert.ok(
+    arrival,
+    "the arrival was recorded — it is a page, and it happened"
+  );
+  Assert.notEqual(
+    trail.store.getNode(arrival).trail_id,
+    beforeTrail,
+    "and it is on a trail of its own"
+  );
+
+  Assert.equal(
+    trail.activeTrailId,
+    beforeTrail,
+    "the active trail stayed where the user is looking"
+  );
+  Assert.equal(trail.currentNodeId, beforeNode, "and so did the current node");
+  Assert.equal(
+    marks.markOf(nodeKey(beforeNode)),
+    beforeMark,
+    `the letter under the user's eyes did not move (${beforeMark})`
+  );
+
+  // Selecting the tab is the user saying where they are, and it does move.
+  await BrowserTestUtils.switchTab(gBrowser, background);
+  Assert.equal(
+    trail.activeTrailId,
+    trail.store.getNode(arrival).trail_id,
+    "selecting the tab moved the active trail, which is the user's own say-so"
+  );
+
+  BrowserTestUtils.removeTab(background);
+  BrowserTestUtils.removeTab(tab);
+});

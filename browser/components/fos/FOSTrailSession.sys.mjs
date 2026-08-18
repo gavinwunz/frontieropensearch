@@ -858,10 +858,29 @@ export class FOSTrailSession {
     const node = this.store.getNode(nodeId);
     if (node) {
       this.#trailByBrowser.set(browser, node.trail_id);
-      if (node.trail_id !== this.#activeTrailId) {
-        this.#activeTrailId = node.trail_id;
-      }
     }
+
+    // A page that loads where the user is not looking gets a node, a trail and
+    // a card, and moves nothing else. `onLocationChange` fires for every
+    // browser in the window, so without this a background arrival became "where
+    // you are": the active trail followed it, and with it the marks, the
+    // context sidebar, what `name` names, and the tiers the command bar ranks
+    // by. The letters under the user's eyes would change because a page they
+    // never looked at finished loading — which is the one thing GRAMMAR.md §2's
+    // stickiness rule exists to prevent. `TabSelect` is what moves the active
+    // trail, because selecting a tab is the user saying where they are.
+    if (browser !== this.#window.gBrowser?.selectedBrowser) {
+      // Marks still get synced: an arrival on the *active* trail is a node the
+      // rail is about to show, and it needs its letter.
+      this.#syncMarks();
+      return;
+    }
+
+    if (node && node.trail_id !== this.#activeTrailId) {
+      this.#activeTrailId = node.trail_id;
+    }
+    // Only pages the user was on join the recency list, since it is what `back`
+    // walks: a background arrival in it would send `back` to a page nobody read.
     this.#recent.push(nodeId);
     if (this.#recent.length > 200) {
       this.#recent.splice(0, this.#recent.length - 200);
