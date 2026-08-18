@@ -69,6 +69,7 @@ const STATEMENT_SEPARATOR = /^--@$/m;
  */
 export class FOSContextStore {
   #connection;
+  #restorationClaimed = false;
 
   /**
    * Prefer `open()`. This takes an already-open connection so that a test can
@@ -270,6 +271,168 @@ export class FOSContextStore {
     return rows.map(row =>
       plain(row, ["node_id", "trail_id", "trail_name", "created_at"])
     );
+  }
+
+  // ---- restoration --------------------------------------------------------
+
+  /**
+   * Claim the right to restore from this database. True once, then false.
+   *
+   * The claim lives here rather than in the window that makes it because one
+   * database is what "the previous session" means: every window shares this
+   * store, so the first to ask is the one that gets the past back and the
+   * others open as they always did. Two windows each holding their own copy of
+   * one trail would put it on two Fields and have both reconcile onto the same
+   * rows.
+   *
+   * @returns {boolean} Whether the caller may restore.
+   */
+  claimRestoration() {
+    if (this.#restorationClaimed) {
+      return false;
+    }
+    this.#restorationClaimed = true;
+    return true;
+  }
+
+  /**
+   * The trails a new session should open with, and all of their nodes.
+   *
+   * **What comes back is bounded by rank, not by a clock.** The K most
+   * recently updated trails return, whether that is yesterday's work or last
+   * month's; nothing is deleted and nothing else is inferred. A time window
+   * was the alternative and it decides the same question worse: it makes a
+   * fortnight away from the machine indistinguishable from having finished,
+   * and this project has already found that a clock is a poor judge of what a
+   * user is still working on.
+   *
+   * **A trail comes back whole or not at all.** The node budget drops whole
+   * trails from the tail of the ordering rather than truncating one, because a
+   * trail missing its middle would render as a tree that was never browsed.
+   *
+   * Named trails are not privileged here, which is a real limit and is
+   * deliberate for now: naming a trail touches `updated_at`, so a named trail
+   * is recent by construction on the day it is named and ages out like
+   * anything else afterwards. Pinning names past that wants a surface for
+   * finding old trails first — restoring them into the Field forever is how a
+   * bookmark graveyard is built.
+   *
+   * @param {object} [options]
+   * @param {number} [options.trailLimit] How many trails at most.
+   * @param {number} [options.nodeLimit] How many nodes at most, in total.
+   * @returns {Promise<{trails: object[], nodes: object[]}>}
+   */
+  async restorable({ trailLimit = 12, nodeLimit = 4000 } = {}) {
+    const candidates = await this.#connection.execute(
+      `SELECT t.id, t.name, t.created_at, t.updated_at, t.archived_at,
+              (SELECT COUNT(*) FROM trail_node n WHERE n.trail_id = t.id)
+                AS node_count
+       FROM trail t
+       WHERE t.archived_at IS NULL
+         AND EXISTS (SELECT 1 FROM trail_node n WHERE n.trail_id = t.id)
+       ORDER BY t.updated_at DESC, t.id DESC
+       LIMIT :trailLimit`,
+      { trailLimit }
+    );
+
+    const trails = [];
+    let budget = nodeLimit;
+    for (const row of candidates) {
+      const trail = plain(row, [
+        "id",
+        "name",
+        "created_at",
+        "updated_at",
+        "archived_at",
+        "node_count",
+      ]);
+      if (trail.node_count > budget) {
+        continue;
+      }
+      budget -= trail.node_count;
+      delete trail.node_count;
+      trails.push(trail);
+    }
+
+    return { trails, nodes: await this.nodesForTrails(trails.map(t => t.id)) };
+  }
+
+  /**
+   * Every node of the given trails, dismissed ones included.
+   *
+   * A dismissed node has left the Field and is still on its trail, so leaving
+   * it behind here would quietly turn dismissal into deletion at the next
+   * restart.
+   *
+   * @param {number[]} trailIds
+   * @returns {Promise<object[]>} `trail_node` rows.
+   */
+  async nodesForTrails(trailIds) {
+    if (!trailIds.length) {
+      return [];
+    }
+    const { names, params } = bindList(trailIds, "t");
+    const rows = await this.#connection.execute(
+      `SELECT id, trail_id, parent_id, url, title, scroll_x, scroll_y,
+              form_state, created_at, last_visited_at, dismissed_at
+       FROM trail_node WHERE trail_id IN (${names}) ORDER BY id`,
+      params
+    );
+    return rows.map(row =>
+      plain(row, [
+        "id",
+        "trail_id",
+        "parent_id",
+        "url",
+        "title",
+        "scroll_x",
+        "scroll_y",
+        "form_state",
+        "created_at",
+        "last_visited_at",
+        "dismissed_at",
+      ])
+    );
+  }
+
+  /**
+   * Each trail's provenance context, so a restored trail keeps its topic.
+   *
+   * Nothing links a trail to a context directly — membership is per node, by
+   * design, because a context is a set of records and not a second name for a
+   * trail. The link is therefore read back rather than stored: the context
+   * most of a trail's nodes joined by provenance is that trail's context. A
+   * majority rather than a first row, because `context <mark>` can move
+   * individual records and the answer must survive that.
+   *
+   * @param {number[]} trailIds
+   * @returns {Promise<Map<number, number>>} Trail id → context id.
+   */
+  async contextsForTrails(trailIds) {
+    const byTrail = new Map();
+    if (!trailIds.length) {
+      return byTrail;
+    }
+    const { names, params } = bindList(trailIds, "t");
+    const rows = await this.#connection.execute(
+      `SELECT n.trail_id, m.context_id, COUNT(*) AS members
+       FROM context_member m
+       JOIN trail_node n ON n.id = m.trail_node_id
+       WHERE m.source = 'provenance' AND n.trail_id IN (${names})
+       GROUP BY n.trail_id, m.context_id
+       ORDER BY members DESC`,
+      params
+    );
+    for (const row of rows) {
+      const { trail_id: trailId, context_id: contextId } = plain(row, [
+        "trail_id",
+        "context_id",
+      ]);
+      if (!byTrail.has(trailId)) {
+        byTrail.set(trailId, contextId);
+      }
+    }
+    return byTrail;
   }
 
   // ---- queries, visits, entities ------------------------------------------
@@ -630,6 +793,27 @@ function plain(row, names) {
     out[name] = row.getResultByName(name);
   }
   return out;
+}
+
+/**
+ * Named bindings for an `IN` list.
+ *
+ * `execute` binds one value per name and has no array form, so a list has to
+ * become names. Building them beats interpolating the numbers: the values here
+ * are ours rather than a user's, but a query that interpolates is a query that
+ * teaches the next one to.
+ *
+ * @param {Array} values
+ * @param {string} prefix A short parameter-name prefix.
+ * @returns {{names: string, params: object}} `":p0, :p1"` and its bindings.
+ */
+function bindList(values, prefix) {
+  const params = {};
+  const names = values.map((value, i) => {
+    params[`${prefix}${i}`] = value;
+    return `:${prefix}${i}`;
+  });
+  return { names: names.join(", "), params };
 }
 
 /**

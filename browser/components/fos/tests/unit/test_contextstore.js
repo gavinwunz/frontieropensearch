@@ -322,3 +322,134 @@ add_task(async function test_the_active_context_is_the_one_last_worked_in() {
   Assert.equal(all[0].id, first, "contexts list most recently active first");
   await store.close();
 });
+
+add_task(async function test_restoring_returns_the_most_recent_trails() {
+  const store = await freshStore();
+  const older = await store.addTrail({ name: "older", now: 1000 });
+  const newer = await store.addTrail({ name: "newer", now: 2000 });
+  const empty = await store.addTrail({ now: 3000 });
+  for (const trailId of [older, newer]) {
+    await store.addNode({ trailId, url: `https://example.invalid/${trailId}` });
+  }
+
+  const { trails, nodes } = await store.restorable();
+  Assert.deepEqual(
+    trails.map(t => t.id),
+    [newer, older],
+    "most recently worked in first"
+  );
+  Assert.ok(
+    !trails.some(t => t.id === empty),
+    "a trail with no nodes is not worth a region on the Field"
+  );
+  Assert.equal(nodes.length, 2, "and every node of the trails that did return");
+  Assert.equal(
+    trails[0].node_count,
+    undefined,
+    "the count was the budget's business, not the caller's"
+  );
+
+  const capped = await store.restorable({ trailLimit: 1 });
+  Assert.deepEqual(
+    capped.trails.map(t => t.id),
+    [newer]
+  );
+  await store.close();
+});
+
+add_task(async function test_a_trail_comes_back_whole_or_not_at_all() {
+  const store = await freshStore();
+  const big = await store.addTrail({ now: 2000 });
+  for (let i = 0; i < 4; i++) {
+    await store.addNode({ trailId: big, url: `https://example.invalid/${i}` });
+  }
+  const small = await store.addTrail({ now: 1000 });
+  await store.addNode({ trailId: small, url: "https://example.invalid/small" });
+
+  // Three is not enough for the newer trail. Truncating it would draw a tree
+  // the user never browsed, so the budget passes over it and spends what it
+  // has on the one that fits.
+  const { trails, nodes } = await store.restorable({ nodeLimit: 3 });
+  Assert.deepEqual(
+    trails.map(t => t.id),
+    [small],
+    "a trail over budget is skipped rather than cut down"
+  );
+  Assert.equal(nodes.length, 1);
+  await store.close();
+});
+
+add_task(async function test_an_archived_trail_does_not_come_back() {
+  const store = await freshStore();
+  const trailId = await store.addTrail({ now: 1000 });
+  await store.addNode({ trailId, url: "https://example.invalid/" });
+  await store.connection.execute(
+    "UPDATE trail SET archived_at = 5 WHERE id = :id",
+    { id: trailId }
+  );
+
+  const { trails } = await store.restorable();
+  Assert.equal(trails.length, 0, "archiving is how a trail stops being open");
+  await store.close();
+});
+
+add_task(async function test_restored_nodes_carry_what_re_entry_needs() {
+  const store = await freshStore();
+  const trailId = await store.addTrail({ now: 1000 });
+  const root = await store.addNode({
+    trailId,
+    url: "https://example.invalid/",
+    title: "Root",
+  });
+  const child = await store.addNode({
+    trailId,
+    parentId: root,
+    url: "https://example.invalid/child",
+  });
+  await store.updateNode(child, {
+    scrollY: 820,
+    formState: '{"entry":{"url":"https://example.invalid/child"}}',
+  });
+  const gone = await store.addNode({
+    trailId,
+    url: "https://example.invalid/x",
+  });
+  await store.dismissNode(gone, 4242);
+
+  const [, restoredChild, restoredGone] = await store.nodesForTrails([trailId]);
+  Assert.equal(restoredChild.parent_id, root, "the shape of the tree");
+  Assert.equal(restoredChild.scroll_y, 820, "where the user was on the page");
+  Assert.ok(restoredChild.form_state.includes("entry"), "and what they typed");
+  Assert.equal(
+    restoredGone.dismissed_at,
+    4242,
+    "a dismissed node is still on its trail, so leaving it out would make " +
+      "dismissal into deletion at the next restart"
+  );
+  Assert.deepEqual(await store.nodesForTrails([]), []);
+  await store.close();
+});
+
+add_task(async function test_a_restored_trail_finds_its_context_again() {
+  const store = await freshStore();
+  const trailId = await store.addTrail({ now: 1000 });
+  const mine = await store.addContext({ label: "mine", now: 1000 });
+  const other = await store.addContext({ label: "other", now: 1000 });
+  for (let i = 0; i < 3; i++) {
+    const nodeId = await store.addNode({
+      trailId,
+      url: `https://example.invalid/${i}`,
+    });
+    // The last node was moved into another context by hand, which is exactly
+    // what `context <mark>` does and must not change the trail's own topic.
+    await store.addMember(i === 2 ? other : mine, {
+      nodeId,
+      source: i === 2 ? "manual" : "provenance",
+    });
+  }
+
+  const contexts = await store.contextsForTrails([trailId]);
+  Assert.equal(contexts.get(trailId), mine, "the provenance majority wins");
+  Assert.equal((await store.contextsForTrails([])).size, 0);
+  await store.close();
+});

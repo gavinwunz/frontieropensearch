@@ -276,6 +276,41 @@ export class FOSTrailSession {
     return () => this.#listeners.delete(listener);
   }
 
+  /**
+   * Put a previous session's trails back into this window's tree.
+   *
+   * The Context Engine owns the reading — it is the half that knows the
+   * database — and this owns what a restored trail *means* to the window:
+   * subscribers are told, and the newest restored trail becomes the active one
+   * so its nodes take marks and the rail has something to draw. That last part
+   * is not cosmetic. No browser is on any restored trail, so nothing else will
+   * ever make one active, and a trail nobody can address is a trail that came
+   * back only as far as the Field. The first navigation in a tab still opens a
+   * trail of its own and takes the active slot back, which is unchanged: the
+   * restored trail is what the user is looking at, not what they are on.
+   *
+   * @param {object} records `{trails, nodes}` rows, as `TrailStore.hydrate`
+   *   takes them.
+   * @returns {{trails: Map<number, number>, nodes: Map<number, number>}}
+   */
+  hydrate(records) {
+    const ids = this.store.hydrate(records);
+    if (this.#activeTrailId === null) {
+      let newest = null;
+      for (const trail of this.store.trails()) {
+        if (!newest || trail.updated_at > newest.updated_at) {
+          newest = trail;
+        }
+      }
+      if (newest) {
+        this.#activeTrailId = newest.id;
+        this.#syncMarks();
+      }
+    }
+    this.#changed();
+    return ids;
+  }
+
   // ---- capture ------------------------------------------------------------
 
   /**

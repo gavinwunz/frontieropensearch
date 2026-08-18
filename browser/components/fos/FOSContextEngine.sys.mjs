@@ -131,6 +131,18 @@ export class FOSContextEngine {
   #pinnedContextId = null;
   /** A query recorded but not yet attached to the node it opened. */
   #pendingQuery = null;
+  /**
+   * In-memory node id → the values last written for it.
+   *
+   * Reconciliation walks the whole tree on every change, so without this every
+   * navigation rewrote every node it had ever seen. That was merely wasteful
+   * while the columns were three integers and a title; it stopped being so
+   * once the session-store blob joined them, since that is the largest thing
+   * the engine writes and the one least likely to have changed.
+   */
+  #written = new Map();
+  /** Database trail id → the name last written for it. */
+  #trailNames = new Map();
   /** Serialises writes so they land in the order they happened. */
   #queue = Promise.resolve();
 
@@ -181,6 +193,10 @@ export class FOSContextEngine {
     this.#session = session;
     this.#marks = marks ?? session.marks;
     this.#store = store ?? (await FOSContextEngine.store());
+
+    // Before subscribing, so the first reconciliation already knows which rows
+    // exist and writes none of them a second time.
+    await this.#hydrate();
 
     this.#unsubscribe.push(session.subscribe(() => this.#reconcile()));
     this.#unsubscribe.push(
@@ -245,6 +261,83 @@ export class FOSContextEngine {
   }
 
   /**
+   * Put the previous session's trails back, once per launch.
+   *
+   * The direction is the mirror of `#reconcile`, and the id maps are what make
+   * the two agree: seeding them with what was just read is what tells the next
+   * reconciliation that these rows already exist. Without that it would see a
+   * tree full of nodes it had never written and write every one of them again,
+   * so restoring a session would double it.
+   *
+   * Every failure here is survivable and none of them may stop a window
+   * opening, so a database that cannot be read costs the user their previous
+   * trails and nothing else.
+   */
+  async #hydrate() {
+    const session = this.#session;
+    // A window with a tree of its own is not a window that just launched, and
+    // the store may be absent entirely if `attach` was given none.
+    if (!session || !this.#store || session.store.trails().length) {
+      return;
+    }
+    // Restoration happens once per database, into whichever window asks first.
+    // Each window keeps its own tree — a tab is a trail and a tab belongs to a
+    // window — so restoring into every window would put one trail on two
+    // Fields, with two windows reconciling their own copy of it onto the same
+    // rows. One window gets the past back; the rest open as they always did.
+    if (!this.#store.claimRestoration()) {
+      return;
+    }
+
+    let records;
+    let ids;
+    try {
+      records = await this.#store.restorable();
+      if (!records.trails.length) {
+        return;
+      }
+      // `hydrate` validates before it writes, so a set it refuses leaves the
+      // tree empty rather than half restored, and this window opens as though
+      // there were nothing to come back to.
+      ids = session.hydrate(records);
+    } catch (e) {
+      console.error("FOSContextEngine: cannot restore the previous session", e);
+      return;
+    }
+    for (const [databaseId, memoryId] of ids.trails) {
+      this.#trailIds.set(memoryId, databaseId);
+    }
+    for (const [databaseId, memoryId] of ids.nodes) {
+      this.#nodeIds.set(memoryId, databaseId);
+    }
+    for (const trail of records.trails) {
+      this.#trailNames.set(trail.id, trail.name ?? null);
+    }
+    for (const memoryId of ids.nodes.values()) {
+      const node = session.store.getNode(memoryId);
+      if (node) {
+        this.#written.set(memoryId, signatureOf(node));
+      }
+    }
+
+    try {
+      const contexts = await this.#store.contextsForTrails([
+        ...ids.trails.keys(),
+      ]);
+      for (const [trailId, contextId] of contexts) {
+        this.#contextByTrail.set(trailId, contextId);
+      }
+    } catch (e) {
+      // A restored trail whose context did not come back gets a fresh one from
+      // the next reconciliation, so this costs the topic's history and not the
+      // trail.
+      console.error("FOSContextEngine: cannot read restored contexts", e);
+    }
+
+    this.#syncContextMarks();
+  }
+
+  /**
    * Write down anything in the in-memory tree the database has not seen.
    *
    * Nodes are walked in creation order so a parent is always written before its
@@ -272,11 +365,23 @@ export class FOSContextEngine {
           // chose, and `name` is how a context gets a real one.
           const contextId = await store.addContext({ label: trail.name });
           this.#contextByTrail.set(trailId, contextId);
-        } else if (trail.name) {
-          await store.nameTrail(trailId, trail.name);
-          const contextId = this.#contextByTrail.get(trailId);
-          if (contextId) {
-            await store.labelContext(contextId, trail.name);
+          this.#trailNames.set(trailId, trail.name ?? null);
+        } else {
+          // A restored trail can arrive without a context — one recorded before
+          // contexts existed, or one whose members were all moved elsewhere by
+          // `context <mark>`. Reconciliation is where a missing row is noticed,
+          // so it is where this is healed rather than at restore time.
+          if (!this.#contextByTrail.has(trailId)) {
+            const contextId = await store.addContext({ label: trail.name });
+            this.#contextByTrail.set(trailId, contextId);
+          }
+          if (trail.name && this.#trailNames.get(trailId) !== trail.name) {
+            await store.nameTrail(trailId, trail.name);
+            this.#trailNames.set(trailId, trail.name);
+            const contextId = this.#contextByTrail.get(trailId);
+            if (contextId) {
+              await store.labelContext(contextId, trail.name);
+            }
           }
         }
       }
@@ -300,6 +405,7 @@ export class FOSContextEngine {
             title: node.title,
           });
           this.#nodeIds.set(node.id, nodeId);
+          this.#written.set(node.id, signatureOf(node));
 
           const contextId = this.#contextByTrail.get(trailId);
           if (contextId) {
@@ -314,12 +420,21 @@ export class FOSContextEngine {
             this.#pendingQuery = null;
           }
         } else {
-          await store.updateNode(nodeId, {
-            title: node.title ?? undefined,
-            scrollX: node.scroll_x ?? undefined,
-            scrollY: node.scroll_y ?? undefined,
-            dismissedAt: node.dismissed_at ?? undefined,
-          });
+          const signature = signatureOf(node);
+          if (!sameSignature(this.#written.get(node.id), signature)) {
+            await store.updateNode(nodeId, {
+              title: node.title ?? undefined,
+              scrollX: node.scroll_x ?? undefined,
+              scrollY: node.scroll_y ?? undefined,
+              // The blob is what makes re-entry lossless across a restart:
+              // without it a restored node can be reopened at its URL and its
+              // scroll offset, and the form the user had half filled in is
+              // gone.
+              formState: node.form_state ?? undefined,
+              dismissedAt: node.dismissed_at ?? undefined,
+            });
+            this.#written.set(node.id, signature);
+          }
         }
       }
     });
@@ -609,5 +724,37 @@ function copyToClipboard(text, window) {
     transferable,
     null,
     Ci.nsIClipboard.kGlobalClipboard
+  );
+}
+
+/**
+ * The mutable half of a node — everything an update would write.
+ *
+ * @param {object} node An in-memory `trail_node`.
+ * @returns {object} A comparable snapshot.
+ */
+function signatureOf(node) {
+  return {
+    title: node.title ?? null,
+    scrollX: node.scroll_x ?? null,
+    scrollY: node.scroll_y ?? null,
+    formState: node.form_state ?? null,
+    dismissedAt: node.dismissed_at ?? null,
+  };
+}
+
+/**
+ * @param {?object} a A previous signature, or undefined for never written.
+ * @param {object} b The current signature.
+ * @returns {boolean} Whether an update would be a no-op.
+ */
+function sameSignature(a, b) {
+  return (
+    !!a &&
+    a.title === b.title &&
+    a.scrollX === b.scrollX &&
+    a.scrollY === b.scrollY &&
+    a.formState === b.formState &&
+    a.dismissedAt === b.dismissedAt
   );
 }

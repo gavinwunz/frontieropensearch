@@ -24,6 +24,9 @@ const { FOSCommandBar } = ChromeUtils.importESModule(
 const { FOSTrailSession } = ChromeUtils.importESModule(
   "resource:///modules/FOSTrailSession.sys.mjs"
 );
+const { FOSContextStore } = ChromeUtils.importESModule(
+  "resource:///modules/FOSContextStore.sys.mjs"
+);
 
 const PAGE_A = "https://example.com/";
 const PAGE_B = "https://example.org/";
@@ -334,4 +337,137 @@ add_task(async function test_a_context_earns_a_mark_by_being_named() {
   });
   Assert.ok(outcome.ok, "the verb ran");
   Assert.equal(outcome.result, contextId, "and switched to that context");
+});
+
+add_task(async function test_a_restart_brings_the_previous_session_back() {
+  // A restart, told honestly: a database with yesterday's tree in it, a window
+  // whose tree is empty, and nothing shared between the two but the file. This
+  // is the property the fork claimed and did not have — the tree was
+  // session-scoped, so closing the browser lost every branch it had promised
+  // never to destroy.
+  const path = PathUtils.join(PathUtils.profileDir, "restore-test.sqlite");
+  await IOUtils.remove(path, { ignoreAbsent: true });
+  const store = await FOSContextStore.open({ path });
+  const trailId = await store.addTrail({ name: "yesterday", now: 1000 });
+  const root = await store.addNode({ trailId, url: PAGE_A, title: "A" });
+  const child = await store.addNode({
+    trailId,
+    parentId: root,
+    url: PAGE_B,
+    title: "B",
+  });
+  await store.updateNode(child, { scrollY: 512 });
+  const contextId = await store.addContext({ label: "yesterday", now: 1000 });
+  for (const nodeId of [root, child]) {
+    await store.addMember(contextId, { nodeId, source: "provenance" });
+  }
+
+  const session = new FOSTrailSession(window);
+  const revived = new FOSContextEngine(window);
+  registerCleanupFunction(async () => {
+    revived.detach();
+    session.detach();
+    await store.close();
+  });
+
+  await revived.attach({ session, store });
+  await revived.settled;
+
+  Assert.deepEqual(
+    session.store.nodes().map(node => node.id),
+    [root, child],
+    "yesterday's nodes came back, under the ids the database gave them"
+  );
+  Assert.equal(
+    session.store.getNode(child).parent_id,
+    root,
+    "and the shape of the tree came back with them"
+  );
+  Assert.equal(
+    session.store.getNode(child).scroll_y,
+    512,
+    "including where on the page the user had got to"
+  );
+  Assert.equal(
+    session.activeTrailId,
+    trailId,
+    "a restored trail is active, so the rail has something to draw and its " +
+      "nodes can take marks"
+  );
+  Assert.equal(
+    revived.activeContextId,
+    contextId,
+    "and the topic came back with the trail rather than starting again"
+  );
+
+  const [countRow] = await store.connection.execute(
+    "SELECT COUNT(*) AS n FROM trail_node"
+  );
+  Assert.equal(
+    countRow.getResultByName("n"),
+    2,
+    "reconciliation after a restore writes nothing: the id maps were seeded " +
+      "by the restore, so the rows it just read are rows it knows about. " +
+      "Without that, every restart would double the tree"
+  );
+
+  // What the user actually asked for: yesterday's page, open again.
+  session.attach();
+  const loaded = BrowserTestUtils.browserLoaded(
+    gBrowser.selectedBrowser,
+    false,
+    PAGE_B
+  );
+  Assert.ok(await session.enter(child), "a restored node can be re-entered");
+  await loaded;
+  Assert.equal(
+    gBrowser.selectedBrowser.currentURI.spec,
+    PAGE_B,
+    "and the page it names is the page that loads"
+  );
+
+  // And today's browsing continues the trail rather than starting beside it.
+  await goTo(PAGE_A);
+  await revived.settled;
+  const [added] = await store.connection.execute(
+    `SELECT parent_id FROM trail_node WHERE id > :child ORDER BY id`,
+    { child }
+  );
+  Assert.ok(added, "the next page was recorded");
+  Assert.equal(
+    added.getResultByName("parent_id"),
+    child,
+    "as a child of the restored node, so a restart is not a fresh start"
+  );
+
+  session.detach();
+  revived.detach();
+});
+
+add_task(async function test_only_one_window_restores_a_database() {
+  const path = PathUtils.join(PathUtils.profileDir, "restore-claim.sqlite");
+  await IOUtils.remove(path, { ignoreAbsent: true });
+  const store = await FOSContextStore.open({ path });
+  const trailId = await store.addTrail({ now: 1000 });
+  await store.addNode({ trailId, url: PAGE_A });
+
+  const first = new FOSTrailSession(window);
+  const second = new FOSTrailSession(window);
+  const engines = [new FOSContextEngine(window), new FOSContextEngine(window)];
+  await engines[0].attach({ session: first, store });
+  await engines[1].attach({ session: second, store });
+  await Promise.all(engines.map(each => each.settled));
+
+  Assert.equal(first.store.nodes().length, 1, "the first window gets the past");
+  Assert.equal(
+    second.store.nodes().length,
+    0,
+    "and the second opens as it always did, rather than putting the same " +
+      "trail on a second Field with two windows reconciling onto one row"
+  );
+
+  for (const each of engines) {
+    each.detach();
+  }
+  await store.close();
 });
