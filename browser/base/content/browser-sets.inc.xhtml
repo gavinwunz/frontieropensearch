@@ -64,6 +64,9 @@
     <!-- Frontier OpenSearch: the trail rail, which is what this fork has
          instead of a linear history sidebar. See design/FIELD.md. -->
     <command id="FOS:TrailRail" />
+    <!-- Frontier OpenSearch: the Field, which is what this fork has instead
+         of a tab strip. See design/FIELD.md. -->
+    <command id="FOS:Field" />
 
     <command id="Browser:AddBookmarkAs" />
     <command id="Browser:SearchBookmarks" />
@@ -351,6 +354,14 @@
     <key                          data-l10n-id="full-zoom-reset-shortcut-alt"   command="cmd_fullZoomReset"   modifiers="accel"/>
 
     <key id="key_showAllTabs" keycode="VK_TAB" modifiers="control,shift"/>
+    <!-- One key toggles page and Field, with no modifier: the Field is a
+         place you go, not a panel you summon, and the phase plan asks for a
+         single gesture. F2 is chosen because it is unbound in the browser and
+         cannot be typed into a page as text — the modified keys are all spoken
+         for, and stealing one from devtools to pay for a browsing surface is a
+         trade this fork has no reason to make. The word `field` in the command
+         bar is the primary path either way; this is the shortcut for it. -->
+    <key id="key_fosField" keycode="VK_F2" command="FOS:Field"/>
 
     <key id="key_switchTextDirection" data-l10n-id="bidi-switch-direction-shortcut" command="cmd_switchTextDirection" modifiers="accel,shift" />
 

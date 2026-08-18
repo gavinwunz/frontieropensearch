@@ -155,7 +155,7 @@ add_task(async function test_marks_are_listed_with_their_spoken_form() {
   const commandBar = bar();
   const card = commandBar.marks.assign("card-1", {
     label: "gecko",
-    type: "card",
+    type: "node",
   });
   const context = commandBar.marks.assign("ctx-1", {
     label: "reading",
@@ -249,19 +249,19 @@ add_task(async function test_a_query_navigates() {
 
 add_task(async function test_an_unwired_verb_is_refused_not_searched() {
   const commandBar = bar();
-  const card = commandBar.marks.assign("card-1", {
+  const context = commandBar.marks.assign("context-1", {
     label: "gecko",
-    type: "card",
+    type: "context",
   });
 
-  // The Field has no UI yet, so `enter` has no handler. The property that
-  // matters is what happens then: GRAMMAR.md §3 says a well-formed command
+  // The Context Engine has no UI yet, so `context` has no handler. The property
+  // that matters is what happens then: GRAMMAR.md §3 says a well-formed command
   // must never quietly become a web search, so the dispatcher has to say it
   // could not run rather than fall through.
-  Assert.ok(!commandBar.actions.has("enter"), "`enter` is unwired for now");
+  Assert.ok(!commandBar.actions.has("context"), "`context` is unwired for now");
 
   const before = gBrowser.selectedBrowser.currentURI.spec;
-  const outcome = commandBar.run(`enter ${card}`);
+  const outcome = commandBar.run(`context ${context}`);
 
   Assert.equal(outcome.ran[0].reason, NOT_WIRED, "reported as unwired");
   Assert.equal(

@@ -313,7 +313,15 @@ var gBrowserInit = {
     const { FOSCommandBar } = ChromeUtils.importESModule(
       "resource:///modules/FOSCommandBar.sys.mjs"
     );
-    FOSTrailSession.forWindow(window).wire(FOSCommandBar.forWindow(window));
+    const { FOSFieldSurface } = ChromeUtils.importESModule(
+      "resource:///modules/FOSFieldSurface.sys.mjs"
+    );
+    const bar = FOSCommandBar.forWindow(window);
+    FOSTrailSession.forWindow(window).wire(bar);
+    // Pillar A wires after pillar B, because a region is a trail: the Field
+    // reads the captured tree and would have nothing to place cards into if it
+    // went first.
+    FOSFieldSurface.forWindow(window).wire(bar);
 
     // TODO bug 2038578: audit these consumers and move any that don't need
     // to run before SessionStore's per-window init to 'browser-window-load'.

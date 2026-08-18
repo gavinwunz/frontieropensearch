@@ -29,13 +29,12 @@ function clock() {
 /**
  * A trail store and an empty Field sharing one clock.
  *
- * @param {object} [options]
- * @param {?object} [options.marks] A `MarkRegistry`, when the test needs marks.
+ * @returns {{trails: object, field: object}}
  */
-function setup({ marks = null } = {}) {
+function setup() {
   const now = clock();
   const trails = new TrailStore({ now });
-  const field = new FieldModel({ trails, marks, now });
+  const field = new FieldModel({ trails, now });
   return { trails, field };
 }
 
@@ -106,9 +105,13 @@ test("a child seeds next to its parent, not at the far end of the region", () =>
   );
 });
 
-test("cards carry a mark when a registry is supplied", () => {
+test("the model assigns no marks: a page has one, and it is its node's", () => {
+  // Cards used to take a letter of their own, which spent two of the
+  // twenty-six on every page and was caught by the trail rail silently losing
+  // its marks in a session of ordinary size. A card is a page's presence on
+  // the Field, not a second object to address.
   const marks = new MarkRegistry();
-  const { trails, field } = setup({ marks });
+  const { trails, field } = setup();
   const trailId = trails.createTrail();
   const node = trails.addNode({
     trailId,
@@ -117,8 +120,8 @@ test("cards carry a mark when a registry is supplied", () => {
   });
   const card = field.place(node);
 
-  assert.ok(card.mark, "a card is addressable, so it has a mark");
-  assert.equal(marks.objectAt(card.mark), `card:${card.id}`);
+  assert.equal(card.mark, undefined, "the card carries no letter of its own");
+  assert.equal(marks.size, 0, "and the model touched no registry");
 });
 
 // ------------------------------- §9.3 — cards never overlap, under any operation

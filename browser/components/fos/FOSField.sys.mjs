@@ -95,7 +95,6 @@ export const REFUSED = Object.freeze({
  */
 export class FieldModel {
   #trails;
-  #marks;
   #now;
   #geom;
 
@@ -112,20 +111,22 @@ export class FieldModel {
   #nextCardId = 1;
 
   /**
+   * NOTE ON MARKS: the model deliberately assigns none. A page is one object
+   * with one mark, and that mark belongs to its trail node — the card is the
+   * page's presence on the Field, not a second thing to address. Giving cards
+   * their own letters cost every page two of the twenty-six and was caught by
+   * the rail losing its marks in a session of ordinary size.
+   *
    * @param {object} options
    * @param {object} options.trails A `TrailStore`.
-   * @param {?object} [options.marks] A `MarkRegistry`. Cards are addressable, so
-   *   they carry marks; injected rather than imported so the geometry can be
-   *   tested on its own.
    * @param {function(): number} [options.now] Clock, injectable for tests.
    * @param {object} [options.geometry] Overrides for `FIELD_GEOMETRY`.
    */
-  constructor({ trails, marks = null, now = () => Date.now(), geometry = {} }) {
+  constructor({ trails, now = () => Date.now(), geometry = {} }) {
     if (!trails) {
       throw new Error("the Field needs a trail store: a region is a trail");
     }
     this.#trails = trails;
-    this.#marks = marks;
     this.#now = now;
     this.#geom = Object.freeze({ ...FIELD_GEOMETRY, ...geometry });
     this.#slots = new Array(this.#geom.overviewSlots).fill(null);
@@ -300,13 +301,6 @@ export class FieldModel {
     this.#cards.set(card.id, card);
     this.#cardsByNode.set(nodeId, card.id);
     region.touched_at = this.#now();
-
-    if (this.#marks) {
-      card.mark = this.#marks.assign(`card:${card.id}`, {
-        label: node.title || node.url,
-        type: "card",
-      });
-    }
     return card;
   }
 
@@ -686,9 +680,6 @@ export class FieldModel {
     this.#trails.dismiss(card.node_id);
     this.#cards.delete(cardId);
     this.#cardsByNode.delete(card.node_id);
-    if (this.#marks) {
-      this.#marks.release(`card:${cardId}`);
-    }
     const region = this.#regions.get(card.region_id);
     if (region) {
       region.touched_at = this.#now();

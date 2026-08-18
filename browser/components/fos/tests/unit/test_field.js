@@ -23,9 +23,6 @@ const { FieldModel, REFUSED, FIELD_GEOMETRY } = ChromeUtils.importESModule(
 const { TrailStore } = ChromeUtils.importESModule(
   "resource:///modules/FOSTrailTree.sys.mjs"
 );
-const { MarkRegistry } = ChromeUtils.importESModule(
-  "resource:///modules/FOSMarks.sys.mjs"
-);
 
 /**
  * A trail of `count` pages, all placed on a Field.
@@ -34,8 +31,7 @@ const { MarkRegistry } = ChromeUtils.importESModule(
  */
 function session(count) {
   const trails = new TrailStore();
-  const marks = new MarkRegistry();
-  const field = new FieldModel({ trails, marks });
+  const field = new FieldModel({ trails });
   const trailId = trails.createTrail({ name: "spatial hypertext" });
 
   let node = trails.addNode({
@@ -51,7 +47,7 @@ function session(count) {
     });
     cards.push(field.place(node));
   }
-  return { trails, marks, field, trailId, cards, last: node };
+  return { trails, field, trailId, cards, last: node };
 }
 
 add_task(async function test_no_overlap_at_session_scale() {
@@ -125,14 +121,12 @@ add_task(async function test_placement_never_fails_off_lattice() {
 });
 
 add_task(async function test_dismissal_is_lossless() {
-  const { trails, marks, field } = session(5);
+  const { trails, field } = session(5);
   const card = field.cards()[0];
   trails.setViewState(card.node_id, {
     scrollY: 2400,
     formState: '{"q":"bush"}',
   });
-  const mark = card.mark;
-
   field.dismiss(card.id);
 
   const node = trails.getNode(card.node_id);
@@ -140,7 +134,6 @@ add_task(async function test_dismissal_is_lossless() {
   Assert.ok(node.dismissed_at, "dismissed, not deleted");
   Assert.equal(node.scroll_y, 2400, "scroll survived");
   Assert.equal(node.form_state, '{"q":"bush"}', "form state survived");
-  Assert.equal(marks.objectAt(mark), null, "the mark was released");
 
   const restored = field.restore(card.node_id);
   Assert.ok(restored, "one call brings it back");

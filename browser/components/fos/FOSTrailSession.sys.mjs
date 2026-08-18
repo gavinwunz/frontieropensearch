@@ -113,6 +113,7 @@ export class FOSTrailSession {
   #nodeByBrowser = new WeakMap();
   #trailByBrowser = new WeakMap();
   #markedNodes = new Set();
+  #retainers = new Set();
   #restoring = new WeakMap();
   #recent = [];
   #activeTrailId = null;
@@ -142,6 +143,38 @@ export class FOSTrailSession {
   get currentNodeId() {
     const browser = this.#window.gBrowser?.selectedBrowser;
     return browser ? (this.#nodeByBrowser.get(browser) ?? null) : null;
+  }
+
+  /**
+   * The node a given browser is on, or null.
+   *
+   * The Field reads this to know which of its cards has a live browser behind
+   * it right now, which is the set it can capture a fresh snapshot for.
+   *
+   * @param {?object} browser A browser element.
+   * @returns {?number} A node id.
+   */
+  nodeForBrowser(browser) {
+    return browser ? (this.#nodeByBrowser.get(browser) ?? null) : null;
+  }
+
+  /**
+   * The tab whose browser is on a given trail, or null.
+   *
+   * A tab opens a trail and stays on it, so this is a lookup rather than a
+   * guess. It is null once the tab has been closed, which is a real state and
+   * not an error: closing a tab does not end its trail.
+   *
+   * @param {number} trailId
+   * @returns {?object} A tab element.
+   */
+  tabForTrail(trailId) {
+    for (const tab of this.#window.gBrowser?.tabs ?? []) {
+      if (this.#trailByBrowser.get(tab.linkedBrowser) === trailId) {
+        return tab;
+      }
+    }
+    return null;
   }
 
   /**
@@ -179,6 +212,24 @@ export class FOSTrailSession {
     gBrowser.tabContainer.removeEventListener("TabClose", this);
     gBrowser.tabContainer.removeEventListener("TabSelect", this);
     this.#attached = false;
+  }
+
+  /**
+   * Register a supplier of node ids that must keep their marks.
+   *
+   * Marks go to the active trail, which is right for the rail and wrong for
+   * anything that addresses pages across trails — the Field holds cards in
+   * every region, and a card whose page had lost its letter could not be
+   * entered. Rather than teach pillar B about pillar A, this lets any surface
+   * say which pages it considers in play; the union is what stays marked.
+   *
+   * @param {Function} supplier Returns an iterable of node ids.
+   * @returns {Function} A function that stops retaining.
+   */
+  retain(supplier) {
+    this.#retainers.add(supplier);
+    this.#syncMarks();
+    return () => this.#retainers.delete(supplier);
   }
 
   /**
@@ -509,7 +560,18 @@ export class FOSTrailSession {
       return false;
     }
     const { gBrowser } = this.#window;
-    const tab = gBrowser.selectedTab;
+    // Restore into the tab that owns this node's trail, not into whichever tab
+    // happens to be in front. Pillar B could not reach this case — node marks
+    // only ever cover the active trail — but the Field addresses every card in
+    // every region, so `enter` on a card three trails away would otherwise
+    // have dragged the current tab onto a trail it was never on, and taken its
+    // page with it. A trail with no tab left falls through to the selected
+    // one, which is the honest reading of re-entering something you closed.
+    const owning = this.tabForTrail(node.trail_id);
+    const tab = owning ?? gBrowser.selectedTab;
+    if (owning && owning !== gBrowser.selectedTab) {
+      gBrowser.selectedTab = owning;
+    }
     const browser = tab.linkedBrowser;
 
     const leaving = this.#nodeByBrowser.get(browser);
@@ -696,10 +758,37 @@ export class FOSTrailSession {
     if (!this.#marks || this.#activeTrailId === null) {
       return;
     }
+    // Two ranks, and the order is the rule. The trail you are on is what the
+    // rail shows and what `back` and `graft` address, so its nodes are marked
+    // first and, when the alphabet is full, are allowed to take a letter back
+    // from a retained page in some other trail. Retention is a claim on a
+    // letter, not a guarantee of one: a Field holding forty cards must not be
+    // able to leave the page under the cursor unaddressable.
+    const primary = this.store.nodes(this.#activeTrailId).map(n => n.id);
+    const inPrimary = new Set(primary);
+    const secondary = [];
+    for (const supplier of this.#retainers) {
+      for (const id of supplier()) {
+        if (!inPrimary.has(id)) {
+          secondary.push(id);
+        }
+      }
+    }
+
     const live = new Set();
-    for (const node of this.store.nodes(this.#activeTrailId)) {
+    for (const id of [...primary, ...secondary]) {
+      const node = this.store.getNode(id);
+      if (!node) {
+        continue;
+      }
       const key = nodeKey(node.id);
+      if (live.has(key)) {
+        continue;
+      }
       live.add(key);
+      if (inPrimary.has(id) && !this.#marks.markOf(key)) {
+        this.#evictForPrimary(inPrimary);
+      }
       this.#marks.assign(key, {
         // The label the rail shows, never the raw URL. A mark is assigned the
         // moment a node is created, which is before the title arrives, so
@@ -717,6 +806,41 @@ export class FOSTrailSession {
       }
     }
     this.#markedNodes = live;
+  }
+
+  /**
+   * Free one letter for a node of the active trail, if the alphabet is full.
+   *
+   * The victim is a marked node outside the active trail — a retained one, held
+   * for a surface that addresses pages across trails — and the least recently
+   * visited of those, because that is the page least likely to be reached for
+   * next. Nothing in the active trail is ever a victim, and the page loses only
+   * its letter: it is still on its trail, still on the Field, and still
+   * reachable by search, which is what `GRAMMAR.md` §2 already says happens
+   * past twenty-six.
+   *
+   * @param {Set<number>} protectedIds Node ids that may not be evicted.
+   */
+  #evictForPrimary(protectedIds) {
+    let victim = null;
+    for (const key of this.#markedNodes) {
+      const id = nodeIdFromKey(key);
+      if (id === null || protectedIds.has(id) || !this.#marks.markOf(key)) {
+        continue;
+      }
+      const node = this.store.getNode(id);
+      if (!node) {
+        this.#marks.release(key);
+        return;
+      }
+      if (!victim || node.last_visited_at < victim.at) {
+        victim = { key, at: node.last_visited_at };
+      }
+    }
+    if (victim) {
+      this.#marks.release(victim.key);
+      this.#markedNodes.delete(victim.key);
+    }
   }
 
   #changed() {

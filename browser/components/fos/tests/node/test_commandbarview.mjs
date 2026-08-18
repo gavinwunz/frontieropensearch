@@ -130,7 +130,7 @@ test("a URL query says go, not search", () => {
 
 test("a pending target lists only the marks the verb accepts", () => {
   const marks = new MarkRegistry();
-  const card = marks.assign("card-1", { label: "gecko", type: "card" });
+  const card = marks.assign("card-1", { label: "gecko", type: "node" });
   const context = marks.assign("ctx-1", { label: "reading", type: "context" });
 
   const v = view("enter ", { marks });
@@ -160,7 +160,7 @@ test("an empty candidate list says so rather than showing nothing", () => {
 
 test("a complete command is runnable and describes itself", () => {
   const marks = new MarkRegistry();
-  const card = marks.assign("card-1", { label: "gecko", type: "card" });
+  const card = marks.assign("card-1", { label: "gecko", type: "node" });
 
   const v = view(`enter ${card}`, { marks });
 
@@ -173,7 +173,7 @@ test("a complete command is runnable and describes itself", () => {
 
 test("a chain describes every step in order", () => {
   const marks = new MarkRegistry();
-  const card = marks.assign("card-1", { label: "gecko", type: "card" });
+  const card = marks.assign("card-1", { label: "gecko", type: "node" });
 
   const v = view(`enter ${card} branch`, { marks });
 
@@ -205,7 +205,7 @@ test("a semantic error is refused, not silently searched", () => {
 
 test("a dead mark names its spoken form in the error", () => {
   const marks = new MarkRegistry();
-  marks.assign("card-1", { label: "gecko", type: "card" });
+  marks.assign("card-1", { label: "gecko", type: "node" });
 
   // `q` holds nothing, so this is a live-mark failure rather than a typo the
   // user can see. Naming the spoken form is what makes the message usable by

@@ -32,10 +32,16 @@
  */
 export const ACTIONS = Object.freeze({
   // Pillar A — the Field.
+  // `enter` and `dismiss` take a node, not a separate "card" kind. A page is
+  // one object: the card is its presence on the Field and the row is its
+  // presence on the rail, and giving each of those its own letter spent two of
+  // the twenty-six on one page. `enter` therefore reaches a page whose card has
+  // been dismissed too, which is exactly what FIELD.md §8 promises — dismissal
+  // is free because one `enter` brings it back.
   enter: {
     pillar: "field",
     target: "required",
-    accepts: ["card"],
+    accepts: ["node"],
     text: false,
     summary: "Zoom the card to fill the window and make it active",
   },
@@ -49,7 +55,7 @@ export const ACTIONS = Object.freeze({
   dismiss: {
     pillar: "field",
     target: "required",
-    accepts: ["card"],
+    accepts: ["node"],
     text: false,
     summary: "Drop the card from the Field, leaving the page on its trail",
   },
@@ -86,7 +92,7 @@ export const ACTIONS = Object.freeze({
   name: {
     pillar: "trails",
     target: "optional",
-    accepts: ["node", "trail", "card", "context"],
+    accepts: ["node", "trail", "context"],
     text: "required",
     summary: "Name an object, making it first-class and searchable",
   },
