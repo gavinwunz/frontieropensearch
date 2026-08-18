@@ -6,4 +6,5 @@ EXTRA_JS_MODULES += [
     "FOSCommandParser.sys.mjs",
     "FOSGrammar.sys.mjs",
     "FOSMarks.sys.mjs",
+    "FOSTrailTree.sys.mjs",
 ]
