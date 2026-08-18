@@ -99,6 +99,28 @@ add_task(async function test_navigation_builds_a_tree() {
   BrowserTestUtils.removeTab(tab);
 });
 
+add_task(async function test_a_nodes_title_describes_its_own_page() {
+  // A tab relabels itself for the page it is *about* to show, which arrives
+  // before the node for that page exists. Taking the label on trust shifted
+  // every title in the trail back by one, so each row named the page after it.
+  const tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, PAGE_A);
+  const trail = session();
+  const rootId = trail.currentNodeId;
+
+  await goTo(PAGE_B);
+  await goTo(PAGE_C);
+
+  const root = trail.store.getNode(rootId);
+  Assert.ok(
+    !root.title ||
+      (!root.title.includes("example.org") &&
+        !root.title.includes("example.net")),
+    `the root's title describes the root, not a later page (got ${root.title})`
+  );
+
+  BrowserTestUtils.removeTab(tab);
+});
+
 add_task(async function test_going_back_never_destroys_the_forward_branch() {
   // This is pillar B stated as a property, in the runtime that would otherwise
   // break it. Gecko's session history truncates every forward entry the moment
@@ -231,6 +253,14 @@ add_task(async function test_nodes_are_addressable_by_mark() {
 
   const letter = bar.marks.markOf(nodeKey(rootId));
   Assert.ok(letter, "the node carries a mark the command bar can address");
+  // Marks are assigned before the title arrives, so the letter comes from the
+  // page's host. Deriving it from the raw URL instead handed h, t, p and s to
+  // the first four nodes of every session, from "https://".
+  Assert.ok(
+    !["h", "t", "p", "s"].includes(letter) ||
+      PAGE_A.replace(/^https:\/\//, "").includes(letter),
+    `the mark is mnemonic for the page, not for its scheme (got ${letter})`
+  );
   Assert.equal(
     bar.marks.typeAt(letter),
     "node",

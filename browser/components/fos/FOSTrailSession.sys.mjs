@@ -31,6 +31,7 @@
  */
 
 import { TrailStore } from "./FOSTrailTree.sys.mjs";
+import { labelFor } from "./FOSTrailRailView.sys.mjs";
 
 const lazy = {};
 
@@ -354,8 +355,21 @@ export class FOSTrailSession {
         }
         const nodeId = this.#nodeByBrowser.get(tab.linkedBrowser);
         const node = nodeId ? this.store.getNode(nodeId) : null;
-        if (node && tab.label && tab.label !== node.title) {
-          node.title = tab.label;
+        if (!node) {
+          return;
+        }
+        // The label has to be proved to belong to this node before it is
+        // believed. A tab relabels itself to a placeholder for the *next* page
+        // as soon as that load starts, which is before the location change
+        // that creates the next node — so taking the label on trust wrote each
+        // page's placeholder onto its predecessor and shifted every title in
+        // the trail by one. Green tests never saw it; three real pages did.
+        if (tab.linkedBrowser.currentURI?.spec !== node.url) {
+          return;
+        }
+        const title = tab.linkedBrowser.contentTitle || tab.label;
+        if (title && title !== node.title) {
+          node.title = title;
           this.#syncMarks();
           this.#changed();
         }
@@ -687,7 +701,13 @@ export class FOSTrailSession {
       const key = nodeKey(node.id);
       live.add(key);
       this.#marks.assign(key, {
-        label: node.title ?? node.url,
+        // The label the rail shows, never the raw URL. A mark is assigned the
+        // moment a node is created, which is before the title arrives, so
+        // deriving it from the URL meant deriving it from "https://" — the
+        // first four nodes of every session took h, t, p and s, and stickiness
+        // then made that permanent. Mnemonic marks were the entire argument for
+        // deriving a letter from the object instead of assigning one in order.
+        label: labelFor(node),
         type: "node",
       });
     }
