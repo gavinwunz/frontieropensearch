@@ -157,11 +157,12 @@ add_task(async function test_the_focus_ring_lands_on_the_focused_card() {
   field().showRegion(trailId);
 
   const stage = window.document.querySelector(".fos-field-stage");
-  stage.focus();
+  stage.focus({ focusVisible: true });
   EventUtils.synthesizeKey("KEY_ArrowUp", {}, window);
 
   const focused = stage.querySelector(".fos-field-card[data-focus]");
   ok(focused, "a card has the focus");
+  ok(stage.matches(":focus-visible"), "the stage holds a keyboard focus");
   is(
     window.getComputedStyle(stage).outlineStyle,
     "none",

@@ -131,7 +131,12 @@ export class FOSContextSidebar {
       this.#unsubscribe = this.#session.subscribe(() => this.render());
     }
     await this.render();
-    this.#body.focus();
+    // `focusVisible: true` rather than a bare focus: this surface takes the
+    // keyboard off the page the moment it opens, so it has to show where the
+    // keyboard went — and a plain programmatic focus inherits whatever mode
+    // the window is already in, which after a click or a drag means no ring at
+    // all on a surface that now owns every keystroke.
+    this.#body.focus({ focusVisible: true });
   }
 
   close() {

@@ -330,7 +330,12 @@ export class FOSFieldSurface {
     this.#root.hidden = false;
     this.showOverview();
     this.#captureOpenTabs();
-    this.#stage.focus();
+    // `focusVisible: true` rather than a bare focus: this surface takes the
+    // keyboard off the page the moment it opens, so it has to show where the
+    // keyboard went — and a plain programmatic focus inherits whatever mode
+    // the window is already in, which after a click or a drag means no ring at
+    // all on a surface that now owns every keystroke.
+    this.#stage.focus({ focusVisible: true });
   }
 
   /** Leave the Field for the page level. */

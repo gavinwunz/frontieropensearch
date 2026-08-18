@@ -335,11 +335,9 @@ add_task(async function test_the_focus_ring_lands_on_the_selected_row() {
   await goTo(PAGE_B);
 
   rail().open();
-  // The ring is `:focus-visible`, which needs the focus to have arrived the
-  // way a keyboard user's does.
-  EventUtils.synthesizeKey("KEY_ArrowUp", {}, window);
 
   const list = rail().list;
+  ok(list.matches(":focus-visible"), "the list holds a keyboard focus");
   const selected = list.querySelector('.fos-rail-row[aria-selected="true"]');
   ok(selected, "a row is selected");
 

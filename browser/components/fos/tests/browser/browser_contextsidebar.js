@@ -232,7 +232,7 @@ add_task(async function test_arrow_keys_skip_rows_that_go_nowhere() {
   await goTo(PAGE_A);
   const panel = await openSettled();
 
-  panel.body.focus();
+  panel.body.focus({ focusVisible: true });
   EventUtils.synthesizeKey("KEY_ArrowDown", {}, window);
 
   const selected = panel.body.querySelector('[aria-selected="true"]');
@@ -251,6 +251,7 @@ add_task(async function test_arrow_keys_skip_rows_that_go_nowhere() {
   // window. Asserted live rather than in the stylesheet because the rule it
   // replaced was overriding the UA's own `outline: auto` rather than adding a
   // ring, so simply deleting it left the container ringed anyway.
+  ok(panel.body.matches(":focus-visible"), "the body holds a keyboard focus");
   is(
     window.getComputedStyle(panel.body).outlineStyle,
     "none",

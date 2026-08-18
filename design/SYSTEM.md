@@ -142,6 +142,12 @@ A panel also opens with a row already selected — the page you are on, in both
 the rail and the sidebar — so in practice the container's branch is reached
 only by a surface with nothing in it.
 
+And all three focus with `{ focusVisible: true }` rather than plainly. A
+programmatic focus inherits whichever mode the window is already in, so a rail
+opened by a command bar that was opened by *clicking* the address bar took the
+keyboard and showed no sign of having it. A surface that takes every keystroke
+off the page has to say so however it was invoked.
+
 On the Field the same rule applies to a tile or a card, and the ring is a
 **widening** rather than a recolour: a focused card may also be pinned or may
 have just refused a drop, and those are the colours that have something to say.
