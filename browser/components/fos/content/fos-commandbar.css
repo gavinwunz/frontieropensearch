@@ -1,0 +1,134 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* The command bar.
+ *
+ * Phase 3 owns the design system; this is the working skin until then, built
+ * on the platform's own colour tokens so that dark mode, high contrast and
+ * forced colours are correct by default rather than by a later pass. */
+
+.fos-commandbar-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  justify-content: center;
+  /* Not centred vertically: the bar sits high so that what it is about to do
+     to the page below stays visible while the user types. */
+  align-items: start;
+  padding-block-start: 12vh;
+  background: color-mix(in srgb, black 28%, transparent);
+}
+
+.fos-commandbar-backdrop[hidden] {
+  display: none;
+}
+
+.fos-commandbar {
+  width: min(44rem, 92vw);
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  border: 1px solid var(--border-color, ThreeDShadow);
+  background: var(--background-color-box, Field);
+  color: var(--text-color, FieldText);
+  box-shadow: 0 12px 40px color-mix(in srgb, black 35%, transparent);
+  overflow: hidden;
+}
+
+.fos-commandbar-input {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 1.25rem;
+  line-height: 1.4;
+  padding: 0.75rem 1rem;
+}
+
+.fos-commandbar-input:focus-visible {
+  outline: none;
+}
+
+.fos-commandbar-status {
+  padding: 0.25rem 1rem 0.5rem;
+  font-size: 0.85rem;
+  opacity: 0.8;
+  border-block-end: 1px solid var(--border-color, ThreeDLightShadow);
+}
+
+.fos-commandbar-status:empty {
+  display: none;
+}
+
+.fos-commandbar-status[data-kind="error"] {
+  color: var(--text-color-error, #c50042);
+  opacity: 1;
+}
+
+.fos-commandbar-status[data-kind="url"] {
+  color: var(--text-color-success, #017a40);
+  opacity: 1;
+}
+
+.fos-commandbar-list {
+  margin: 0;
+  padding: 0.25rem 0;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.fos-commandbar-group {
+  padding: 0.5rem 1rem 0.25rem;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.6;
+}
+
+.fos-commandbar-row {
+  display: flex;
+  gap: 0.6rem;
+  align-items: baseline;
+  padding: 0.35rem 1rem;
+  cursor: default;
+}
+
+.fos-commandbar-row[aria-selected="true"] {
+  background: var(--background-color-box-hover, SelectedItem);
+  color: var(--text-color-selected, SelectedItemText);
+}
+
+.fos-commandbar-label {
+  font-weight: 600;
+  /* Marks are one character; without a floor they jitter the column as the
+     candidate list narrows. */
+  min-width: 4.5rem;
+}
+
+.fos-commandbar-spoken {
+  opacity: 0.75;
+  font-variant: small-caps;
+}
+
+.fos-commandbar-detail {
+  opacity: 0.7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (prefers-contrast) {
+  .fos-commandbar {
+    border-width: 2px;
+  }
+
+  .fos-commandbar-status,
+  .fos-commandbar-detail,
+  .fos-commandbar-group,
+  .fos-commandbar-spoken {
+    opacity: 1;
+  }
+}

@@ -13,6 +13,7 @@ document.addEventListener(
       ContainerCreationPanel:
         "chrome://browser/content/usercontext/ContainerCreationPanel.mjs",
       Referrals: "resource:///modules/referrals/Referrals.sys.mjs",
+      FOSCommandBar: "resource:///modules/FOSCommandBar.sys.mjs",
     });
 
     // <commandset id="mainCommandSet"> defined in browser-sets.inc.xhtml
@@ -238,6 +239,14 @@ document.addEventListener(
             break;
           case "Browser:OpenLocation":
             openLocation(event);
+            break;
+          // Frontier OpenSearch's one entry surface. Every gesture that used
+          // to mean "focus the address bar" or "focus the search box" now
+          // means this, because the phase plan allows exactly one such
+          // surface and two boxes competing for the same keys is how the
+          // second one gets built by accident.
+          case "FOS:CommandBar":
+            lazy.FOSCommandBar.forWindow(window).toggle();
             break;
           case "Browser:RestoreLastSession":
             SessionStore.restoreLastSession();

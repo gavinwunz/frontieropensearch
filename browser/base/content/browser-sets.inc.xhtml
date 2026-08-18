@@ -59,6 +59,9 @@
     <command id="cmd_editPDF" />
     <command id="cmd_openReferrals" />
     <!-- work-around bug 392512 -->
+    <!-- Frontier OpenSearch: the one entry surface. See design/GRAMMAR.md. -->
+    <command id="FOS:CommandBar" />
+
     <command id="Browser:AddBookmarkAs" />
     <command id="Browser:SearchBookmarks" />
     <command id="Browser:BookmarkAllTabs"/>
@@ -142,10 +145,10 @@
          modifiers="accel" reserved="true"/>
     <key id="key_newNavigatorTab" data-l10n-id="tab-new-shortcut" modifiers="accel"
          command="cmd_newNavigatorTabNoEvent" reserved="true"/>
-    <key id="focusURLBar" data-l10n-id="location-open-shortcut" command="Browser:OpenLocation"
+    <key id="focusURLBar" data-l10n-id="location-open-shortcut" command="FOS:CommandBar"
          modifiers="accel"/>
 #ifndef XP_MACOSX
-    <key id="focusURLBar2" data-l10n-id="location-open-shortcut-alt" command="Browser:OpenLocation"
+    <key id="focusURLBar2" data-l10n-id="location-open-shortcut-alt" command="FOS:CommandBar"
          modifiers="alt"/>
 #endif
 
@@ -166,7 +169,7 @@
 # is a fundamental keybinding and we are maintaining a XP binding so that it is easy
 # for people to switch to Linux.
 #
-    <key id="key_search" data-l10n-id="search-focus-shortcut" command="Tools:Search" modifiers="accel"/>
+    <key id="key_search" data-l10n-id="search-focus-shortcut" command="FOS:CommandBar" modifiers="accel"/>
     <key id="key_search2"
 #ifdef XP_MACOSX
          data-l10n-id="find-shortcut"
@@ -175,7 +178,7 @@
          data-l10n-id="search-focus-shortcut-alt"
          modifiers="accel"
 #endif
-         command="Tools:Search"/>
+         command="FOS:CommandBar"/>
     <key id="key_openDownloads"
          data-l10n-id="downloads-shortcut"
 #ifdef XP_GNOME
