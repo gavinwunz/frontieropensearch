@@ -62,6 +62,15 @@ const THUMBNAIL_CACHE = 256;
 /** Capture at twice the card's size, so a card is not soft on a HiDPI display. */
 const THUMBNAIL_SCALE = 2;
 
+/**
+ * How long after a page settles to take its picture.
+ *
+ * The same second Firefox waits before capturing a top site, and for the same
+ * reason: a page that has just fired its load event is often still laying
+ * itself out, and a thumbnail of a half-drawn page is worse than none.
+ */
+const SETTLE_DELAY_MS = 1000;
+
 /** One Field per chrome window. */
 // eslint-disable-next-line jsdoc/require-jsdoc
 const byWindow = new WeakMap();
@@ -206,6 +215,20 @@ export class FOSFieldSurface {
     // Mountain measured as its *weakest*.
     this.#session.onDeparture((nodeId, browser) =>
       this.#capture(browser, nodeId)
+    );
+    // And once when the page settles, which is the floor under the line above.
+    // A departure capture is the better picture — it is the page as you left
+    // it, scrolled to where you were reading — but it is a race against the
+    // process swap and on this build it usually loses, so relying on it alone
+    // left most pages with no snapshot at all and nothing to write to disk.
+    this.#session.onSettled((nodeId, browser) =>
+      this.#window.setTimeout(() => {
+        // The page may have been navigated on, or the tab closed, in the
+        // second we waited; capturing then would file the wrong picture.
+        if (this.#session.nodeForBrowser(browser) === nodeId) {
+          this.#capture(browser, nodeId);
+        }
+      }, SETTLE_DELAY_MS)
     );
     this.sync();
 

@@ -363,22 +363,23 @@ add_task(async function test_a_drag_pins_and_never_overlaps() {
  * depends on `shouldStoreThumbnail` agreeing about a live channel, and whether
  * `moz-page-thumb://` really paints in chrome depends on the protocol handler.
  */
-add_task(async function test_departing_a_page_stores_its_thumbnail() {
+add_task(async function test_visiting_a_page_stores_its_thumbnail() {
   // The mochitest profile turns page-thumbnail capturing off wholesale
   // (`testing/profiles/common/user.js`), which is exactly the machinery under
   // test here, so these two tasks turn it back on for their own duration.
   await SpecialPowers.pushPrefEnv({
     set: [["browser.pagethumbnails.capturing_disabled", false]],
   });
+  // No Field opened and no second page: browsing alone has to fill the store,
+  // or a card restored tomorrow has nothing to show. This is what the settle
+  // capture buys — the departure capture cannot be relied on for it, since the
+  // outgoing browser has often already been swapped by the time it fires.
   await goTo(PAGE_A);
-  // The Field captures every open tab on the way in; PAGE_A is one of them.
-  field().open();
 
   await TestUtils.waitForCondition(
     () => IOUtils.exists(PageThumbs.getThumbnailPath(PAGE_A)),
-    "the departed page reached the thumbnail store"
+    "the page reached the thumbnail store without the Field being opened"
   );
-  field().close();
   await SpecialPowers.popPrefEnv();
 });
 

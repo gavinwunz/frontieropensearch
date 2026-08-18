@@ -115,6 +115,7 @@ export class FOSTrailSession {
   #markedNodes = new Set();
   #retainers = new Set();
   #departures = new Set();
+  #settles = new Set();
   #restoring = new WeakMap();
   #recent = [];
   #activeTrailId = null;
@@ -233,11 +234,42 @@ export class FOSTrailSession {
   }
 
   /**
+   * Be told when a page has finished loading, on the browser still showing it.
+   *
+   * The counterpart to `onDeparture`, and the answer to the same problem that
+   * `#backfillPrevious` solves for the scroll offset: departure is the
+   * intuitive moment and it is routinely too late. By the time a cross-process
+   * load starts, the outgoing page's browser can already have been swapped to
+   * `about:blank`, so a snapshot taken there is of nothing — measured on this
+   * build, not assumed. A settled page cannot be raced, and it is the only
+   * moment available for a page that is closed rather than navigated away.
+   *
+   * Scroll state has no equivalent need, because history keeps it and pixels
+   * are not kept anywhere.
+   *
+   * @param {Function} listener Called as `(nodeId, browser)`.
+   * @returns {Function} An unsubscribe function.
+   */
+  onSettled(listener) {
+    this.#settles.add(listener);
+    return () => this.#settles.delete(listener);
+  }
+
+  /**
    * @param {number} nodeId The node being left.
    * @param {object} browser The browser leaving it.
    */
   #departed(nodeId, browser) {
-    for (const listener of this.#departures) {
+    this.#notify(this.#departures, nodeId, browser);
+  }
+
+  /**
+   * @param {Set<Function>} listeners Either listener set.
+   * @param {number} nodeId The node concerned.
+   * @param {object} browser The browser showing it.
+   */
+  #notify(listeners, nodeId, browser) {
+    for (const listener of listeners) {
       try {
         listener(nodeId, browser);
       } catch (e) {
@@ -336,6 +368,10 @@ export class FOSTrailSession {
         () => this.#changed(),
         () => {}
       );
+      const settled = this.#nodeByBrowser.get(browser);
+      if (settled) {
+        this.#notify(this.#settles, settled, browser);
+      }
       return;
     }
     if (!(stateFlags & Ci.nsIWebProgressListener.STATE_START)) {
