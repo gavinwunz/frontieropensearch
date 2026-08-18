@@ -84,8 +84,7 @@
   /* The indent is the tree. Hoisting bounds how deep it can get, so this can
      stay a real indent rather than collapsing to a guide line. */
   /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
-  padding-inline: calc(var(--space-small) + var(--fos-rail-depth, 0) * 0.75rem)
-    var(--space-medium);
+  padding-inline: calc(var(--space-small) + var(--fos-rail-depth, 0) * 0.75rem) var(--space-medium);
   padding-block: var(--space-xxsmall);
   cursor: default;
 }
@@ -104,6 +103,9 @@
 }
 
 .fos-rail-row[data-current] {
+  /* An accent rule down the edge of the row, not an elevation: the token set
+     carries shadows for depth only, and none of them expresses a 2px marker. */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   box-shadow: inset 2px 0 0 0 var(--color-accent-primary);
 }
 

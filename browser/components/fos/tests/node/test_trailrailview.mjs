@@ -35,7 +35,12 @@ import {
  * @returns {object} The store and the node ids.
  */
 function seeded() {
-  const store = new TrailStore({ now: (t => () => ++t)(1000) });
+  const store = new TrailStore({
+    now: (
+      t => () =>
+        ++t
+    )(1000),
+  });
   const trailId = store.createTrail({ name: "Memex" });
   const root = store.addNode({ trailId, url: "https://example.org/" });
   const a = store.visit(root, { url: "https://a.example/", title: "A" });
@@ -142,9 +147,12 @@ test("hoisting re-roots the rail and leaves a breadcrumb — rule 2", () => {
 });
 
 test("hoisting to a node of another trail is refused", () => {
-  const { store, trailId, a } = seeded();
+  const { store, a } = seeded();
   const other = store.createTrail();
-  assert.throws(() => railFor(store, { trailId: other, hoistRoot: a }), /hoist/);
+  assert.throws(
+    () => railFor(store, { trailId: other, hoistRoot: a }),
+    /hoist/
+  );
 });
 
 test("a dismissed node is still a row — rule 3", () => {
@@ -187,7 +195,10 @@ test("labels prefer the title, then the host, then the raw url", () => {
     "a.example/docs",
     "a query string is noise at rail width"
   );
-  assert.equal(labelFor({ title: null, url: "https://a.example/" }), "a.example");
+  assert.equal(
+    labelFor({ title: null, url: "https://a.example/" }),
+    "a.example"
+  );
   assert.equal(labelFor({ title: null, url: "not a url" }), "not a url");
 });
 
@@ -203,7 +214,11 @@ test("selection moves over rendered rows and clamps at the ends", () => {
   );
   assert.equal(moveSelection(rows, root, -1), root, "clamps at the top");
   assert.equal(moveSelection(rows, b, 1), b, "clamps at the bottom");
-  assert.equal(moveSelection(rows, null, 1), root, "no selection starts at top");
+  assert.equal(
+    moveSelection(rows, null, 1),
+    root,
+    "no selection starts at top"
+  );
   assert.equal(moveSelection([], root, 1), null);
 });
 
@@ -228,8 +243,12 @@ test("collapse acts on the node, then on its parent", () => {
     "a root with children still collapses"
   );
   assert.equal(
-    collapseTarget(store, railFor(store, { trailId, hoistRoot: a1 }).rows, a1, collapsed)
-      .collapse,
+    collapseTarget(
+      store,
+      railFor(store, { trailId, hoistRoot: a1 }).rows,
+      a1,
+      collapsed
+    ).collapse,
     a1,
     "and inside a hoist, collapse never escapes the visible rows"
   );

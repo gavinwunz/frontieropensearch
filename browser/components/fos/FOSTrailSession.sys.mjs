@@ -70,7 +70,12 @@ export function nodeIdFromKey(key) {
   return match ? Number(match[1]) : null;
 }
 
-/** URLs that are chrome scaffolding rather than somewhere the user went. */
+/**
+ * Whether a location is somewhere the user went, or chrome scaffolding.
+ *
+ * @param {?nsIURI} uri The new location.
+ * @returns {boolean} Whether it deserves a node.
+ */
 function isCapturable(uri) {
   if (!uri) {
     return false;
@@ -107,6 +112,7 @@ export class FOSTrailSession {
   #nodeByBrowser = new WeakMap();
   #trailByBrowser = new WeakMap();
   #markedNodes = new Set();
+  #restoring = new WeakMap();
   #recent = [];
   #activeTrailId = null;
   #attached = false;
@@ -200,16 +206,74 @@ export class FOSTrailSession {
    * @param {number} stateFlags nsIWebProgressListener state flags.
    */
   onStateChange(browser, webProgress, request, stateFlags) {
-    if (
-      !webProgress?.isTopLevel ||
-      !(stateFlags & Ci.nsIWebProgressListener.STATE_START)
-    ) {
+    if (!webProgress?.isTopLevel) {
+      return;
+    }
+    if (stateFlags & Ci.nsIWebProgressListener.STATE_STOP) {
+      // Deliberately not awaited: a progress listener must not hold up the
+      // load, and nothing downstream depends on the backfill having landed.
+      this.#backfillPrevious(browser).then(
+        () => this.#changed(),
+        () => {}
+      );
+      return;
+    }
+    if (!(stateFlags & Ci.nsIWebProgressListener.STATE_START)) {
+      return;
+    }
+    // A restore is not a departure. The load `enter` just started belongs to
+    // the node we are arriving at, so capturing here would overwrite the state
+    // we are in the middle of replaying with the outgoing page's.
+    if (this.#restoring.has(browser)) {
       return;
     }
     const nodeId = this.#nodeByBrowser.get(browser);
     if (nodeId) {
       this.#captureNow(nodeId, browser);
     }
+  }
+
+  /**
+   * A top-level load finished: backfill the page it replaced.
+   *
+   * Departure is the intuitive moment to capture and it is the wrong one. At
+   * the instant the next load starts, the parent process's collected state for
+   * the outgoing page is routinely still empty — the content process has not
+   * reported it yet — so capturing only there loses the scroll offset of most
+   * ordinary forward navigations. Session history is the fix rather than a
+   * retry loop: once the new page has settled, the entry *behind* it is
+   * present, complete, and carries the scroll offset in its `presState`. So
+   * the outgoing page is read from history after the fact instead of from the
+   * live collector before the fact.
+   *
+   * The URL check is what makes this safe. History and our tree diverge the
+   * moment a branch is re-entered, so a positional read has to prove it landed
+   * on the node it meant to.
+   *
+   * @param {object} browser The browser element.
+   */
+  async #backfillPrevious(browser) {
+    const nodeId = this.#nodeByBrowser.get(browser);
+    const node = nodeId ? this.store.getNode(nodeId) : null;
+    const parent = node?.parent_id ? this.store.getNode(node.parent_id) : null;
+    if (!parent) {
+      return;
+    }
+    // The collected state lags content by design, so a read taken the instant
+    // the load stops routinely returns no entries at all. Here — unlike at
+    // departure — waiting is free: the entry being read is the one *behind* the
+    // current page and nothing further is going to change it.
+    try {
+      await lazy.TabStateFlusher.flush(browser);
+    } catch (e) {
+      return;
+    }
+    const state = this.#rawTabState(browser);
+    const previous = state?.entries?.[(state.index ?? 1) - 2] ?? null;
+    if (!previous || previous.url !== parent.url) {
+      return;
+    }
+    this.#writeState(parent.id, previous, state);
   }
 
   /**
@@ -233,6 +297,21 @@ export class FOSTrailSession {
     // application that navigates entirely by pushState collapses to a single
     // node, and if that turns out to matter the fix is to compare the path
     // rather than to record every fragment.
+    // Re-entry navigates in order to put the page back, and that navigation
+    // arrives here looking exactly like a click. Left alone it spawns a child
+    // of the node just re-entered — so going back would silently add a node
+    // every time, and the tree would grow a duplicate spine that nobody
+    // browsed. Found only by running it: the model cannot see this, because
+    // the model has no idea a restore is a load.
+    const restoring = this.#restoring.get(browser);
+    if (restoring) {
+      this.#restoring.delete(browser);
+      if (restoring.url === location.spec) {
+        this.#changed();
+        return;
+      }
+    }
+
     const sameDocument =
       flags & Ci.nsIWebProgressListener.LOCATION_CHANGE_SAME_DOCUMENT;
     const currentId = this.#nodeByBrowser.get(browser) ?? null;
@@ -321,15 +400,11 @@ export class FOSTrailSession {
    * @param {object} browser The browser to read from.
    */
   #captureNow(nodeId, browser) {
-    const state = this.#tabState(browser);
-    if (!state) {
-      return;
+    const state = this.#rawTabState(browser);
+    const entry = state?.entries?.[(state.index ?? 1) - 1] ?? null;
+    if (entry) {
+      this.#writeState(nodeId, entry, state);
     }
-    this.store.setViewState(nodeId, {
-      scrollX: state.scrollX,
-      scrollY: state.scrollY,
-      formState: state.blob,
-    });
   }
 
   /**
@@ -348,45 +423,56 @@ export class FOSTrailSession {
   }
 
   /**
-   * The current entry, scroll and form data for a browser, as one blob.
+   * Store one session-history entry on a node.
    *
    * The blob is SessionStore's own output rather than a shape invented here,
    * which is what lets `enter` hand it straight back — including the
    * serialised triggering principal, which cannot be reconstructed after the
-   * fact.
+   * fact, and `presState`, which is where the scroll offset actually lives.
+   *
+   * @param {number} nodeId The node to write into.
+   * @param {object} entry A session-history entry.
+   * @param {object} state The tab state the entry came from.
+   */
+  #writeState(nodeId, entry, state) {
+    // Scroll is per entry, in `presState`, and is *not* the top-level `scroll`
+    // key — that one only appears while the entry is the current one and the
+    // live collector has reported it. Reading both is what makes a capture
+    // taken from history and a capture taken from the live tab agree.
+    const raw = entry.presState?.[0]?.scroll ?? state?.scroll?.scroll ?? "0,0";
+    const [x, y] = String(raw)
+      .split(",")
+      .map(n => Number.parseInt(n, 10) || 0);
+
+    this.store.setViewState(nodeId, {
+      scrollX: x,
+      scrollY: y,
+      formState: JSON.stringify({
+        entry,
+        scroll: state?.scroll ?? null,
+        formdata: state?.formdata ?? null,
+      }),
+    });
+  }
+
+  /**
+   * The tab's collected state, parsed, or null.
    *
    * @param {object} browser The browser to read.
-   * @returns {?object} `{blob, scrollX, scrollY}` or null.
+   * @returns {?object} The parsed tab state.
    */
-  #tabState(browser) {
+  #rawTabState(browser) {
     const tab = this.#window.gBrowser?.getTabForBrowser(browser);
     if (!tab) {
       return null;
     }
-    let state;
     try {
-      state = JSON.parse(lazy.SessionStore.getTabState(tab));
+      return JSON.parse(lazy.SessionStore.getTabState(tab));
     } catch (e) {
       // getTabState throws for a tab whose window is not tracked yet, which
       // happens during startup and on a tab being torn down.
       return null;
     }
-    const entry = state.entries?.[(state.index ?? 1) - 1] ?? null;
-    if (!entry) {
-      return null;
-    }
-    const [x, y] = String(state.scroll?.scroll ?? "0,0")
-      .split(",")
-      .map(n => Number.parseInt(n, 10) || 0);
-    return {
-      blob: JSON.stringify({
-        entry,
-        scroll: state.scroll ?? null,
-        formdata: state.formdata ?? null,
-      }),
-      scrollX: x,
-      scrollY: y,
-    };
   }
 
   // ---- re-entry -----------------------------------------------------------
@@ -432,15 +518,18 @@ export class FOSTrailSession {
       triggeringPrincipal_base64: lazy.E10SUtils.SERIALIZED_SYSTEMPRINCIPAL,
     };
 
+    // Both of these happen before the load, so there is no window in which a
+    // progress notification can see a stale current node.
+    this.#restoring.set(browser, { nodeId, url: entry.url ?? node.url });
+    this.#trailByBrowser.set(browser, node.trail_id);
+    this.#setCurrent(browser, nodeId);
+
     lazy.SessionStore.setTabState(tab, {
       entries: [entry],
       index: 1,
       scroll: restored?.scroll ?? undefined,
       formdata: restored?.formdata ?? undefined,
     });
-
-    this.#trailByBrowser.set(browser, node.trail_id);
-    this.#setCurrent(browser, nodeId);
     this.store.restore(nodeId);
     this.#changed();
     return true;

@@ -31,6 +31,19 @@ import { FOSTrailSession, nodeKey } from "./FOSTrailSession.sys.mjs";
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const STYLESHEET = "chrome://browser/content/fos/fos-trailrail.css";
 
+/**
+ * The disclosure glyph for a row: pointing along the branch it would open.
+ *
+ * @param {object} row A row from `railFor`.
+ * @returns {string} The glyph, or empty for a leaf.
+ */
+function twistyGlyph(row) {
+  if (!row.hasChildren) {
+    return "";
+  }
+  return row.collapsed ? "\u25b8" : "\u25be";
+}
+
 /** One rail per chrome window. */
 // eslint-disable-next-line jsdoc/require-jsdoc
 const byWindow = new WeakMap();
@@ -228,7 +241,7 @@ export class FOSTrailRail {
       const twisty = doc.createElementNS(HTML_NS, "span");
       twisty.className = "fos-rail-twisty";
       twisty.setAttribute("aria-hidden", "true");
-      twisty.textContent = row.hasChildren ? (row.collapsed ? "▸" : "▾") : "";
+      twisty.textContent = twistyGlyph(row);
       if (row.hasChildren) {
         twisty.addEventListener("mousedown", event => {
           event.preventDefault();
