@@ -934,3 +934,43 @@ URL that chrome can use directly; the Field currently captures through
 `captureTabPreviewThumbnail`, which does not populate it. Store on departure,
 fall back to the stored image when a card has no live snapshot. Verify the disk
 cache is enabled in this build first.
+
+### Departure is the wrong moment for a picture, for the same reason it was wrong for scroll
+
+Measured on this build rather than searched for, and it is the second time this
+project has learned the same lesson. Run 10 found that reading the scroll offset
+at departure returns nothing, because the content process has not reported yet,
+and fixed it by reading session history once the *next* page settles. The
+thumbnail has the same fault and cannot take the same fix: instrumenting
+`captureTabPreviewThumbnail` at departure showed it called with the browser's
+URI already reading `about:blank` on a cross-process navigation, and more often
+returning false outright, because the browser has been swapped before the
+listener runs. Pixels, unlike scroll offsets, are not recorded anywhere after
+the fact, so there is nothing to backfill from.
+
+Verdict: **capture when a page settles, and keep the departure capture as well.**
+They answer different questions and both are worth having — the settle capture
+is reliable and is a picture of the page as published, the departure capture is
+a picture of the page as you left it, scrolled to what you were reading. So the
+settle capture is the floor and the departure capture is the improvement on it
+when it wins the race. The delay before the settle capture is one second, which
+is what Firefox itself waits before capturing a top site, and for the reason its
+own comment gives: a page that has just fired `load` is often still laying out.
+
+The cost is one extra `drawSnapshot` per page load. Firefox already pays that on
+every top-site load, and it buys the thing this browser could not otherwise
+claim: a session restored tomorrow whose cards are pictures rather than grey
+rectangles, without asking the network for anything.
+
+### Refilling a missing thumbnail by re-fetching the page — rejected
+
+`BackgroundPageThumbs.captureIfMissing(url)` is in the tree and is what newtab
+uses to get a picture of a page nobody has open. It would fill in every restored
+card whose page predates this work.
+
+Verdict: **reject.** It re-fetches the page over the network, invisibly, for a
+page the user is not looking at — which is a browser phoning out on its own
+initiative for cosmetics, and this fork's whole premise is that it does not do
+that. A card with no picture is honest about never having been seen; a card
+holding a *freshly fetched* picture of a page as it looks now is a lie about
+what you visited. Recorded so it is not reconsidered as an obvious win.

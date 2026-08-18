@@ -114,48 +114,52 @@ execution, not invention: all three pillars have a written design.
   puts the page up, and the database still holds exactly the rows it started
   with. 128 node tests, 54 xpcshell checks, 184 browser-chrome checks.
 
+- **A restored card is a picture again, so the restore is worth looking at.**
+  Departing a page also writes it to Gecko's own thumbnail store, and a card
+  with no snapshot of its own paints the stored one over `moz-page-thumb://`.
+  Going through `PageThumbs` rather than persisting our own images is what
+  gets private windows, about: pages, error responses and uncacheable documents
+  refused for free, and `PageThumbs.init()` — which nothing else in this build
+  calls — is what makes clearing history clear these too. Driving the built
+  browser found the capture itself was the real problem: at departure the
+  browser has usually already been swapped, so the picture was of `about:blank`
+  or of nothing, and pillar B now also announces a page that has *settled*, one
+  second after load, which is where the reliable capture happens. **Verified
+  across a real restart**: four pages browsed with the Field never opened, all
+  four in the store, and after a restart every restored card painted from it —
+  `agent/reports/restore-field-thumbs.png`. 128 node tests, 54 xpcshell checks,
+  189 browser-chrome checks.
+
 ## In progress
 
 Nothing running. Tree fully pushed; `main`, `agent/dev` and both tags on origin.
 
 ## Next task
 
-Pillar C records well and surfaces thinly; the Field now restores pages it
-cannot draw. In rough order of value.
+Pillar C records well and surfaces thinly; the Field is now whole across a
+restart. In rough order of value.
 
-1. **A restored card has no thumbnail.** The Field's snapshots live in memory
-   only, so after a restart every card is a grey rectangle with a caption —
-   see `agent/reports/restore-field.png`. This is the honest cost of the
-   restore just shipped and it undercuts it: PadPrints' evidence (`IDEAS.md`)
-   is that a thumbnail hierarchy pays *at revisitation*, and a restart is
-   revisitation. Gecko already keeps a thumbnail disk cache in the profile —
-   `PageThumbs.getThumbnailURL(url)` yields a `moz-page-thumb://` URL usable
-   straight from chrome — but the Field captures with
-   `captureTabPreviewThumbnail`, which does not write it. So this is two small
-   pieces: store on departure as well as cache in memory, and fall back to the
-   stored one when a card has no snapshot. Check whether the disk cache is
-   even enabled in this build before designing around it.
-2. **The context sidebar** — `SCHEMA.md`'s second surface, "what you know so
+1. **The context sidebar** — `SCHEMA.md`'s second surface, "what you know so
    far". `what` currently answers in one sentence, which is deliberately the
    smaller thing and not a stand-in. `contextContents()` already returns
    everything it needs, and `crossings(url)` is written and has no consumer at
    all yet — "you have reached this page from three different trails" is the
    memex's compounding effect and is the sidebar's best row.
-3. **Rank the command bar by active context.** The first of the three surfaces
+2. **Rank the command bar by active context.** The first of the three surfaces
    in the phase plan and the only one with no code: the bar still has no
    suggestion ranking of any kind. This is what "not global frecency" means and
    it needs the store's read side, which is now there.
-4. **The embedding pass**, on `EmbeddingsGenerator` and `ClusterAlgos`. It now
+3. **The embedding pass**, on `EmbeddingsGenerator` and `ClusterAlgos`. It now
    has a concrete target rather than a vague one: query understanding, because
    the shallow extractor gets nothing from a lower-case query. It should merge
    contexts across trails with `source = 'embedding'`, never replacing the
    provenance floor.
-5. **The tab strip still exists.** Unchanged and still the widest blast radius
+4. **The tab strip still exists.** Unchanged and still the widest blast radius
    in the phase; still wants its own run.
-6. **`prune`, and an export surface for trails** — still deferred, still a
+5. **`prune`, and an export surface for trails** — still deferred, still a
    considered grammar change. A surface for finding old trails is also what
    would let a *named* trail be pinned past the restore window (see below).
-7. **The voice path.** Unchanged: measure model size and latency; do not
+6. **The voice path.** Unchanged: measure model size and latency; do not
    re-litigate availability.
 
 **Test in Gecko, not only in node.** Two bugs this project has shipped were
@@ -171,6 +175,13 @@ LD_LIBRARY_PATH=$PWD/obj-x86_64-pc-linux-gnu/dist/bin \
 
 The `-a` is what maps `resource:///`; without it every browser module fails to
 load and it looks like a packaging fault.
+
+**Reading a chrome error from a driven browser: use a pref, not the console.**
+`Services.console.getMessageArray()` is capped, and a page like Wikipedia floods
+it with referrer-policy warnings, so chrome `console.error` from a module is
+gone before it can be read; `dump()` needs an output file the harness was not
+started with. Appending to a `CharPref` and reading it back over Marionette is
+the channel that actually worked, and it cost an hour to find out.
 
 Rule that keeps holding: while a full build is in flight, do not touch anything
 the build reads. New, unreferenced files under `browser/` are safe — an
