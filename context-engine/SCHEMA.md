@@ -1,0 +1,197 @@
+# Context Engine — schema
+
+The Context Engine is a local SQLite database. It records what was asked, what
+answered it, and what happened next, and clusters that into research contexts.
+
+It is local and stays local. There is no sync, no account, no upload, and no
+network access anywhere in this component. Embeddings are computed on-device by
+the in-tree ML runtime (`toolkit/components/ml`); no text ever leaves the
+machine.
+
+Database file: `context-engine.sqlite` in the profile directory.
+
+## Design notes
+
+Three things in this schema are load-bearing and easy to get wrong.
+
+**Trail nodes are the spine.** Every query, visit, context membership and Field
+card hangs off `trail_node`. Navigation is a tree: `parent_id` is the node you
+came from, and going back never deletes a child. A "back" is a cursor move, not
+a mutation, so the forward branch survives as a sibling.
+
+**Dismissal must be lossless.** The recurring complaint about tabs is that a tab
+is unfinished work, and closing it loses scroll position and in-page state
+(`agent/IDEAS.md`). So `trail_node` stores `scroll_x`/`scroll_y` and
+`form_state`, and dismissal sets `dismissed_at` rather than deleting the row.
+A dismissed node is still in its trail and still restorable.
+
+**Where the user puts a card is evidence.** Following VIKI's spatial parser,
+manual placement in the Field is signal, not decoration: `field_placement`
+records it and `context_member.source` can attribute membership to `spatial`
+rather than `embedding`. A card the user dragged next to another is weak
+evidence that they belong to the same context, and it is evidence the user
+never had to articulate.
+
+## Migrations
+
+Versioned and forward-only. `PRAGMA user_version` holds the applied version;
+each migration is a numbered file under `context-engine/migrations/` named
+`NNN-description.sql`, applied in order inside a single transaction. A migration
+is never edited once it has shipped — correct it with a new one.
+
+| Version | File | Change |
+|---|---|---|
+| 1 | `001-initial.sql` | Everything below. |
+
+## Tables
+
+### `trail`
+
+A named, saveable, exportable research thread.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PK | |
+| `name` | TEXT | User-supplied; null until named. |
+| `created_at` | INTEGER | Unix ms. |
+| `updated_at` | INTEGER | Unix ms. |
+| `archived_at` | INTEGER | Null when active. |
+
+### `trail_node`
+
+One page in a trail. The tree, not a list.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PK | |
+| `trail_id` | INTEGER FK → `trail.id` | |
+| `parent_id` | INTEGER FK → `trail_node.id` | Null at a trail root. |
+| `url` | TEXT | |
+| `title` | TEXT | |
+| `scroll_x` | INTEGER | Restored on re-entry. |
+| `scroll_y` | INTEGER | Restored on re-entry. |
+| `form_state` | BLOB | Gecko session-store blob; null if none. |
+| `created_at` | INTEGER | When the node was spawned. |
+| `last_visited_at` | INTEGER | |
+| `dismissed_at` | INTEGER | Removed from the Field, still in the trail. |
+
+Indexed on `(trail_id, parent_id)` and on `url`.
+
+### `query`
+
+A search or command-bar entry. `raw` is exactly what was typed or spoken;
+`normalised_intent` is the cleaned-up form used for matching.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PK | |
+| `trail_node_id` | INTEGER FK → `trail_node.id` | The node the query spawned. |
+| `source_node_id` | INTEGER FK → `trail_node.id` | Where it was issued from. |
+| `raw` | TEXT | |
+| `normalised_intent` | TEXT | |
+| `input_mode` | TEXT | `keyboard` \| `voice`. |
+| `created_at` | INTEGER | |
+
+### `visit`
+
+What actually happened at a node. Outcome is the signal that makes ranking by
+context better than ranking by frecency: a page that was read or saved counts
+for far more than one that was bounced off.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PK | |
+| `trail_node_id` | INTEGER FK → `trail_node.id` | |
+| `started_at` | INTEGER | |
+| `dwell_ms` | INTEGER | Foreground time only. |
+| `outcome` | TEXT | `bounced` \| `read` \| `saved`. |
+
+`outcome` is derived, not asked for: `bounced` under a dwell threshold, `read`
+above it, `saved` on an explicit user act.
+
+### `entity`
+
+Entities extracted from queries and page text, deduplicated by `canonical`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PK | |
+| `name` | TEXT | As it appeared. |
+| `canonical` | TEXT | Normalised key; unique. |
+| `kind` | TEXT | `person` \| `org` \| `place` \| `work` \| `term`. |
+
+### `entity_mention`
+
+Join table. Exactly one of `trail_node_id` or `query_id` is non-null.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PK | |
+| `entity_id` | INTEGER FK → `entity.id` | |
+| `trail_node_id` | INTEGER FK → `trail_node.id` | |
+| `query_id` | INTEGER FK → `query.id` | |
+| `weight` | REAL | Mention salience. |
+
+### `context`
+
+A research topic: the cluster that queries and visits fall into.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PK | |
+| `label` | TEXT | Generated, user-editable. |
+| `centroid` | BLOB | Float32 vector, mean of member embeddings. |
+| `created_at` | INTEGER | |
+| `updated_at` | INTEGER | |
+| `active_at` | INTEGER | Last time this context was the active one. |
+
+### `context_member`
+
+Membership, with attribution. `source` records *why* something is in a context,
+which is what lets a bad clustering decision be explained and corrected.
+
+| Column | Type | Notes |
+|---|---|---|
+| `context_id` | INTEGER FK → `context.id` | |
+| `trail_node_id` | INTEGER FK → `trail_node.id` | |
+| `query_id` | INTEGER FK → `query.id` | |
+| `weight` | REAL | |
+| `source` | TEXT | `embedding` \| `provenance` \| `spatial` \| `manual`. |
+
+Primary key `(context_id, trail_node_id, query_id)`.
+
+### `embedding`
+
+On-device vectors. Kept in their own table so a model change can invalidate and
+recompute them without touching the records themselves.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PK | |
+| `ref_kind` | TEXT | `trail_node` \| `query` \| `context`. |
+| `ref_id` | INTEGER | |
+| `model` | TEXT | Model id that produced it. |
+| `dim` | INTEGER | |
+| `vector` | BLOB | Float32, little-endian. |
+| `created_at` | INTEGER | |
+
+Unique on `(ref_kind, ref_id, model)`.
+
+### `field_placement`
+
+Where a card sits in the Field, and whether a human put it there.
+
+| Column | Type | Notes |
+|---|---|---|
+| `trail_node_id` | INTEGER PK FK → `trail_node.id` | |
+| `x` | REAL | Field coordinates. |
+| `y` | REAL | |
+| `pinned` | INTEGER | 1 if the user fixed it in place. |
+| `moved_by_user_at` | INTEGER | Null if auto-placed. This is what makes the placement evidence. |
+
+## Export
+
+"Export context pack" walks one context and writes markdown: the questions
+asked, the pages that answered them, and the key entities, ordered so it can be
+pasted into an LLM as a brief. It is a pure read over the tables above and adds
+no schema.
