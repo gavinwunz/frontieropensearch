@@ -1106,13 +1106,20 @@ only computed style in a real window can see it, which is what
 <!-- Task name → consecutive failures. At 3, stop retrying the same way, write the
      analysis below, and change approach or task. -->
 
-ASR measurement: **2**, and **stop**. Attempt 1 (`run25`) died on `Cu.now`;
-attempt 2 (`run26`) got past that and died on Remote Settings. Two distinct
-causes, and the second is not a defect in the test at all — the measurement
-cannot pass on any harness until the runtime is on the machine. **The third
-attempt is not a retry**: it is item 1, deciding how the wasm gets there. This
-is the rule working as intended rather than a counter being reset — the change
-of approach is to stop fixing the measurement and fix what it is measuring.
+ASR measurement: **0 — closed green at `run29`.** It took five attempts and
+four of them failed, which is worth keeping as the record of how the rule
+behaves when it is working. `run25` died on `Cu.now`; `run26` on an unnamed
+backend defaulting to the wasm runtime; `run27` on mochitest killing the
+process for a non-local weight fetch; `run28` on `--hooks` being a perftest
+flag. Four distinct causes, each strictly further than the last, none of them a
+retry of the previous shape.
+
+The counter was right to say **stop** after two, and the stop is what produced
+the answer: instead of a third measurement, the next attempt read the tree and
+found `libonnxruntime.so` already packaged, which turned "how do we get a
+runtime onto the machine" into "we have one". The rule's value here was not
+preventing a third try — it was forcing the third try to be a different
+question.
 
 The demo-flow flake was counted at three and is now closed by a
 root cause rather than by a green run — the change of approach the rule asks
