@@ -52,8 +52,16 @@ only to describe the origin of this code. It is likewise unaffiliated with the
 OpenSearch project (opensearch.org), Amazon, Elastic, or the OpenSearch
 description format.
 
-## Contributing
+## Documentation
 
-Design rationale for each pillar lives in `docs/`. The research log — every
-interface idea considered, adopted, or rejected, with reasons — is in
-`agent/IDEAS.md` and is probably the most interesting file in the repository.
+| Document | What it covers |
+| --- | --- |
+| [`design/ARCHITECTURE.md`](design/ARCHITECTURE.md) | How the three pillars fit together — start here |
+| [`design/FIELD.md`](design/FIELD.md) | The Field: cards, regions, zoom levels |
+| [`design/GRAMMAR.md`](design/GRAMMAR.md) | The command bar, marks, and one parse path for keyboard and voice |
+| [`design/SYSTEM.md`](design/SYSTEM.md) | The design system every chrome surface is styled from |
+| [`context-engine/SCHEMA.md`](context-engine/SCHEMA.md) | The Context Engine's data layer |
+
+The research log — every interface idea considered, adopted, or rejected, with
+reasons — is in `agent/IDEAS.md` and is probably the most interesting file in
+the repository.

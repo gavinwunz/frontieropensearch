@@ -19,7 +19,7 @@
      over anything lower however far up the document the backdrop is appended.
      At z-index 10 the dim covered the content area only, leaving the chrome
      looking live while the bar had taken the keyboard. */
-  z-index: 2147483647;
+  z-index: var(--fos-layer-command);
   display: flex;
   justify-content: center;
   /* Not centred vertically: the bar sits high so that what it is about to do
@@ -60,7 +60,7 @@
   background: transparent;
   color: inherit;
   font-size: var(--font-size-large);
-  padding: var(--space-medium) var(--space-large);
+  padding: var(--space-medium) var(--fos-gutter-dialog);
 }
 
 .fos-commandbar-input:focus-visible {
@@ -68,9 +68,9 @@
 }
 
 .fos-commandbar-status {
-  padding: var(--space-xsmall) var(--space-large) var(--space-small);
-  font-size: var(--font-size-small);
-  color: var(--text-color-deemphasized);
+  padding: var(--space-xsmall) var(--fos-gutter-dialog) var(--space-small);
+  font-size: var(--fos-font-size-small);
+  color: var(--fos-text-color-quiet);
   border-block-end: var(--border-width) solid var(--border-color);
 }
 
@@ -96,27 +96,29 @@
 }
 
 .fos-commandbar-group {
-  padding: var(--space-small) var(--space-large) var(--space-xsmall);
-  font-size: var(--font-size-small);
+  padding: var(--space-small) var(--fos-gutter-dialog) var(--space-xsmall);
+  font-size: var(--fos-font-size-small);
+  font-weight: var(--fos-font-weight-emphasis);
   text-transform: uppercase;
-  opacity: var(--opacity-deemphasized-strong);
+  letter-spacing: 0.05em;
+  color: var(--fos-text-color-quiet);
 }
 
 .fos-commandbar-row {
   display: flex;
   gap: var(--space-small);
   align-items: baseline;
-  padding: var(--space-xsmall) var(--space-large);
+  padding: var(--space-xsmall) var(--fos-gutter-dialog);
   cursor: default;
 }
 
 .fos-commandbar-row[aria-selected="true"] {
-  background: var(--background-color-list-item-hover);
-  color: var(--text-color-list-item-hover);
+  background: var(--fos-selected-background);
+  color: var(--fos-selected-text-color);
 }
 
 .fos-commandbar-label {
-  font-weight: var(--font-weight-semibold);
+  font-weight: var(--fos-font-weight-emphasis);
   /* Marks are one character and action words are up to seven, so without a
      floor the detail column jitters as the list narrows under each keystroke. */
   /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
@@ -153,19 +155,19 @@
   width: 1em;
   flex: none;
   text-align: center;
-  font-family: monospace;
-  font-size: var(--font-size-small);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-accent-primary);
+  font-family: var(--fos-mark-font-family);
+  font-size: var(--fos-mark-font-size);
+  font-weight: var(--fos-mark-font-weight);
+  color: var(--fos-mark-color);
 }
 
 .fos-commandbar-spoken {
-  color: var(--text-color-deemphasized);
+  color: var(--fos-text-color-quiet);
   font-variant: small-caps;
 }
 
 .fos-commandbar-detail {
-  color: var(--text-color-deemphasized);
+  color: var(--fos-text-color-quiet);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -194,7 +196,7 @@
      confirmation with a long context name does not span the window. */
   /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   max-width: min(60ch, 90vw);
-  z-index: 2147483647;
+  z-index: var(--fos-layer-command);
   padding-block: var(--space-small);
   padding-inline: var(--space-medium);
   border-radius: var(--border-radius-medium);
@@ -202,7 +204,7 @@
   background: var(--background-color-box);
   color: var(--text-color);
   box-shadow: var(--box-shadow-level-3);
-  font-size: var(--font-size-small);
+  font-size: var(--fos-font-size-small);
   cursor: default;
 }
 

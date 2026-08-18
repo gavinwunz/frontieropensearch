@@ -624,3 +624,60 @@ add_task(async function test_a_context_with_no_crossings_offers_none() {
   );
   await store.close();
 });
+
+add_task(async function test_an_insert_returns_its_own_id_under_concurrency() {
+  // One store is shared by every window in the process, and each window's
+  // engine serialises only its own writes, so two windows' inserts interleave
+  // on one connection as a matter of course. `last_insert_rowid()` is a
+  // property of that connection across every table on it, so reading it in a
+  // statement after the INSERT returned whatever had most recently been
+  // written by anyone — a plausible integer from the wrong table.
+  //
+  // Nothing here deletes rows, so the damage was permanent and silent: nodes
+  // filed under a `trail_id` no trail had, membership naming nodes that were
+  // never written, and reads that join through those references quietly
+  // returning less than the database holds.
+  //
+  // Two tables and interleaved writers is the smallest shape that shows it.
+  const store = await freshStore();
+  const trailId = await store.addTrail({ name: "concurrent" });
+  const nodeId = await store.addNode({
+    trailId,
+    url: "https://example.org/root",
+  });
+
+  // Not awaited one at a time — that is the whole point. Serialised, the old
+  // pair of statements was correct, which is why this only ever showed up with
+  // a second window open.
+  const pending = [];
+  for (let i = 0; i < 20; i++) {
+    pending.push(store.addTrail({ name: `t${i}` }).then(id => ["trail", id]));
+    pending.push(store.startVisit(nodeId).then(id => ["visit", id]));
+  }
+  const written = await Promise.all(pending);
+
+  const byTable = { trail: [], visit: [] };
+  for (const [table, id] of written) {
+    byTable[table].push(id);
+  }
+
+  for (const [table, ids] of Object.entries(byTable)) {
+    Assert.equal(
+      new Set(ids).size,
+      ids.length,
+      `every ${table} insert reported a distinct id`
+    );
+    for (const id of ids) {
+      const [row] = await store.connection.execute(
+        `SELECT COUNT(*) AS n FROM ${table} WHERE id = :id`,
+        { id }
+      );
+      Assert.equal(
+        row.getResultByName("n"),
+        1,
+        `the id reported for a ${table} insert names a row of ${table}`
+      );
+    }
+  }
+  await store.close();
+});
