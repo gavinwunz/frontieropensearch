@@ -369,6 +369,21 @@ var gBrowserInit = {
     ) {
       // adjust browser UI for popups
       gURLBar.readOnly = true;
+    } else {
+      // Frontier OpenSearch. The address bar stops being an input, so that the
+      // command bar is the one entry surface by mouse as well as by key. It
+      // stays visible and keeps showing the origin: that display is a security
+      // boundary rather than decoration, and it is the half of the address bar
+      // the command bar does not replace. This sits beside the popup case
+      // above because it is the same operation on the same element at the one
+      // point in startup already known to be safe for it.
+      const { FOSLocationDisplay } = ChromeUtils.importESModule(
+        "resource:///modules/FOSLocationDisplay.sys.mjs"
+      );
+      const { FOSCommandBar: FOSBar } = ChromeUtils.importESModule(
+        "resource:///modules/FOSCommandBar.sys.mjs"
+      );
+      FOSLocationDisplay.forWindow(window).wire(FOSBar.forWindow(window));
     }
 
     BrowserUtils.callModulesFromCategory(

@@ -2,6 +2,13 @@
 support-files = [
   "head.js"
 ]
+prefs = [
+  # Frontier OpenSearch does not draw the tab strip — the Field shows open
+  # pages instead — and every test here drags one. They are the coverage that
+  # keeps the strip working for the pref that restores it, so they run against
+  # a window that has one.
+  "browser.fos.field.replacesTabStrip=false",
+]
 
 ["browser_drag_horizontal_overflow.js"]
 skip-if = [

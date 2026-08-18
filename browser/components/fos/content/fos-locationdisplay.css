@@ -1,0 +1,25 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* The address bar once it is a display rather than an input.
+ *
+ * Read-only is a property of the field and says nothing about what the field
+ * looks like, so without this the bar still offers an I-beam and a caret: it
+ * advertises typing, refuses it, and leaves the user with no idea that the
+ * command bar is what the press was for. The rules below are the whole
+ * difference between a control that has been given a new job and one that
+ * appears broken.
+ *
+ * Scoped to the attribute FOSLocationDisplay sets, so a window whose address
+ * bar was left alone — a popup, or the pref turned off — is untouched. */
+
+#urlbar[fos-location-display="true"] #urlbar-input {
+  cursor: pointer;
+  caret-color: transparent;
+  user-select: none;
+}
+
+#urlbar[fos-location-display="true"] .urlbar-input-container {
+  cursor: pointer;
+}
