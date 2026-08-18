@@ -2,6 +2,13 @@
 support-files = ["head.js"]
 prefs = [
   "sidebar.revamp=true",
+  # Frontier OpenSearch replaces linear history with the trail rail, so the
+  # gesture that opened the history sidebar opens the rail instead. These tests
+  # press that key and expect the sidebar. They are the coverage that keeps it
+  # working for the pref that restores it, so they run against a window where
+  # it still answers. The window where it does not is covered in
+  # browser/components/fos/tests/browser/.
+  "browser.fos.trailRail.replacesHistorySidebar=false",
 ]
 
 ["browser_a11y_sidebar.js"]
