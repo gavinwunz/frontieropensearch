@@ -1329,3 +1329,35 @@ membership). Do not re-search it.
   anything", which is a different claim. `context` with no target follows
   provenance again, exactly as bare `back` applies to where you already are. No
   new word: the grammar stays at twelve.
+
+### Opacity is the wrong way to de-emphasise text, and the reason is not taste
+
+Searched for the accessibility position on `opacity` versus a colour for
+secondary text, because the fork had both and needed one. Two findings settle
+it. TPGI's argument against CSS opacity is that transparency consistently
+fools automated contrast tooling: checkers read the declared colour rather
+than the composited result, so a dimmed label can fail WCAG 1.4.3 while every
+tool reports a pass — and where they do flag it, the colour values they report
+are unreliable. The commonly cited case is placeholder text at 40–50% opacity,
+which almost always fails and whose fix is a concrete colour, never an opacity.
+
+The second reason is CSS rather than accessibility and is the one that bit
+this tree: opacity applies to the whole subtree. A row quieted that way takes
+its own mark's accent and its current-node rule down with it, which is exactly
+what `.fos-rail-row[data-dismissed]` was doing — a dismissed node you were
+standing on lost both the letter it answers to and the marker saying you were
+there. The sidebar's equivalent rule quieted only the label, while carrying a
+comment claiming it matched the rail.
+
+Checked whether forced colours distinguishes them, expecting it would: it does
+not. `--opacity-deemphasized-strong` collapses to 1 and
+`--text-color-deemphasized` collapses to `inherit`, both in the
+`tokens-prefers-contrast` layer, so both stop de-emphasising. That argument is
+not available and should not be repeated.
+
+**Adopt** — colour for text, opacity only for de-emphasising a whole object
+where dimming the subtree is the point. `design/SYSTEM.md` §3; the one
+surviving opacity rule is the Field dimming cards outside the focused
+lineage, which dims their thumbnails deliberately.
+
+Source: https://www.tpgi.com/an-argument-against-css-opacity/
