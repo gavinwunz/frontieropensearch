@@ -33,6 +33,12 @@ Now on **Phase 3 — Beautiful and tested**.
   Mozilla's Firefox Terms of Use. Telemetry genuinely off —
   `canRecordBase`/`canRecordExtended` both false. Relay, accounts, VPN/Monitor
   promos off. See `agent/reports/phase-1.md` for the full table.
+- **The context engine's writes are correct under two windows.** The store's
+  inserts return their own id atomically; `design/ARCHITECTURE.md` §2 records
+  the per-window / per-profile split the bug came out of.
+- **`design/ARCHITECTURE.md`** — how the three pillars compose, the wiring
+  order at window init, the three-layer split, and the full list of files the
+  fork touches outside `browser/components/fos/`. Linked from the README.
 - **The Field's card and region model.** `FOSField.sys.mjs`: regions that are
   trails, cards seeded by provenance, pinning on first move, the non-occlusion
   push, capacity by eviction then growth, and the three-level overview with
@@ -223,75 +229,70 @@ Now on **Phase 3 — Beautiful and tested**.
 
 ## In progress
 
-Nothing. `agent/dev` and `main` both carry Phase 2; `phase-2` is tagged. The
-final push (`push5`) went out at the end of the run — check it landed before
-assuming origin is current.
+Nothing. `agent/dev` and `main` both carry the store fix; main was merged this
+run because the bug broke Phase 2's own tagged acceptance criterion there.
+Both branches pushed.
 
 ## Next task
 
-**1 is the flake. Nothing else in Phase 3 is worth doing while the flagship
-test is untrustworthy.**
+The flake is fixed and the suite is green five times running, so the flagship
+test is trustworthy again and the rest of Phase 3 is unblocked.
 
-1. **`browser_zdemoflow.js` flakes in the full suite, and the signature is
-   sharp.** It passes alone, every time (44 checks). In a full-suite run it
-   failed 2 of 3 times this run, and once earlier with a smaller failure set —
-   measured across five full-suite runs, not inferred. When it fails, the
-   exported context pack contains the context's **name and its query but not
-   one of its four pages**, and `suggest()` returns no context-tier item. So
-   the context exists and its `context_member` query rows exist; the page side
-   is what goes missing.
+1. **Measure the Field's pan and zoom before optimising it.** Unchanged from
+   two runs ago and now the top of the list. "60fps canvas pan and zoom, no
+   layout jank" is the criterion and there is no measurement yet. The Field is
+   DOM, not canvas, and `#applyPositions` writes transforms on every pointer
+   move. Profile with 40+ cards with the Gecko profiler, then decide.
+   `IDEAS.md` run 17 has the two candidates to check the profile against —
+   the transform writes and per-card CSS containment — and explicitly rejects
+   spraying `will-change`. Do not optimise from a guess.
 
-   `FOSContextStore.contextContents` (line ~760) is where to start. Pages come
-   from `context_member` joined to `trail_node`, and then
-   `JOIN trail t ON t.id = n.trail_id` — an **inner** join. A node whose trail
-   row is absent or not yet written therefore drops out of the brief silently
-   while its queries stay, which is exactly the observed signature. That is a
-   hypothesis with a matching shape, not a diagnosis: confirm it by dumping
-   `context_member`, `trail_node` and `trail` at pack time during a failing
-   suite run before changing anything. If it is right, the inner join is a
-   robustness bug on its own — a brief should never quietly lose a page.
-
-   Do not chase this by re-running until green. It failed 2 of 3; a single
-   green run proves nothing, which is how this run first mis-read it as
-   "my change broke the suite".
-
-2. **Measure the Field's pan and zoom before optimising it.** Unchanged from
-   last run. "60fps canvas pan and zoom, no layout jank" is the criterion and
-   there is no measurement yet. The Field is DOM, not canvas, and
-   `#applyPositions` writes transforms on every pointer move. Profile with 40+
-   cards, then decide. Do not optimise from a guess.
-
-3. **The scripted end-to-end smoke run.** The demo flow exists as a
+2. **The scripted end-to-end smoke run.** The demo flow exists as a
    browser-chrome test and the canvas screenshot route works; Phase 3 wants
-   the two joined, saving screenshots to `agent/reports/`. Blocked in spirit
-   by 1 — a smoke run built on a 2-in-3 flake is not a smoke run.
+   the two joined, saving screenshots to `agent/reports/`. No longer blocked:
+   it was blocked in spirit by the flake and the flake is gone.
 
-4. **README with real screenshots and an architecture doc.** The pillar
-   designs are in `design/FIELD.md`, `design/GRAMMAR.md`,
-   `design/SYSTEM.md` and `context-engine/SCHEMA.md`; the missing piece is the
-   document saying how the three pillars fit together, plus MPL and trademark
-   notes.
+3. **README with real screenshots.** The architecture doc now exists
+   (`design/ARCHITECTURE.md`, linked from the README's new documentation
+   table) and the MPL and trademark notes were already there. What is left is
+   genuinely just the screenshots, which item 2 produces.
 
-5. **Apply the design system to what it has not touched yet.** `SYSTEM.md`
+4. **Apply the design system to what it has not touched yet.** `SYSTEM.md`
    settled type, quiet text, the mark, selection, gutter, layers and weight.
    It did not touch spacing rhythm inside a row, focus-ring consistency, or
    the dark/light pairs, and it explicitly left the three surfaces' *widths*
    alone. Also still open from Phase 2's list: the address bar placeholder
    still says "Search or enter address" while refusing to be typed in.
 
-6. **A background tab still arrives with no signal at all.** Carried over,
+5. **A background tab still arrives with no signal at all.** Carried over,
    unchanged. Ambient-display research is in `IDEAS.md`.
 
-7. **The embedding pass, `prune`, and the voice path.** All carried over from
+6. **The embedding pass, `prune`, and the voice path.** All carried over from
    Phase 2, none blocking a Phase 3 criterion.
 
 ## Found this run, not yet chased
 
-- **A full-suite run is not reproducible and never was.** See Next task 1.
-  The three-strikes rule applies to this one from now on: it has now been
-  observed failing three times and passing twice, and each observation was
-  briefly explained by a different story (my change, then test pollution, then
-  ordering) before the counts were actually compared. Count it.
+- **RESOLVED — the full-suite flake was one bug, and it was in the product.**
+  `FOSContextStore.#insert` ran the INSERT and then a separate
+  `SELECT last_insert_rowid()`. One store is shared by every window in the
+  process and each window's engine serialises only *its own* writes, so the two
+  statements interleaved with another window's and the insert reported a row
+  from whatever table had most recently been written. Diagnosed by dumping
+  `context_member`, `trail_node` and `trail` at pack time in a failing run,
+  exactly as the last run's note said to: the dump showed four node membership
+  rows, two of them naming node ids that did not exist, and both surviving
+  nodes on `trail_id` 159 with no trail 159 anywhere. Nothing in this component
+  deletes rows, so those references were never going to resolve.
+
+  The inner-join hypothesis from last run was the wrong half. The join *was*
+  dropping the pages, but because the ids it joined on were fabricated, not
+  because a trail row was late. Fixed with `RETURNING id`, which is one
+  statement and cannot interleave. Regression test:
+  `test_an_insert_returns_its_own_id_under_concurrency` in
+  `tests/unit/test_contextstore.js`, verified against the old implementation —
+  it reports **1 distinct id for 20 concurrent trail inserts**. Five
+  consecutive full-suite runs green, against three of three failing before,
+  with three different signatures between them.
 
 - **The active card can have no thumbnail.** In the Field's region level the
   search result's card painted blank while its three children painted
@@ -499,6 +500,23 @@ do not build anything that assumes a row must exist.
 
 ## Gotchas worth not rediscovering
 
+**One store, many windows: never read connection-wide state after a write.**
+`FOSContextEngine.store()` opens one SQLite connection for the whole process and
+every window's engine writes through it. Each engine serialises only its own
+queue, so statements from two windows interleave as a matter of course. Anything
+that asks the *connection* a question after a write — `last_insert_rowid()`,
+`changes()`, `total_changes()` — is asking about whatever happened last, from
+any window and any table. Use `RETURNING`. This cost three runs and produced a
+database referencing rows that had never existed, with no error anywhere: the
+wrong id is a perfectly plausible integer.
+
+The reason it looked like a test-harness flake is worth keeping too. Alone, one
+window is the only writer and the two statements are correct; in a full suite,
+six earlier files have left an engine on the shared window actively recording,
+so the interleaving is constant. **"Passes alone, fails in the suite" is not
+evidence of test pollution.** It is evidence of concurrency, and the second
+writer may well be the product rather than the harness.
+
 **`--font-size-small` does nothing in chrome, and never did.** Upstream's
 `toolkit/themes/shared/design-system/src/tokens/base/font.tokens.json` gives
 both `font.size.root` and `font.size.small` a *platform* value of `unset`, so
@@ -679,7 +697,9 @@ only computed style in a real window can see it, which is what
 <!-- Task name → consecutive failures. At 3, stop retrying the same way, write the
      analysis below, and change approach or task. -->
 
-None active. Full build and push were both cleared in earlier runs.
+None active. The demo-flow flake was counted at three and is now closed by a
+root cause rather than by a green run — the change of approach the rule asks
+for was "dump the tables instead of re-running", and it worked first time.
 
 The push failure is the one to remember: it failed four runs running and each
 run invented a fresh plausible story (transport, process lifetime) rather than

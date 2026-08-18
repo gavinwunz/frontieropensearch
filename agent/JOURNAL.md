@@ -100,3 +100,48 @@ Phase 3 wants the suite green twice consecutively.
 Tests: 426 browser-chrome checks with the new file, 82 of them the design
 system contract; stylelint clean across `browser/components/fos/`. Phase 2's
 demo flow is green in isolation and intermittent in the suite, as above.
+
+## Run 17 — 2026-08-18 — Phase 3
+
+The demo-flow flake was a product bug, not a test one, and it was corrupting the
+database.
+
+Last run's note said to stop re-running and dump `context_member`, `trail_node`
+and `trail` at pack time during a failing suite run. That is what was done, and
+it answered on the first failing run. The dump: four node membership rows for
+the context, of which two named node ids that do not exist, and the two that do
+were both on `trail_id` 159 with no trail 159 in the table. Nothing in this
+component deletes rows, so those references were never going to resolve and the
+inner joins in `contextContents` were dropping every page — the exported pack
+had none, which is why it looked like "a page went missing".
+
+The cause is in `FOSContextStore.#insert`: an INSERT followed by a separate
+`SELECT last_insert_rowid()`. One store is shared by every window in the
+process, each window's engine serialises only its own writes, and
+`last_insert_rowid()` is a property of the connection across every table on it.
+So an insert reported whatever row had most recently been written by anyone —
+a plausible integer, from the wrong table, silently. Running alone there is one
+writer and the pair is correct; in a full suite six earlier files have left an
+engine recording on the shared window, so the interleaving is constant. That is
+the lesson worth keeping: "passes alone, fails in the suite" is evidence of
+concurrency, and the second writer can be the product rather than the harness.
+Three runs went into three different stories about test pollution.
+
+Fixed with `RETURNING id`. The regression test was checked against the old
+implementation rather than merely added — 20 concurrent trail inserts returned
+**one** distinct id. The three failure signatures seen across three runs (a
+query attached to no node, a suggest tier with no context item, a pack missing
+its pages) are all the same bug seen from different sides.
+
+Also this run: `design/ARCHITECTURE.md`, the missing document saying how the
+three pillars compose — one spine and two readers, the wiring order at window
+init, the per-window/per-profile split the bug came out of, and the honest list
+of the six files the fork touches outside its own directory. The README's
+pointer to `docs/` was wrong and now points at a real table.
+
+Merged to `main`, which had been carrying the bug under a Phase 2 tag whose
+acceptance criterion did not actually hold there.
+
+Tests: full suite green **five consecutive runs** (427 browser-chrome checks,
+both xpcshell files) against three of three failing before the fix; 179 node
+tests green.
