@@ -52,9 +52,30 @@
   overflow: hidden;
 }
 
+/* SYSTEM.md §5: the ring goes on what the keyboard will act on. The stage is
+   the whole content area, so a ring on it framed the window rather than
+   pointing at anything; the focused tile or card carries it instead, and the
+   stage keeps it only when there is nothing focused to point at. Widened
+   rather than recoloured, so a pinned card and a refused drop still say which
+   of those they are. */
 .fos-field-stage:focus-visible {
   outline: var(--focus-outline);
   outline-offset: var(--focus-outline-inset);
+}
+
+/* Off once a tile or a card can carry it. The `none` is explicit because it is
+   suppressing the UA stylesheet's own ring, not ours — see the rail. */
+.fos-field-stage[aria-activedescendant]:focus-visible {
+  outline: none;
+}
+
+.fos-field-stage:focus-visible .fos-field-tile[data-focus] {
+  /* `box-sizing: border-box`, so this does not move the tile's contents. */
+  border-width: var(--focus-outline-width);
+}
+
+.fos-field-stage:focus-visible .fos-field-card[data-focus] {
+  outline-width: var(--focus-outline-width);
 }
 
 .fos-field-empty {

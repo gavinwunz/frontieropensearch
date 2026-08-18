@@ -111,6 +111,41 @@ kind of state from the identical row in the rail beside it.
 Hover on an enterable row stays distinct from selection, because they mean
 different things: hover is the pointer, selection is where the keyboard is.
 
+**The focus ring goes on the selected row, not around the container holding
+it.** Every one of the fork's three focusable containers — the rail's list, the
+sidebar's body, the Field's stage — fills the window, so `:focus-visible` on
+the container drew an accent rectangle 700px tall down the side of the browser,
+next to a row shaded 20% grey. That put the loudest mark in the surface on the
+box rather than on the page Enter was about to open, and it said twice, in two
+visual languages, the one thing selection already means. Both README
+screenshots showed it.
+
+So the container's ring is conditional, and it is still there for the case the
+condition names: a list with nothing selected, which has nothing else to carry
+it. WCAG 2.4.7 is met either way, by the row or by the container.
+
+The condition is `[aria-activedescendant]` on the container, not `:has()` a
+selected row. The two are the same fact — every one of the three surfaces sets
+and clears that attribute in the same breath as the selection — but `:has()`
+makes every keystroke down a long trail invalidate a subtree match, and the
+tree's own `no-has-selector` lint rule says so. The attribute is not standing
+in for the state; it *is* the state, already declared to assistive technology.
+
+Two declarations, not one, and the second is explicit `outline: none`. The rule
+this replaced was never adding a ring — it was **overriding** the one the UA
+stylesheet draws on any focused element. Deleting it handed the container back
+a 1px grey `outline: auto`, which looked exactly like a change that had done
+nothing. Only a live test could see that, which is why all three surfaces check
+their own ring in a running window and not just here.
+
+A panel also opens with a row already selected — the page you are on, in both
+the rail and the sidebar — so in practice the container's branch is reached
+only by a surface with nothing in it.
+
+On the Field the same rule applies to a tile or a card, and the ring is a
+**widening** rather than a recolour: a focused card may also be pinned or may
+have just refused a drop, and those are the colours that have something to say.
+
 ## 6. Spacing
 
 Two axes, both properties of the **surface** rather than of the row.
@@ -198,8 +233,11 @@ checks in a running chrome window that:
 - no surface reaches for the dead platform token again;
 - every list row in the window, in whichever surface, has the same block
   padding, and it is the token's — measured on real rows rather than read out
-  of the stylesheet, which is the only way to catch a later rule overriding
-  it.
+  of the stylesheet, which is the only way to catch a later rule overriding it;
+- every container that declares a focus ring for itself also gives it up, in
+  as many words, once it points at a descendant (§5) — the live half of that
+  claim is in each surface's own test file, because a computed `outline: auto`
+  coming from the UA stylesheet is invisible to any amount of reading.
 
 A lint rule can only see what a stylesheet says. The bug this system was built
 around was a stylesheet that said the right thing and meant nothing.

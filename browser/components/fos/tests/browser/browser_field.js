@@ -147,6 +147,39 @@ add_task(async function test_the_overview_renders_every_region() {
   field().close();
 });
 
+add_task(async function test_the_focus_ring_lands_on_the_focused_card() {
+  // SYSTEM.md §5. The stage is the whole content area, so a ring on it framed
+  // the window instead of pointing at anything. Live, because the rule it
+  // replaced was overriding the UA's own ring rather than adding one.
+  await goTo(PAGE_A);
+  field().open();
+  const trailId = session().activeTrailId;
+  field().showRegion(trailId);
+
+  const stage = window.document.querySelector(".fos-field-stage");
+  stage.focus();
+  EventUtils.synthesizeKey("KEY_ArrowUp", {}, window);
+
+  const focused = stage.querySelector(".fos-field-card[data-focus]");
+  ok(focused, "a card has the focus");
+  is(
+    window.getComputedStyle(stage).outlineStyle,
+    "none",
+    "no ring around the stage while a card can carry it"
+  );
+  is(
+    parseFloat(window.getComputedStyle(focused).outlineWidth),
+    parseFloat(
+      window
+        .getComputedStyle(window.document.documentElement)
+        .getPropertyValue("--focus-outline-width")
+    ),
+    "the focused card's frame is widened to the ring's width"
+  );
+
+  field().close();
+});
+
 add_task(async function test_zoom_moves_between_the_three_levels() {
   await goTo(PAGE_A);
   await goTo(PAGE_B);

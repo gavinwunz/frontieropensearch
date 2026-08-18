@@ -298,6 +298,58 @@ add_task(async function every_list_row_shares_one_rhythm() {
   }
 });
 
+add_task(async function the_focus_ring_is_never_around_the_container() {
+  // SYSTEM.md §5. All three focusable containers fill the window, so a ring on
+  // one of them drew a 700px accent rectangle beside a faintly shaded row —
+  // the loudest mark in the surface on the box rather than on the page Enter
+  // would open, saying twice what selection already means.
+  //
+  // A container may still declare the ring, because it is the only thing left
+  // to carry one when nothing is selected. What it must then also do is turn
+  // it off again the moment it points at a descendant — and turn it off
+  // *explicitly*, because the declaration it is replacing was overriding the
+  // UA stylesheet's own `outline: auto` rather than adding a ring, so removing
+  // it left the container ringed and looked like nothing had changed. That is
+  // why this is checked at all, and why the three surfaces check it live as
+  // well: browser_trailrail.js, browser_contextsidebar.js, browser_field.js.
+  for (const name of SHEETS) {
+    const text = await sheetText(name);
+    const rules = text.split("}").map(rule => {
+      const [selector, body = ""] = rule.split("{");
+      return { selector: selector.trim(), body };
+    });
+
+    for (const { selector, body } of rules) {
+      if (
+        !selector.includes(":focus-visible") ||
+        !/outline:\s*var\(--focus-outline\)/.test(body)
+      ) {
+        continue;
+      }
+
+      const tail = selector.slice(
+        selector.lastIndexOf(":focus-visible") + ":focus-visible".length
+      );
+      if (/\S/.test(tail)) {
+        ok(true, `${name}: ${selector} — the ring is on a descendant`);
+        continue;
+      }
+
+      const container = selector.split(":focus-visible")[0].trim();
+      const off = rules.some(
+        rule =>
+          rule.selector.includes(`${container}[aria-activedescendant]`) &&
+          /outline:\s*none/.test(rule.body)
+      );
+      ok(
+        off,
+        `${name}: ${selector} gives itself a ring, and gives it up again ` +
+          `once it points at a descendant`
+      );
+    }
+  }
+});
+
 add_task(async function the_dead_token_is_gone() {
   // The exact declaration that produced the bug, so it cannot come back by
   // being copied out of an older surface.

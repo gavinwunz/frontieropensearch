@@ -83,7 +83,20 @@
   padding: var(--fos-list-padding-block) 0;
 }
 
+/* SYSTEM.md §5, and the same reasoning as the rail's list: the ring belongs on
+   the row, not around the panel. */
 .fos-sidebar-body:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-inset);
+}
+
+/* Off once a row can carry it. The `none` is explicit because it is
+   suppressing the UA stylesheet's own ring, not ours — see the rail. */
+.fos-sidebar-body[aria-activedescendant]:focus-visible {
+  outline: none;
+}
+
+.fos-sidebar-body:focus-visible .fos-sidebar-row[aria-selected="true"] {
   outline: var(--focus-outline);
   outline-offset: var(--focus-outline-inset);
 }
@@ -204,4 +217,3 @@
   color: var(--fos-text-color-quiet);
   font-style: italic;
 }
-

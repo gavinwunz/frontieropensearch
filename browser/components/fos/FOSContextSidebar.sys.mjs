@@ -243,6 +243,16 @@ export class FOSContextSidebar {
     for (const section of model.sections) {
       this.#body.appendChild(this.#drawSection(section));
     }
+
+    // The panel opens with the page you are on already selected, which is what
+    // the rail does, so the two surfaces agree about what a selection is — and
+    // so the focus ring lands on a row instead of around a panel the height of
+    // the window (SYSTEM.md §5). Only when nothing has been selected yet: a
+    // redraw must never drag the selection off the row the user arrowed to.
+    if (this.#selected === null) {
+      const here = this.#rows.findIndex(row => row.current && row.enterable);
+      this.#selected = here === -1 ? null : here;
+    }
     this.#applySelection();
   }
 

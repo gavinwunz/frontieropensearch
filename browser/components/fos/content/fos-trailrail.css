@@ -72,7 +72,37 @@
   flex: 1;
 }
 
+/* SYSTEM.md §5: the ring goes on the row the keyboard will act on, not around
+   the panel holding it. This list fills the window's height, so a ring on the
+   container drew a 700px accent rectangle down the side of the browser beside
+   a faintly shaded row — putting the loudest mark in the surface on the box
+   rather than on the page Enter would open.
+
+   The container still takes it when there is no selected row to carry it: an
+   empty trail has nothing else to put it on.
+
+   That condition is keyed on `aria-activedescendant`, which the list sets and
+   clears in the same breath as the selection, rather than on `:has()` a
+   selected row. `:has()` reads better and is the same fact, but it makes every
+   keystroke down a long trail invalidate a subtree match, and the tree's own
+   lint rule says as much. The attribute is not standing in for the state — it
+   *is* the state, declared to assistive technology in the same place. */
 .fos-rail-list:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-inset);
+}
+
+/* Explicit, because the rule this replaced was not adding a ring — it was
+   overriding the one the UA stylesheet draws on any focused element. Simply
+   deleting it handed the container back a 1px grey `outline: auto` and looked
+   like the change had done nothing at all. */
+.fos-rail-list[aria-activedescendant]:focus-visible {
+  outline: none;
+}
+
+.fos-rail-list:focus-visible .fos-rail-row[aria-selected="true"] {
+  /* Inset, because a row is full-bleed to the panel's edges and a ring drawn
+     outside its border box would be cut off at both of them. */
   outline: var(--focus-outline);
   outline-offset: var(--focus-outline-inset);
 }

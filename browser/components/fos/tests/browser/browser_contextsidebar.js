@@ -214,6 +214,20 @@ add_task(async function test_a_page_on_two_trails_reports_the_crossing() {
   BrowserTestUtils.removeTab(tab);
 });
 
+add_task(async function test_the_panel_opens_on_the_page_you_are_on() {
+  // The rail opens with the current node selected; this panel opening with
+  // nothing selected meant the two surfaces disagreed about what a selection
+  // is, and left the focus ring with nowhere to go but around the panel.
+  await goTo(PAGE_A);
+  const panel = await openSettled();
+
+  const selected = panel.body.querySelector('[aria-selected="true"]');
+  ok(selected, "a row is selected the moment the panel opens");
+  ok(selected.hasAttribute("data-current"), "and it is the page you are on");
+
+  panel.close();
+});
+
 add_task(async function test_arrow_keys_skip_rows_that_go_nowhere() {
   await goTo(PAGE_A);
   const panel = await openSettled();
@@ -231,6 +245,21 @@ add_task(async function test_arrow_keys_skip_rows_that_go_nowhere() {
     panel.body.getAttribute("aria-activedescendant"),
     selected.id,
     "the listbox points assistive technology at it"
+  );
+
+  // SYSTEM.md §5: the ring goes on the row, not around a panel that fills the
+  // window. Asserted live rather than in the stylesheet because the rule it
+  // replaced was overriding the UA's own `outline: auto` rather than adding a
+  // ring, so simply deleting it left the container ringed anyway.
+  is(
+    window.getComputedStyle(panel.body).outlineStyle,
+    "none",
+    "no ring around the panel while a row can carry it"
+  );
+  isnot(
+    window.getComputedStyle(selected).outlineStyle,
+    "none",
+    "the selected row carries the ring instead"
   );
 
   EventUtils.synthesizeKey("KEY_Escape", {}, window);
