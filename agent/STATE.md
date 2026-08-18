@@ -260,11 +260,17 @@ Each runs as its own transient systemd unit `fos-job-<name>.service`, in
 `app.slice` beside `fos.service` rather than inside it, which is what makes it
 survive a restart. `agent/logs/<name>.current` symlinks the live log.
 
-`tabtests5` — the 193 upstream tab tests after `browser_addAdjacentNewTab.js`,
-which is excluded because a timeout aborts the whole run and that file's
-timeout is pre-existing (see Known staged state). Started 2026-08-18T18:09Z.
-Read the tail for `Unexpected results`; anything there is fallout from the
-strip going and wants the manifest pref, not a code change.
+`tabtests6` — the upstream tab tests, minus the three files below, from the
+list in `agent/tabtests-rest.txt`:
+
+```bash
+./mach test $(tr '\n' ' ' < agent/tabtests-rest.txt)
+```
+
+Started 2026-08-18T18:15Z. Read the tail for `Unexpected results`. Anything
+there is fallout from the strip going and wants the manifest pref rather than a
+code change — but check first, because two of the three excluded files were
+**not** ours.
 
 ## Blockers
 
@@ -300,14 +306,21 @@ identity panels all anchor on elements inside it, and a hidden anchor is a
 prompt that appears at the corner of the window or not at all. That wants its
 own run and an answer for the app menu first.
 
-**`browser_addAdjacentNewTab.js` times out, and did so before this run** —
-verified by checking out the pre-run tree, rebuilding and re-running, which
-failed identically at the same subtest. It right-clicks a tab to open the tab
-context menu, and this manifest already skips several files for
-`os_version == '24.04' && display == 'x11'`, which is this box. Treat it as the
-same family. It matters operationally because a timeout **aborts the whole
-directory**, so a run of `browser/components/tabbrowser/test/browser/tabs/`
-stops there and reports almost nothing; pass the file list without it.
+**Three upstream tab tests are excluded, and only one of them was ours.**
+`browser_1936752_lock_tab_sizing.js` was a real regression — it measures tab
+widths that are now zero — and the manifest pref fixed it, so it is excluded
+only because it is now covered there. `browser_addAdjacentNewTab.js` and
+`browser_audioTabIcon.js` both time out **with both FOS surface prefs off**,
+and the first was checked against the pre-run tree by checking it out,
+rebuilding and re-running: it fails identically. One right-clicks a tab for its
+context menu and one plays audio, and this manifest already skips several files
+for `os_version == '24.04' && display == 'x11'`, which is this box. Treat them
+as that family and do not spend a run on them.
+
+This matters operationally, not just bookkeeping: **a timeout aborts the whole
+directory**, so `./mach test browser/components/tabbrowser/test/browser/tabs/`
+stops at the first one and reports almost nothing. `agent/tabtests-rest.txt` is
+the file list without them.
 
 **A surface this fork replaces needs its upstream tests pinned, not deleted.**
 `browser.fos.field.replacesTabStrip=false` is set in the `tabs/` and `dragdrop/`
