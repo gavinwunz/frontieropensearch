@@ -1010,12 +1010,20 @@ class XPCShellTestThread(Thread):
 
         # By default self.appPath will equal the gre dir. If specified in the
         # xpcshell.toml file, set a different app dir for this test.
-        if self.app_dir_key and self.app_dir_key in self.test_object:
-            rel_app_dir = self.test_object[self.app_dir_key]
-            rel_app_dir = os.path.join(self.xrePath, rel_app_dir)
-            self.appPath = os.path.abspath(rel_app_dir)
-        else:
-            self.appPath = None
+        # The key is derived from the application name, but this tree is a fork
+        # and every in-tree manifest is written against Firefox's, so the
+        # derived key matches nothing and the app directory is silently dropped.
+        # The symptom is not a missing appdir, it is that `resource:///` never
+        # maps and each browser test fails to load its own module, which reads
+        # like a packaging fault. Fall back to the upstream key, keeping the
+        # fork's own first so a manifest can still override it.
+        self.appPath = None
+        for app_dir_key in (self.app_dir_key, "firefox-appdir"):
+            if app_dir_key and app_dir_key in self.test_object:
+                rel_app_dir = self.test_object[app_dir_key]
+                rel_app_dir = os.path.join(self.xrePath, rel_app_dir)
+                self.appPath = os.path.abspath(rel_app_dir)
+                break
 
         test_dir = os.path.dirname(path)
 
