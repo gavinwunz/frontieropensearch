@@ -61,6 +61,8 @@ const WORD_TO_LETTER = Object.freeze(
  * Resolve a token to a mark letter, accepting either modality's form: the
  * letter `c` as typed, or the word `cap` as spoken. Returns null if the token
  * is neither, which is how the parser tells a mark from free text.
+ *
+ * @param {string} token A token from the input stream.
  */
 export function resolveMarkToken(token) {
   if (typeof token !== "string") {
@@ -73,7 +75,11 @@ export function resolveMarkToken(token) {
   return Object.hasOwn(WORD_TO_LETTER, t) ? WORD_TO_LETTER[t] : null;
 }
 
-/** The spoken form of a mark letter. */
+/**
+ * The spoken form of a mark letter.
+ *
+ * @param {string} letter A mark letter, a-z.
+ */
 export function markWord(letter) {
   return MARK_WORDS[letter] ?? null;
 }
@@ -86,6 +92,8 @@ export function markWord(letter) {
  * costs nothing and makes a mark guessable before it has been learned: a card
  * titled "gecko" prefers `g`. Distinct letters of the label come first, in the
  * order they appear, then the rest of the alphabet as a fallback.
+ *
+ * @param {string} label The object's own label.
  */
 function preferenceOrder(label) {
   const seen = new Set();
@@ -125,6 +133,11 @@ export class MarkRegistry {
    *
    * Returns the letter, or null if all 26 are held — in which case the object
    * is still registered and is reachable by search, per GRAMMAR.md §2.
+   *
+   * @param {string|number} id Caller-supplied object id.
+   * @param {object} [options]
+   * @param {string} [options.label] Used to pick a mnemonic letter.
+   * @param {string} [options.type] One of the addressable kinds.
    */
   assign(id, { label = "", type = "card" } = {}) {
     const existing = this.#byId.get(id);
@@ -152,7 +165,11 @@ export class MarkRegistry {
     return letter;
   }
 
-  /** Drop an object and free its letter for reuse. */
+  /**
+   * Drop an object and free its letter for reuse.
+   *
+   * @param {string|number} id Caller-supplied object id.
+   */
   release(id) {
     const entry = this.#byId.get(id);
     if (!entry) {
@@ -165,22 +182,38 @@ export class MarkRegistry {
     return true;
   }
 
-  /** The letter held by an object, or null. */
+  /**
+   * The letter held by an object, or null.
+   *
+   * @param {string|number} id Caller-supplied object id.
+   */
   markOf(id) {
     return this.#byId.get(id)?.letter ?? null;
   }
 
-  /** The object holding a letter, or null. */
+  /**
+   * The object holding a letter, or null.
+   *
+   * @param {string} letter A mark letter, a-z.
+   */
   objectAt(letter) {
     return this.#byLetter.get(letter)?.id ?? null;
   }
 
-  /** Whether a letter is currently held by a live object. */
+  /**
+   * Whether a letter is currently held by a live object.
+   *
+   * @param {string} letter A mark letter, a-z.
+   */
   isLive(letter) {
     return this.#byLetter.has(letter);
   }
 
-  /** The type of the object holding a letter, or null. */
+  /**
+   * The type of the object holding a letter, or null.
+   *
+   * @param {string} letter A mark letter, a-z.
+   */
   typeAt(letter) {
     return this.#byLetter.get(letter)?.type ?? null;
   }
@@ -189,6 +222,8 @@ export class MarkRegistry {
    * Marked objects, optionally filtered to a set of types. This is what feeds
    * the command bar's live-narrowing list once an action is known — the same
    * filter serves the keyboard user's candidate list and the voice grammar.
+   *
+   * @param {?string[]} types Object types to keep, or null for all.
    */
   candidates(types = null) {
     const wanted = types ? new Set(types) : null;

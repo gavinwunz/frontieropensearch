@@ -9,12 +9,19 @@
  * acceptance criterion the rest of the file supports.
  */
 
+/* These tests run under `node --test`, not in Gecko, so a static import of a
+ * system module is correct here. */
+/* eslint-disable mozilla/reject-import-system-module-from-non-system */
 import test from "node:test";
 import assert from "node:assert/strict";
 
 import { TrailStore } from "../../FOSTrailTree.sys.mjs";
 
-/** A monotonic clock, so timestamps are assertable rather than wall-clock. */
+/**
+ * A monotonic clock, so timestamps are assertable rather than wall-clock.
+ *
+ * @param {number} start First tick the clock returns.
+ */
 function fixedClock(start = 1000) {
   let t = start;
   return () => ++t;
@@ -23,7 +30,11 @@ function fixedClock(start = 1000) {
 function seeded() {
   const store = new TrailStore({ now: fixedClock() });
   const trailId = store.createTrail();
-  const root = store.addNode({ trailId, url: "https://example.invalid/search", title: "search" });
+  const root = store.addNode({
+    trailId,
+    url: "https://example.invalid/search",
+    title: "search",
+  });
   return { store, trailId, root };
 }
 
@@ -33,18 +44,30 @@ test("going back and navigating again never destroys the forward branch", () => 
   // there is no code path that removes a node on navigation.
   const { store, root } = seeded();
 
-  const first = store.visit(root, { url: "https://example.invalid/a", title: "a" });
-  const deep = store.visit(first, { url: "https://example.invalid/a/deep", title: "deep" });
+  const first = store.visit(root, {
+    url: "https://example.invalid/a",
+    title: "a",
+  });
+  const deep = store.visit(first, {
+    url: "https://example.invalid/a/deep",
+    title: "deep",
+  });
 
   // Back to the root, then off in another direction.
-  const second = store.visit(root, { url: "https://example.invalid/b", title: "b" });
+  const second = store.visit(root, {
+    url: "https://example.invalid/b",
+    title: "b",
+  });
 
   assert.deepEqual(
     store.children(root).map(n => n.title),
     ["a", "b"],
     "both directions survive as siblings"
   );
-  assert.deepEqual(store.siblings(second).map(n => n.id), [first]);
+  assert.deepEqual(
+    store.siblings(second).map(n => n.id),
+    [first]
+  );
   assert.deepEqual(
     store.path(deep).map(n => n.title),
     ["search", "a", "deep"],
@@ -59,7 +82,10 @@ test("branch starts a sibling, visit starts a child", () => {
   const sibling = store.branch(child, { url: "u2" });
 
   assert.equal(store.getNode(sibling).parent_id, root);
-  assert.deepEqual(store.children(root).map(n => n.id), [child, sibling]);
+  assert.deepEqual(
+    store.children(root).map(n => n.id),
+    [child, sibling]
+  );
 
   // A root's sibling is another root, not an orphan.
   const otherRoot = store.branch(root, { url: "u3" });
@@ -69,19 +95,34 @@ test("branch starts a sibling, visit starts a child", () => {
 
 test("dismissal removes a card from the Field, not the page from the trail", () => {
   const { store, root } = seeded();
-  const node = store.visit(root, { url: "https://example.invalid/long", title: "long" });
+  const node = store.visit(root, {
+    url: "https://example.invalid/long",
+    title: "long",
+  });
   store.setViewState(node, { scrollX: 0, scrollY: 4200, formState: "blob" });
 
   store.dismiss(node);
   const dismissed = store.getNode(node);
   assert.ok(dismissed.dismissed_at, "marked dismissed");
   assert.equal(dismissed.scroll_y, 4200, "scroll survives dismissal");
-  assert.equal(dismissed.form_state, "blob", "in-page state survives dismissal");
-  assert.deepEqual(store.path(node).map(n => n.title), ["search", "long"], "still on its trail");
+  assert.equal(
+    dismissed.form_state,
+    "blob",
+    "in-page state survives dismissal"
+  );
+  assert.deepEqual(
+    store.path(node).map(n => n.title),
+    ["search", "long"],
+    "still on its trail"
+  );
 
   store.restore(node);
   assert.equal(store.getNode(node).dismissed_at, null);
-  assert.equal(store.getNode(node).scroll_y, 4200, "restored where it was left");
+  assert.equal(
+    store.getNode(node).scroll_y,
+    4200,
+    "restored where it was left"
+  );
 });
 
 test("graft moves a node and its subtree", () => {
@@ -94,8 +135,15 @@ test("graft moves a node and its subtree", () => {
   store.graft(under, b);
 
   assert.equal(store.getNode(under).parent_id, b);
-  assert.deepEqual(store.children(a).map(n => n.id), [], "detached from the old parent");
-  assert.deepEqual(store.children(b).map(n => n.id), [under]);
+  assert.deepEqual(
+    store.children(a).map(n => n.id),
+    [],
+    "detached from the old parent"
+  );
+  assert.deepEqual(
+    store.children(b).map(n => n.id),
+    [under]
+  );
   assert.deepEqual(
     store.path(deeper).map(n => n.url),
     ["https://example.invalid/search", "b", "a/1", "a/1/1"],
@@ -103,7 +151,11 @@ test("graft moves a node and its subtree", () => {
   );
 
   store.graft(under, null);
-  assert.equal(store.getNode(under).parent_id, null, "grafting to null makes a root");
+  assert.equal(
+    store.getNode(under).parent_id,
+    null,
+    "grafting to null makes a root"
+  );
 });
 
 test("graft refuses the moves that would corrupt the tree", () => {
@@ -117,14 +169,21 @@ test("graft refuses the moves that would corrupt the tree", () => {
   const otherTrail = store.createTrail({ name: "elsewhere" });
   const foreign = store.addNode({ trailId: otherTrail, url: "x" });
   assert.throws(() => store.graft(a, foreign), /across trails/);
-  assert.throws(() => store.addNode({ trailId, parentId: foreign, url: "y" }), /across trails/);
+  assert.throws(
+    () => store.addNode({ trailId, parentId: foreign, url: "y" }),
+    /across trails/
+  );
   assert.throws(() => store.graft(a, 9999), /no such node/);
 });
 
 test("a trail is named, and naming is what makes it first-class", () => {
   const store = new TrailStore({ now: fixedClock() });
   const id = store.createTrail();
-  assert.equal(store.getTrail(id).name, null, "null until named, per the schema");
+  assert.equal(
+    store.getTrail(id).name,
+    null,
+    "null until named, per the schema"
+  );
   const before = store.getTrail(id).updated_at;
   store.nameTrail(id, "gecko session history");
   assert.equal(store.getTrail(id).name, "gecko session history");
@@ -143,16 +202,26 @@ test("promotion copies a curated selection and leaves the capture intact", () =>
   store.setViewState(keep, { scrollY: 120 });
 
   const capturedBefore = store.nodes(trailId).length;
-  const { trailId: promoted, idMap } = store.promote([root, a, keep], { name: "gecko" });
+  const { trailId: promoted, idMap } = store.promote([root, a, keep], {
+    name: "gecko",
+  });
 
   assert.equal(store.getTrail(promoted).name, "gecko");
-  assert.equal(store.nodes(trailId).length, capturedBefore, "capture is untouched");
+  assert.equal(
+    store.nodes(trailId).length,
+    capturedBefore,
+    "capture is untouched"
+  );
   assert.ok(store.getNode(noise), "unselected nodes are not disturbed");
 
   const copies = store.nodes(promoted);
   assert.equal(copies.length, 3);
   assert.deepEqual(copies.map(n => n.title).sort(), ["a", "a/1", "search"]);
-  assert.equal(store.getNode(idMap.get(keep)).scroll_y, 120, "view state comes along");
+  assert.equal(
+    store.getNode(idMap.get(keep)).scroll_y,
+    120,
+    "view state comes along"
+  );
   assert.deepEqual(
     store.path(idMap.get(keep)).map(n => n.title),
     ["search", "a", "a/1"],
@@ -224,8 +293,30 @@ test("an export with a dangling parent is rejected, not half-loaded", () => {
     () =>
       TrailStore.fromJSON({
         version: 1,
-        trails: [{ id: 1, name: null, created_at: 1, updated_at: 1, archived_at: null }],
-        nodes: [{ id: 1, trail_id: 1, parent_id: 42, url: "a", title: null, scroll_x: 0, scroll_y: 0, form_state: null, created_at: 1, last_visited_at: 1, dismissed_at: null }],
+        trails: [
+          {
+            id: 1,
+            name: null,
+            created_at: 1,
+            updated_at: 1,
+            archived_at: null,
+          },
+        ],
+        nodes: [
+          {
+            id: 1,
+            trail_id: 1,
+            parent_id: 42,
+            url: "a",
+            title: null,
+            scroll_x: 0,
+            scroll_y: 0,
+            form_state: null,
+            created_at: 1,
+            last_visited_at: 1,
+            dismissed_at: null,
+          },
+        ],
       }),
     /missing parent/
   );

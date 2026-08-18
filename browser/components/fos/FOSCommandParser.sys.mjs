@@ -19,12 +19,7 @@
  * bar's live-narrowing candidate list.
  */
 
-import {
-  ACTIONS,
-  QUERY_PREFIX,
-  actionSpec,
-  isActionWord,
-} from "./FOSGrammar.sys.mjs";
+import { QUERY_PREFIX, actionSpec, isActionWord } from "./FOSGrammar.sys.mjs";
 import { resolveMarkToken } from "./FOSMarks.sys.mjs";
 
 /** Result kinds. */
@@ -76,7 +71,9 @@ export function parse(input, { marks = null } = {}) {
   if (text.trimStart().startsWith(QUERY_PREFIX)) {
     const rest = text.trimStart().slice(QUERY_PREFIX.length).trim();
     return rest
-      ? result(COMMANDS, { commands: [{ action: "search", target: null, text: rest }] })
+      ? result(COMMANDS, {
+          commands: [{ action: "search", target: null, text: rest }],
+        })
       : result(COMMANDS, {
           commands: [],
           pending: { action: "search", expect: "text", accepts: [] },
@@ -192,7 +189,10 @@ function checkMark(letter, spec, marks, tok) {
   return null;
 }
 
-function result(type, { commands = [], pending = null, error = null, query = null }) {
+function result(
+  type,
+  { commands = [], pending = null, error = null, query = null }
+) {
   return { type, commands, pending, error, query };
 }
 
@@ -200,6 +200,9 @@ function result(type, { commands = [], pending = null, error = null, query = nul
  * The candidate marks for a pending slot, ready for the bar to render. Shared
  * by both modalities: the keyboard user sees this list, and it is the same set
  * the voice grammar will accept next.
+ *
+ * @param {?object} pending A parse result's pending slot.
+ * @param {?MarkRegistry} marks The live registry.
  */
 export function candidatesFor(pending, marks) {
   if (!pending || pending.expect !== "target" || !marks) {

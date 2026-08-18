@@ -13,6 +13,9 @@
  *   node --test browser/components/fos/tests/node/
  */
 
+/* These tests run under `node --test`, not in Gecko, so a static import of a
+ * system module is correct here. */
+/* eslint-disable mozilla/reject-import-system-module-from-non-system */
 import test from "node:test";
 import assert from "node:assert/strict";
 
@@ -39,7 +42,10 @@ import {
 
 test("the alphabet covers a-z with distinct speakable words", () => {
   assert.equal(MARK_LETTERS.length, 26);
-  assert.deepEqual([...MARK_LETTERS].sort(), "abcdefghijklmnopqrstuvwxyz".split(""));
+  assert.deepEqual(
+    [...MARK_LETTERS].sort(),
+    "abcdefghijklmnopqrstuvwxyz".split("")
+  );
   const words = Object.values(MARK_WORDS);
   assert.equal(new Set(words).size, 26, "no two letters share a word");
   for (const word of words) {
@@ -53,7 +59,10 @@ test("no action word collides with the mark alphabet", () => {
   // or "each", which would silently make chained commands ambiguous.
   const markTokens = new Set([...MARK_LETTERS, ...Object.values(MARK_WORDS)]);
   for (const action of ACTION_WORDS) {
-    assert.ok(!markTokens.has(action), `action "${action}" collides with a mark`);
+    assert.ok(
+      !markTokens.has(action),
+      `action "${action}" collides with a mark`
+    );
   }
 });
 
@@ -62,7 +71,11 @@ test("every action is reachable in both modalities", () => {
   // One word per action, typed and spoken, is what makes that true by
   // construction — so the test is that the word is always sayable.
   for (const [word, spec] of Object.entries(ACTIONS)) {
-    assert.match(word, /^[a-z]+$/, `"${word}" must be one plain lowercase word`);
+    assert.match(
+      word,
+      /^[a-z]+$/,
+      `"${word}" must be one plain lowercase word`
+    );
     assert.ok(isActionWord(word));
     assert.ok(["none", "optional", "required"].includes(spec.target));
     assert.ok(Array.isArray(spec.accepts));
@@ -99,7 +112,10 @@ test("marks are sticky across re-registration", () => {
   const marks = new MarkRegistry();
   const letter = marks.assign("card1", { label: "gecko", type: "card" });
   for (let i = 0; i < 5; i++) {
-    assert.equal(marks.assign("card1", { label: `gecko ${i}`, type: "card" }), letter);
+    assert.equal(
+      marks.assign("card1", { label: `gecko ${i}`, type: "card" }),
+      letter
+    );
   }
   assert.equal(marks.markOf("card1"), letter);
   assert.equal(marks.objectAt(letter), "card1");
@@ -163,7 +179,11 @@ test("search is the unmarked default", () => {
   assert.equal(r.type, QUERY);
   assert.equal(r.query, "gecko session history");
   assert.equal(parse("  spaced out  ").query, "spaced out");
-  assert.equal(parse("capybara").type, QUERY, "a word merely starting like a mark");
+  assert.equal(
+    parse("capybara").type,
+    QUERY,
+    "a word merely starting like a mark"
+  );
 });
 
 test("a query beginning with an action word can be escaped in both modalities", () => {
@@ -234,10 +254,16 @@ test("a half-typed command reports the slot being filled", () => {
   assert.deepEqual(target.commands, []);
 
   const text = parse("name cap");
-  assert.deepEqual(text.pending, { action: "name", expect: "text", accepts: [] });
+  assert.deepEqual(text.pending, {
+    action: "name",
+    expect: "text",
+    accepts: [],
+  });
 
   const chained = parse("branch enter");
-  assert.deepEqual(chained.commands, [{ action: "branch", target: null, text: null }]);
+  assert.deepEqual(chained.commands, [
+    { action: "branch", target: null, text: null },
+  ]);
   assert.equal(chained.pending.action, "enter");
 });
 
@@ -245,12 +271,10 @@ test("an optional target may simply be absent", () => {
   assert.deepEqual(parse("back").commands, [
     { action: "back", target: null, text: null },
   ]);
-  assert.deepEqual(parse("up field pack what").commands.map(c => c.action), [
-    "up",
-    "field",
-    "pack",
-    "what",
-  ]);
+  assert.deepEqual(
+    parse("up field pack what").commands.map(c => c.action),
+    ["up", "field", "pack", "what"]
+  );
 });
 
 test("a required target must be a mark", () => {
@@ -265,7 +289,11 @@ test("junk after a complete command is reported, not swallowed", () => {
   const r = parse("field gecko");
   assert.equal(r.type, ERROR);
   assert.equal(r.error.code, E_TRAILING);
-  assert.deepEqual(r.commands, [{ action: "field", target: null, text: null }], "the good prefix survives");
+  assert.deepEqual(
+    r.commands,
+    [{ action: "field", target: null, text: null }],
+    "the good prefix survives"
+  );
 });
 
 test("marks are checked against the live registry when one is supplied", () => {
@@ -301,7 +329,9 @@ test("every action parses from a bare utterance", () => {
   // ACTIONS may be unreachable from the grammar.
   for (const [word, spec] of Object.entries(ACTIONS)) {
     const line =
-      word + (spec.target === "required" ? " cap" : "") + (spec.text ? " some text" : "");
+      word +
+      (spec.target === "required" ? " cap" : "") +
+      (spec.text ? " some text" : "");
     const r = parse(line);
     assert.equal(r.type, COMMANDS, `"${line}" should parse`);
     assert.equal(r.pending, null, `"${line}" should be complete`);

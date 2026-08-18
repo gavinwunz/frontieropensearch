@@ -27,6 +27,9 @@
 /** A node the user removed from the Field. Still in its trail, still restorable. */
 const DISMISSED = "dismissed_at";
 
+/**
+ *
+ */
 export class TrailStore {
   #trails = new Map();
   #nodes = new Map();
@@ -66,7 +69,12 @@ export class TrailStore {
     return this.#trails.get(id) ?? null;
   }
 
-  /** `name <mark> <text>`: naming is what makes a trail a first-class object. */
+  /**
+   * `name <mark> <text>`: naming is what makes a trail a first-class object.
+   *
+   * @param {number} id
+   * @param {string} name User-supplied name.
+   */
   nameTrail(id, name) {
     const trail = this.#trails.get(id);
     if (!trail) {
@@ -88,6 +96,12 @@ export class TrailStore {
    *
    * This is the raw insert; navigation should go through `visit()` or
    * `branch()`, which say what they mean.
+   *
+   * @param {object} fields
+   * @param {number} fields.trailId
+   * @param {?number} [fields.parentId] Null makes it a trail root.
+   * @param {string} fields.url
+   * @param {?string} [fields.title]
    */
   addNode({ trailId, parentId = null, url, title = null }) {
     if (!this.#trails.has(trailId)) {
@@ -133,6 +147,11 @@ export class TrailStore {
    * never destroys the forward branch: re-entering an earlier node and
    * navigating again adds a second child, and the first is still there as its
    * sibling.
+   *
+   * @param {number} fromNodeId
+   * @param {object} page
+   * @param {string} page.url
+   * @param {?string} [page.title]
    */
   visit(fromNodeId, { url, title = null }) {
     const from = this.#requireNode(fromNodeId);
@@ -147,6 +166,11 @@ export class TrailStore {
   /**
    * `branch`: start a sibling of a node rather than a child of it — a new line
    * of enquiry from the same starting point. A root's sibling is another root.
+   *
+   * @param {number} nodeId
+   * @param {object} page
+   * @param {string} page.url
+   * @param {?string} [page.title]
    */
   branch(nodeId, { url, title = null }) {
     const node = this.#requireNode(nodeId);
@@ -166,7 +190,11 @@ export class TrailStore {
     return (this.#childIds.get(id) ?? []).map(cid => this.#nodes.get(cid));
   }
 
-  /** Sibling nodes, excluding the node itself. */
+  /**
+   * Sibling nodes, excluding the node itself.
+   *
+   * @param {number} id
+   */
   siblings(id) {
     const node = this.#requireNode(id);
     return this.nodes(node.trail_id).filter(
@@ -183,7 +211,11 @@ export class TrailStore {
     return trailId === null ? all : all.filter(n => n.trail_id === trailId);
   }
 
-  /** Root-to-node path, which is what the rail renders as the current spine. */
+  /**
+   * Root-to-node path, which is what the rail renders as the current spine.
+   *
+   * @param {number} id
+   */
   path(id) {
     const out = [];
     let node = this.#requireNode(id);
@@ -194,7 +226,11 @@ export class TrailStore {
     return out;
   }
 
-  /** The node and everything under it, depth first. */
+  /**
+   * The node and everything under it, depth first.
+   *
+   * @param {number} id
+   */
   subtree(id) {
     const out = [];
     const walk = nodeId => {
@@ -212,6 +248,9 @@ export class TrailStore {
    *
    * Rejects any move that would put a node inside its own subtree, which is the
    * one way a tree edit here can corrupt the structure.
+   *
+   * @param {number} nodeId
+   * @param {?number} newParentId Null makes the node a root.
    */
   graft(nodeId, newParentId) {
     const node = this.#requireNode(nodeId);
@@ -243,6 +282,8 @@ export class TrailStore {
    * page keeps its place on the trail along with its scroll and form state, so
    * dismissal costs the user nothing and the Field does not become one more
    * surface to hoard on.
+   *
+   * @param {number} nodeId
    */
   dismiss(nodeId) {
     const node = this.#requireNode(nodeId);
@@ -265,8 +306,17 @@ export class TrailStore {
    * The live `nsISHEntry` is authoritative while the node still has one; these
    * columns are the durable copy, written on dismissal and at session end. See
    * SCHEMA.md.
+   *
+   * @param {number} nodeId
+   * @param {object} [state]
+   * @param {?number} [state.scrollX] Left unchanged when null.
+   * @param {?number} [state.scrollY] Left unchanged when null.
+   * @param {?string} [state.formState] Session-store blob.
    */
-  setViewState(nodeId, { scrollX = null, scrollY = null, formState = null } = {}) {
+  setViewState(
+    nodeId,
+    { scrollX = null, scrollY = null, formState = null } = {}
+  ) {
     const node = this.#requireNode(nodeId);
     if (scrollX !== null) {
       node.scroll_x = scrollX;
@@ -292,6 +342,9 @@ export class TrailStore {
    * parent if that parent was also selected, and becomes a root otherwise, so
    * a selection with gaps in it flattens rather than failing.
    *
+   * @param {number[]} nodeIds The curated selection.
+   * @param {object} [options]
+   * @param {?string} [options.name] Null until the user names it.
    * @returns {{trailId: number, idMap: Map<number, number>}}
    */
   promote(nodeIds, { name = null } = {}) {
@@ -337,9 +390,12 @@ export class TrailStore {
    * Trails are first-class objects: nameable, saveable, exportable. This is the
    * export, and it is the schema's own column names so that a file written here
    * and a row read from SQLite are the same shape.
+   *
+   * @param {?number} trailId Null exports every trail.
    */
   toJSON(trailId = null) {
-    const trails = trailId === null ? this.trails() : [this.#requireTrail(trailId)];
+    const trails =
+      trailId === null ? this.trails() : [this.#requireTrail(trailId)];
     return {
       version: 1,
       trails: trails.map(t => ({ ...t })),
@@ -367,7 +423,9 @@ export class TrailStore {
       if (node.parent_id !== null) {
         const siblings = store.#childIds.get(node.parent_id);
         if (!siblings) {
-          throw new Error(`node ${node.id} has a missing parent ${node.parent_id}`);
+          throw new Error(
+            `node ${node.id} has a missing parent ${node.parent_id}`
+          );
         }
         siblings.push(node.id);
       }

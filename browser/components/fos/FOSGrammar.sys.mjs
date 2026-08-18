@@ -135,7 +135,9 @@ export const QUERY_PREFIX = "?";
 export const ACTION_WORDS = Object.freeze(Object.keys(ACTIONS));
 
 export function isActionWord(token) {
-  return typeof token === "string" && Object.hasOwn(ACTIONS, token.toLowerCase());
+  return (
+    typeof token === "string" && Object.hasOwn(ACTIONS, token.toLowerCase())
+  );
 }
 
 export function actionSpec(token) {
