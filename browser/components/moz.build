@@ -41,6 +41,7 @@ DIRS += [
     "enterprisepolicies",
     "extensions",
     "firefoxview",
+    "fos",
     "genai",
     "ipprotection",
     "messagepreview",
