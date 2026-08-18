@@ -84,6 +84,17 @@
        The plate is the variation; the letter is not. */
     --fos-mark-plate-background: var(--background-color-box);
 
+    /* ---- the ambient signal --------------------------------------------- */
+
+    /* A persistent binary state, drawn once and left there: "something has
+       arrived that you have not seen". It is a step change rather than an
+       animation on purpose — motion at the margin captures attention
+       involuntarily, and a slow fade is the change people reliably do not see
+       at all. The accent, because it is the fork's one "this is yours to act
+       on" colour and the mark means exactly that. */
+    --fos-signal-color: var(--color-accent-primary);
+    --fos-signal-size: var(--space-small);
+
     /* ---- selection ------------------------------------------------------ */
 
     /* Keyboard selection in a list, wherever the list is. The sidebar had

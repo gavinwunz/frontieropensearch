@@ -652,6 +652,98 @@ add_task(async function a_resize_rebuilds_when_the_model_has_moved_on() {
   }
 });
 
+/**
+ * What arrived while you were not looking, and what did not.
+ *
+ * The signal's whole claim is that it never fires for a page the user is
+ * looking at, because a signal that lights on ordinary browsing is one people
+ * learn to stop reading. So the interesting assertion is the negative one: a
+ * foreground navigation, which places a card exactly like a background load
+ * does, must leave the state alone.
+ */
+add_task(
+  async function a_background_arrival_is_unseen_and_a_navigation_is_not() {
+    const surface = field();
+    surface.open();
+    surface.close();
+    Assert.ok(!surface.hasUnseen, "nothing is unseen just after a look");
+
+    await goTo(PAGE_A);
+    Assert.ok(
+      !surface.hasUnseen,
+      "the page the user navigated to is not an arrival — they are looking at it"
+    );
+
+    const tab = BrowserTestUtils.addTab(gBrowser, PAGE_B);
+    try {
+      await BrowserTestUtils.browserLoaded(tab.linkedBrowser, false, PAGE_B);
+      await TestUtils.waitForCondition(
+        () => surface.hasUnseen,
+        "a page loaded in a tab that is not in front is unseen"
+      );
+
+      // Cleared by looking, which is the only thing that clears it: opening the
+      // Field is what the state is for, so it is also what ends it.
+      surface.open();
+      Assert.ok(!surface.hasUnseen, "and opening the Field cleared it");
+    } finally {
+      surface.close();
+      BrowserTestUtils.removeTab(tab);
+    }
+  }
+);
+
+/**
+ * The state is watched, not polled.
+ *
+ * The Field owns the question and says nothing about how it is drawn; a
+ * surface that wants to draw it subscribes. Both edges are checked because a
+ * listener that only fires on the way up leaves the mark on screen for the
+ * rest of the session.
+ */
+add_task(async function the_unseen_state_is_announced_on_both_edges() {
+  const surface = field();
+  surface.open();
+  surface.close();
+
+  const seen = [];
+  const unwatch = surface.onUnseenChange(value => seen.push(value));
+  const tab = BrowserTestUtils.addTab(gBrowser, PAGE_C);
+  try {
+    await BrowserTestUtils.browserLoaded(tab.linkedBrowser, false, PAGE_C);
+    await TestUtils.waitForCondition(() => seen.length, "the watcher was told");
+    surface.open();
+    Assert.deepEqual(
+      seen,
+      [true, false],
+      "once on the way up, once on the way down"
+    );
+
+    // And not once per arrival: the state is binary, so a second background
+    // page while the first is still unseen is not a second announcement.
+    surface.close();
+    const more = [];
+    const unwatch2 = surface.onUnseenChange(value => more.push(value));
+    try {
+      const second = BrowserTestUtils.addTab(gBrowser, PAGE_B);
+      await BrowserTestUtils.browserLoaded(second.linkedBrowser, false, PAGE_B);
+      await TestUtils.waitForCondition(() => more.length, "the first arrival");
+      const third = BrowserTestUtils.addTab(gBrowser, PAGE_C);
+      await BrowserTestUtils.browserLoaded(third.linkedBrowser, false, PAGE_C);
+      Assert.deepEqual(more, [true], "the second arrival said nothing new");
+      BrowserTestUtils.removeTab(second);
+      BrowserTestUtils.removeTab(third);
+    } finally {
+      unwatch2();
+    }
+  } finally {
+    unwatch();
+    surface.open();
+    surface.close();
+    BrowserTestUtils.removeTab(tab);
+  }
+});
+
 /** One animation frame. */
 function frame() {
   return new Promise(resolve => window.requestAnimationFrame(resolve));

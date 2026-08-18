@@ -64,6 +64,17 @@ const PREF = "browser.fos.commandBar.replacesAddressBar";
 const PLACEHOLDER = "Press to search or run a command";
 
 /**
+ * What the unseen state says to a screen reader.
+ *
+ * The state is drawn as a mark on the bar and a mark says nothing to anyone
+ * not looking at it. `aria-description` rather than a live region on purpose:
+ * a live region announces on arrival, which is the interruption this signal
+ * exists to avoid. This is read when the user asks about the bar, which is the
+ * same voluntary glance the mark is designed for.
+ */
+const UNSEEN_DESCRIPTION = "Pages have arrived in the Field since you looked";
+
+/**
  * Elements inside the address bar that keep their own click.
  *
  * Each is a control with a job of its own, and each of those jobs is the
@@ -126,6 +137,7 @@ export class FOSLocationDisplay {
   #onMouseDown = null;
   #wired = false;
   #setPlaceholder = null;
+  #unwatch = null;
 
   constructor(window) {
     this.#window = window;
@@ -143,10 +155,24 @@ export class FOSLocationDisplay {
    * a popup, or a taskbar tab — is left alone. It has no command bar worth
    * opening and Firefox has already made the same decision for it.
    *
+   * It is also where the Field's unseen state is drawn, and that is a finding
+   * rather than a preference. The design record left the signal's *form*
+   * settled and its *surface* open between two candidates: the Field's own
+   * affordance and the command bar's resting state. This fork has no Field
+   * affordance in the chrome at all — no toolbar button, no persistent edge —
+   * and the command bar builds its DOM on first open, so it has no resting
+   * state of its own either. What is on screen in an ordinary window is this:
+   * the retired address bar, which is the command bar at rest. So it carries
+   * the mark, and pressing it opens the command bar, from which `field` is one
+   * word away.
+   *
    * @param {object} bar The window's `FOSCommandBar`.
+   * @param {?object} [field] The window's `FOSFieldSurface`. Passed in rather
+   *   than imported, so that this module keeps its one dependency and a test
+   *   can wire the bar without a Field behind it.
    * @returns {FOSLocationDisplay} This, for chaining.
    */
-  wire(bar) {
+  wire(bar, field = null) {
     this.#bar = bar;
     if (this.#wired || !Services.prefs.getBoolPref(PREF, true)) {
       return this;
@@ -195,6 +221,13 @@ export class FOSLocationDisplay {
     this.#onMouseDown = event => this.#handle(event);
     urlbar.addEventListener("mousedown", this.#onMouseDown, { capture: true });
     this.#wired = true;
+
+    if (field) {
+      this.#unwatch = field.onUnseenChange(value => this.#showUnseen(value));
+      // The current value, not just the changes: a window built while another
+      // one has already collected an arrival opens showing the truth.
+      this.#showUnseen(field.hasUnseen);
+    }
     return this;
   }
 
@@ -202,6 +235,11 @@ export class FOSLocationDisplay {
   unwire() {
     if (!this.#wired) {
       return;
+    }
+    if (this.#unwatch) {
+      this.#unwatch();
+      this.#unwatch = null;
+      this.#showUnseen(false);
     }
     this.#urlbar.removeEventListener("mousedown", this.#onMouseDown, {
       capture: true,
@@ -218,6 +256,28 @@ export class FOSLocationDisplay {
     }
     this.#onMouseDown = null;
     this.#wired = false;
+  }
+
+  /**
+   * Draw the Field's unseen state, or stop drawing it.
+   *
+   * An attribute and nothing else — the mark itself is the stylesheet's, which
+   * is what keeps the pref that gives the address bar back giving this back in
+   * the same breath.
+   *
+   * @param {boolean} on Whether anything is unseen.
+   */
+  #showUnseen(on) {
+    this.#urlbar.toggleAttribute("fos-unseen", on);
+    const input = this.#urlbar.inputField;
+    if (!input) {
+      return;
+    }
+    if (on) {
+      input.setAttribute("aria-description", UNSEEN_DESCRIPTION);
+    } else {
+      input.removeAttribute("aria-description");
+    }
   }
 
   /**

@@ -50,3 +50,28 @@
 #urlbar[fos-location-display="true"] .searchmode-switcher {
   display: none;
 }
+
+/* The unseen mark: something arrived in the Field while you were not looking.
+ *
+ * This bar carries it because it is the only surface this fork keeps
+ * permanently on screen — there is no Field button in the toolbar, and the
+ * command bar has no DOM at all until it is opened. `FOSLocationDisplay` sets
+ * the attribute and nothing else, so the pref that gives the address bar back
+ * takes the mark away with it.
+ *
+ * A flex item rather than an absolutely positioned dot: the input container is
+ * already a row of controls with the page actions at its end, and a dot placed
+ * over them would sit on the bookmark star at some widths and not at others.
+ * As an item it makes its own room, and it takes none at all when the state is
+ * false, which is the state a window spends nearly all of its life in. */
+
+#urlbar[fos-location-display="true"][fos-unseen] .urlbar-input-container::after {
+  content: "";
+  flex: 0 0 auto;
+  align-self: center;
+  inline-size: var(--fos-signal-size);
+  block-size: var(--fos-signal-size);
+  margin-inline: var(--space-xxsmall) var(--space-xsmall);
+  border-radius: var(--border-radius-circle);
+  background: var(--fos-signal-color);
+}

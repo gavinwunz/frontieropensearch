@@ -127,6 +127,12 @@ export class FOSFieldSurface {
   #resizeFrame = 0;
   #resizePasses = 0;
 
+  /** Whether anything has arrived since the Field was last looked at. */
+  #unseen = false;
+  #unseenListeners = new Set();
+  /** When this window started watching, so a restored page is not an arrival. */
+  #watchingSince = Infinity;
+
   /** node id -> data URL. */
   #thumbs = new Map();
 
@@ -224,6 +230,11 @@ export class FOSFieldSurface {
     // have, which is the one moment it most needs to be right.
     this.model;
     this.#unsubscribe ??= this.#session.subscribe(() => this.sync());
+    // Stamped before the first sync, because everything already in the store
+    // at this moment is a page from a previous session being put back, and a
+    // restart is not an arrival. Without this the signal would be lit on every
+    // start, which is how a badge teaches people to stop reading it.
+    this.#watchingSince = Date.now();
     // A page carries one mark and it belongs to its node, so the Field does not
     // assign any — it tells pillar B which pages it is holding, and pillar B
     // keeps those marked even when their trail is not the active one. Without
@@ -314,6 +325,11 @@ export class FOSFieldSurface {
   sync() {
     const model = this.model;
     let changed = false;
+    let arrived = false;
+    // The page this window is actually showing. A card placed for it is the
+    // navigation the user just made and is by definition seen; every other
+    // card placed in the same pass arrived somewhere they were not looking.
+    const current = this.#session.currentNodeId;
     for (const node of this.#session.store.nodes()) {
       if (node.dismissed_at !== null || model.cardForNode(node.id)) {
         continue;
@@ -321,6 +337,9 @@ export class FOSFieldSurface {
       try {
         model.place(node.id);
         changed = true;
+        if (node.id !== current && node.created_at >= this.#watchingSince) {
+          arrived = true;
+        }
       } catch (e) {
         // A node whose trail has gone is not a card; it is not an error
         // either, and it must not take the whole sync down with it.
@@ -329,6 +348,73 @@ export class FOSFieldSurface {
     }
     if (changed && this.isOpen) {
       this.render();
+    }
+    // Nothing is unseen while the Field is on screen: the arrival was drawn on
+    // the render above, in front of the person the signal is for.
+    if (arrived && !this.isOpen) {
+      this.#setUnseen(true);
+    }
+  }
+
+  // ---- what arrived while you were not looking ----------------------------
+
+  /**
+   * Whether anything has arrived in the Field since it was last opened.
+   *
+   * The one thing this fork says about a page that loads in the background.
+   * The design record settles its form against two literatures and rules out
+   * both ends of the obvious range: motion at the window margin captures
+   * attention involuntarily, which is the attention shift an ambient display
+   * is defined by not requiring, and a slow fade runs into slow change
+   * blindness, which survives the change being large, in full view and about
+   * something the observer cares about. What is left when an event and a drift
+   * are both out is a *state* — a step change that persists, is read on the
+   * next voluntary glance, and answers "has anything arrived since I last
+   * looked?" at the moment the user chooses to ask it.
+   *
+   * Binary rather than a count, because a count is only worth rendering if it
+   * is worth reading precisely and nobody reads a peripheral number precisely
+   * — and because a number that grows is the tab strip's worst property.
+   * Cleared by opening the Field rather than by a dismissal, because opening
+   * the Field is what the state is *for*: a signal with its own dismiss button
+   * is a second thing to do about a page you have not read yet.
+   *
+   * @returns {boolean}
+   */
+  get hasUnseen() {
+    return this.#unseen;
+  }
+
+  /**
+   * Watch the unseen state.
+   *
+   * The Field owns the state because it owns the question — what is on screen
+   * carrying it is a matter for whichever surface is persistent, and in this
+   * fork's ordinary window that is the retired address bar. So the Field says
+   * what is true and says nothing about how it is drawn.
+   *
+   * @param {Function} listener Called with the new value on every change.
+   * @returns {Function} Call it to stop watching.
+   */
+  onUnseenChange(listener) {
+    this.#unseenListeners.add(listener);
+    return () => this.#unseenListeners.delete(listener);
+  }
+
+  /**
+   * @param {boolean} value The new state.
+   */
+  #setUnseen(value) {
+    if (this.#unseen === value) {
+      return;
+    }
+    this.#unseen = value;
+    for (const listener of this.#unseenListeners) {
+      try {
+        listener(value);
+      } catch (e) {
+        console.error(e);
+      }
     }
   }
 
@@ -342,6 +428,11 @@ export class FOSFieldSurface {
   open() {
     this.#build();
     this.sync();
+    // After the sync and not before it: the sync above still sees a closed
+    // Field, so a page arriving in the same pass sets the state — and it is
+    // about to be drawn by this very open. Clearing here covers both that page
+    // and everything that arrived before it.
+    this.#setUnseen(false);
     this.#root.hidden = false;
     this.showOverview();
     this.#captureOpenTabs();

@@ -309,6 +309,60 @@ add_task(async function the_switcher_cannot_be_reached_by_keyboard() {
   });
 });
 
+/**
+ * The one thing this fork says about a page that loads in the background.
+ *
+ * The design record settled the signal's form — a persistent binary state,
+ * read on the next voluntary glance — and left its surface open between the
+ * Field's own affordance and the command bar's resting state. This window is
+ * the answer: there is no Field affordance in the chrome, and the command bar
+ * has no DOM until it is opened, so the only thing permanently on screen is
+ * this bar. The test is therefore about *this* element, and it checks the
+ * screen-reader half too, because a coloured dot says nothing to anyone who is
+ * not looking at it.
+ */
+add_task(async function an_unseen_arrival_marks_the_bar() {
+  const surface = FOSFieldSurface.forWindow(window);
+  surface.open();
+  surface.close();
+  Assert.ok(
+    !gURLBar.hasAttribute("fos-unseen"),
+    "no mark when nothing has arrived"
+  );
+
+  const tab = BrowserTestUtils.addTab(gBrowser, PAGE);
+  try {
+    await BrowserTestUtils.browserLoaded(tab.linkedBrowser, false, PAGE);
+    await TestUtils.waitForCondition(
+      () => gURLBar.hasAttribute("fos-unseen"),
+      "a page arriving in the background marked the bar"
+    );
+    Assert.equal(
+      gURLBar.inputField.getAttribute("aria-description"),
+      "Pages have arrived in the Field since you looked",
+      "and said so in words as well as in a dot"
+    );
+    Assert.notEqual(
+      window.getComputedStyle(
+        gURLBar.querySelector(".urlbar-input-container"),
+        "::after"
+      ).content,
+      "none",
+      "the mark is actually drawn"
+    );
+
+    surface.open();
+    Assert.ok(!gURLBar.hasAttribute("fos-unseen"), "looking cleared the mark");
+    Assert.ok(
+      !gURLBar.inputField.hasAttribute("aria-description"),
+      "and cleared what it said"
+    );
+  } finally {
+    surface.close();
+    BrowserTestUtils.removeTab(tab);
+  }
+});
+
 add_task(async function unwiring_gives_the_address_bar_back() {
   display().unwire();
   Assert.ok(!display().isWired, "unwired");
@@ -337,6 +391,6 @@ add_task(async function unwiring_gives_the_address_bar_back() {
   // they share one window, and a typable address bar left behind would be a
   // different browser for whichever file runs next.
   gURLBar.blur();
-  display().wire(bar());
+  display().wire(bar(), FOSFieldSurface.forWindow(window));
   Assert.ok(display().isWired, "re-wired for the rest of the suite");
 });

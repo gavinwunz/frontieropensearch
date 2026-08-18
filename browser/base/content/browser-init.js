@@ -383,7 +383,16 @@ var gBrowserInit = {
       const { FOSCommandBar: FOSBar } = ChromeUtils.importESModule(
         "resource:///modules/FOSCommandBar.sys.mjs"
       );
-      FOSLocationDisplay.forWindow(window).wire(FOSBar.forWindow(window));
+      // The Field goes in with it: the address bar is the only surface this
+      // fork keeps permanently on screen, so it is the one that can carry the
+      // Field's "something arrived while you were not looking" state.
+      const { FOSFieldSurface: FOSField } = ChromeUtils.importESModule(
+        "resource:///modules/FOSFieldSurface.sys.mjs"
+      );
+      FOSLocationDisplay.forWindow(window).wire(
+        FOSBar.forWindow(window),
+        FOSField.forWindow(window)
+      );
     }
 
     BrowserUtils.callModulesFromCategory(

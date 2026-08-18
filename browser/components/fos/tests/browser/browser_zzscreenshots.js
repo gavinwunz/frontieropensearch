@@ -257,5 +257,23 @@ add_task(async function take_the_screenshots() {
   await shoot("shot-context");
   bar().run("dismiss");
 
+  // 6. The ambient signal, which is the one thing the fork says about a page
+  //    that loads where you are not looking. It is a state on the resting bar
+  //    rather than a notification, so the picture is of an ordinary window
+  //    doing nothing — which is the point, and is also the only way to see
+  //    whether the mark reads at a glance without shouting.
+  field().open();
+  field().close();
+  const background = BrowserTestUtils.addTab(win.gBrowser, NLS);
+  await BrowserTestUtils.browserLoaded(background.linkedBrowser, false, NLS);
+  await TestUtils.waitForCondition(
+    () => win.gURLBar.hasAttribute("fos-unseen"),
+    "the bar took the mark before it was photographed"
+  );
+  await shoot("shot-unseen");
+  BrowserTestUtils.removeTab(background);
+  field().open();
+  field().close();
+
   Assert.ok(true, "screenshots taken");
 });
