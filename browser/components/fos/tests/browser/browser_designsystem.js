@@ -116,7 +116,11 @@ add_task(async function every_fos_token_resolves() {
       }
     }
 
-    ok(used.size >= 10, `the surfaces are written against tokens (${used.size})`);
+    Assert.greaterOrEqual(
+      used.size,
+      10,
+      "the surfaces are written against the fork's tokens"
+    );
 
     // `--fos-rail-depth` is set per row from script rather than declared as a
     // design token, and is the one legitimate exception.
