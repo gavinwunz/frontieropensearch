@@ -18,6 +18,70 @@ document.addEventListener(
       FOSTrailRail: "resource:///modules/FOSTrailRail.sys.mjs",
     });
 
+    // Frontier OpenSearch: what a surface pref being false actually has to
+    // give back.
+    //
+    // Three of this fork's surfaces took keys that already meant something.
+    // The keys name the FOS commands in `browser-sets.inc.xhtml`, and they
+    // named them unconditionally, so `replacesAddressBar=false` restored a
+    // typable address bar that no keystroke could reach. That is worse than
+    // not restoring it at all: 355 upstream test files under
+    // `browser/components/urlbar/tests/` press accel+L and then wait for the
+    // urlbar to take focus, so with the pref off they did not fail, they hung
+    // until the harness gave up on them.
+    //
+    // A `<key>` reads its `command` attribute when it fires rather than when
+    // it is parsed -- `XULKeySetGlobalKeyListener::GetElementForHandler` does
+    // the `getElementById` at dispatch -- so pointing the keys back at what
+    // they said before is enough, and needs no second path through the
+    // handler below. It has to happen here and not in the handler because one
+    // FOS command id stands in for two upstream ones: accel+L was
+    // `Browser:OpenLocation` and accel+K was `Tools:Search`, and by the time
+    // the command fires only the key still knows which.
+    //
+    // A null command means the key carried none upstream and is dispatched by
+    // id in the keyset listener further down, so restoring it is removing the
+    // attribute rather than rewriting it.
+    for (const [pref, id, command] of [
+      [
+        "browser.fos.commandBar.replacesAddressBar",
+        "focusURLBar",
+        "Browser:OpenLocation",
+      ],
+      [
+        "browser.fos.commandBar.replacesAddressBar",
+        "focusURLBar2",
+        "Browser:OpenLocation",
+      ],
+      [
+        "browser.fos.commandBar.replacesAddressBar",
+        "key_search",
+        "Tools:Search",
+      ],
+      [
+        "browser.fos.commandBar.replacesAddressBar",
+        "key_search2",
+        "Tools:Search",
+      ],
+      ["browser.fos.trailRail.replacesHistorySidebar", "key_gotoHistory", null],
+    ]) {
+      if (Services.prefs.getBoolPref(pref, true)) {
+        continue;
+      }
+      // Absent rather than misspelled: `focusURLBar2` is `#ifndef XP_MACOSX`.
+      // `browser_fosrestore.js` asserts every id in this table exists on the
+      // platform it runs on, so a typo cannot hide here as a no-op.
+      const key = document.getElementById(id);
+      if (!key) {
+        continue;
+      }
+      if (command) {
+        key.setAttribute("command", command);
+      } else {
+        key.removeAttribute("command");
+      }
+    }
+
     // <commandset id="mainCommandSet"> defined in browser-sets.inc.xhtml
     document
       .getElementById("mainCommandSet")
@@ -211,8 +275,20 @@ document.addEventListener(
           // "Show all tabs" is exactly what the Field is for, so the
           // command keeps its name and its menu item and points at the
           // surface that replaces the strip, rather than a second overview
-          // growing up beside the first.
+          // growing up beside the first. Unless the strip is back, in which
+          // case its own overflow button has to open its own panel again --
+          // this is a command rather than a key, so the pref is read here.
           case "Browser:ShowAllTabs":
+            if (
+              !Services.prefs.getBoolPref(
+                "browser.fos.field.replacesTabStrip",
+                true
+              )
+            ) {
+              gTabsPanel.showAllTabsPanel();
+              break;
+            }
+          // eslint-disable-next-line no-fallthrough
           case "FOS:Field":
             lazy.FOSFieldSurface.forWindow(window).toggle();
             break;

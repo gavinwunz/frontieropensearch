@@ -6,6 +6,14 @@ support-files = [
 ]
 prefs = [
   "browser.urlbar.trending.featureGate=false",
+  # Frontier OpenSearch's command bar is the one entry surface, so the address
+  # bar shows the origin and does not take typing, and accel+L, alt+D, accel+K
+  # and accel+E open the command bar instead of focusing it. Every test here
+  # types into that bar or presses one of those keys. They are the coverage
+  # that keeps the address bar working for the pref that restores it, so they
+  # run against a window where it is still an input. The window where it is
+  # not is covered in browser/components/fos/tests/browser/.
+  "browser.fos.commandBar.replacesAddressBar=false",
 ]
 
 ["browser_trust_panel.js"]

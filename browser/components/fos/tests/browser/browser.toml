@@ -16,6 +16,8 @@ support-files = [
 
 ["browser_field.js"]
 
+["browser_fosrestore.js"]
+
 ["browser_locationdisplay.js"]
 
 ["browser_suggest.js"]

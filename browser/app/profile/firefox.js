@@ -3779,5 +3779,12 @@ pref("browser.fos.field.replacesTabStrip", true);
 // Frontier OpenSearch. The command bar is the one entry surface, so the
 // address bar is read-only: it still shows the origin, which is a security
 // boundary and not decoration, and clicking it opens the command bar rather
-// than a caret. Set to false to get a typable address bar back.
+// than a caret. Set to false to get a typable address bar back, along with
+// the four keys that focus it -- see the rebinding table in browser-sets.js.
 pref("browser.fos.commandBar.replacesAddressBar", true);
+
+// Frontier OpenSearch, pillar B. Navigation is a tree, so the gesture that
+// opened the linear history sidebar opens the trail rail instead, rather than
+// this fork growing a second history surface beside the one it replaced. Set
+// to false to get the history sidebar's shortcut back.
+pref("browser.fos.trailRail.replacesHistorySidebar", true);
