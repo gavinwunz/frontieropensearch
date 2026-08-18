@@ -49,6 +49,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   PageThumbs: "resource://gre/modules/PageThumbs.sys.mjs",
 });
 
+import { ensureStylesheet } from "./FOSChrome.sys.mjs";
+
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const STYLESHEET = "chrome://browser/content/fos/fos-field.css";
 
@@ -1046,12 +1048,7 @@ export class FOSFieldSurface {
     }
     const doc = this.#window.document;
 
-    if (!doc.querySelector(`link[href="${STYLESHEET}"]`)) {
-      const link = doc.createElementNS(HTML_NS, "link");
-      link.rel = "stylesheet";
-      link.href = STYLESHEET;
-      doc.documentElement.appendChild(link);
-    }
+    ensureStylesheet(this.#window, STYLESHEET);
 
     const root = doc.createElementNS(HTML_NS, "div");
     root.className = "fos-field";

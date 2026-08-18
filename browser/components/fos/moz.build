@@ -9,6 +9,7 @@ JAR_MANIFESTS += ["jar.mn"]
 
 EXTRA_JS_MODULES += [
     "FOSActions.sys.mjs",
+    "FOSChrome.sys.mjs",
     "FOSCommandBar.sys.mjs",
     "FOSCommandBarView.sys.mjs",
     "FOSCommandParser.sys.mjs",
