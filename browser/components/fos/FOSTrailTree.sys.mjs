@@ -331,6 +331,106 @@ export class TrailStore {
     return node;
   }
 
+  // ------------------------------------------------------------- hydration
+
+  /**
+   * Adopt records into an empty store, so a restart does not start empty.
+   *
+   * The tree was session-scoped without this, which made pillar B's promise —
+   * going back never destroys a branch — true only until the browser closed.
+   * The database held every node the whole time; nothing read it back.
+   *
+   * This is also what `fromJSON` is built on, and deliberately so: an exported
+   * trail and a row out of SQLite are the same shape by design, so loading one
+   * and loading the other should not be two pieces of code that can disagree
+   * about what a tree is.
+   *
+   * Database ids are adopted as they are rather than reassigned. That is safe
+   * because a store is only ever hydrated while empty, and it makes the id in
+   * a log line, the id in the rail and the id in `sqlite3` the same number.
+   * Ids minted afterwards continue past the highest adopted one, so a new node
+   * cannot collide with a restored one.
+   *
+   * Records arrive in any order — `graft` can put a node under a parent
+   * created after it, so ordering by id is not a topological order — and are
+   * linked in a second pass once every node exists.
+   *
+   * @param {object} records
+   * @param {object[]} [records.trails] `trail` rows.
+   * @param {object[]} [records.nodes] `trail_node` rows, any order.
+   * @returns {{trails: Map<number, number>, nodes: Map<number, number>}}
+   *   Database id → in-memory id, for the caller to map its own records by.
+   */
+  hydrate({ trails = [], nodes = [] } = {}) {
+    if (this.#trails.size || this.#nodes.size) {
+      throw new Error("hydrate expects an empty store");
+    }
+
+    // Validated before anything is written, so a refused set leaves the store
+    // empty rather than half loaded. A caller that catches this — the Context
+    // Engine does — can then carry on with an empty tree instead of a broken
+    // one. A parent that is not here at all is refused rather than dropped: a
+    // tree restored with a hole in its spine would draw a path the user never
+    // browsed, and silently losing the descendants of that hole is worse than
+    // restoring nothing.
+    const trailIds = new Set(trails.map(trail => trail.id));
+    const nodeIds = new Set(nodes.map(node => node.id));
+    for (const node of nodes) {
+      if (!trailIds.has(node.trail_id)) {
+        throw new Error(`node ${node.id} has a missing trail ${node.trail_id}`);
+      }
+      const parentId = node.parent_id ?? null;
+      if (parentId !== null && !nodeIds.has(parentId)) {
+        throw new Error(`node ${node.id} has a missing parent ${parentId}`);
+      }
+    }
+
+    const trailMap = new Map();
+    for (const row of trails) {
+      this.#trails.set(row.id, {
+        id: row.id,
+        name: row.name ?? null,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        archived_at: row.archived_at ?? null,
+      });
+      trailMap.set(row.id, row.id);
+      this.#nextTrailId = Math.max(this.#nextTrailId, row.id + 1);
+    }
+
+    const nodeMap = new Map();
+    for (const row of nodes) {
+      this.#nodes.set(row.id, {
+        id: row.id,
+        trail_id: row.trail_id,
+        parent_id: row.parent_id ?? null,
+        url: row.url,
+        title: row.title ?? null,
+        scroll_x: row.scroll_x ?? 0,
+        scroll_y: row.scroll_y ?? 0,
+        form_state: row.form_state ?? null,
+        created_at: row.created_at,
+        last_visited_at: row.last_visited_at ?? row.created_at,
+        dismissed_at: row.dismissed_at ?? null,
+      });
+      this.#childIds.set(row.id, []);
+      nodeMap.set(row.id, row.id);
+      this.#nextNodeId = Math.max(this.#nextNodeId, row.id + 1);
+    }
+
+    // Second pass: every node exists before any child is linked, so the order
+    // records arrived in does not matter — which it would if this linked as it
+    // went, since `graft` can put a node under a parent created after it and
+    // ordering by id is therefore not a topological order.
+    for (const node of this.#nodes.values()) {
+      if (node.parent_id !== null) {
+        this.#childIds.get(node.parent_id).push(node.id);
+      }
+    }
+
+    return { trails: trailMap, nodes: nodeMap };
+  }
+
   // ------------------------------------------------------------- promotion
 
   /**
@@ -408,28 +508,7 @@ export class TrailStore {
       throw new Error(`unsupported trail export version: ${data?.version}`);
     }
     const store = new TrailStore(now ? { now } : {});
-    for (const trail of data.trails) {
-      store.#trails.set(trail.id, { ...trail });
-      store.#nextTrailId = Math.max(store.#nextTrailId, trail.id + 1);
-    }
-    for (const node of data.nodes) {
-      store.#nodes.set(node.id, { ...node });
-      store.#childIds.set(node.id, []);
-      store.#nextNodeId = Math.max(store.#nextNodeId, node.id + 1);
-    }
-    // Second pass: every node exists before any child is linked, so export
-    // order does not matter.
-    for (const node of data.nodes) {
-      if (node.parent_id !== null) {
-        const siblings = store.#childIds.get(node.parent_id);
-        if (!siblings) {
-          throw new Error(
-            `node ${node.id} has a missing parent ${node.parent_id}`
-          );
-        }
-        siblings.push(node.id);
-      }
-    }
+    store.hydrate(data);
     return store;
   }
 

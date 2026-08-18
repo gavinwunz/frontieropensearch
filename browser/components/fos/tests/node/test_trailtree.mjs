@@ -321,3 +321,106 @@ test("an export with a dangling parent is rejected, not half-loaded", () => {
     /missing parent/
   );
 });
+
+test("hydration brings a tree back with its ids intact", () => {
+  const { store, trailId, root } = seeded();
+  const child = store.visit(root, { url: "b", title: "B" });
+  store.setViewState(child, { scrollY: 640, formState: '{"entry":{}}' });
+  const exported = store.toJSON();
+
+  const restored = new TrailStore({ now: fixedClock() });
+  const ids = restored.hydrate(exported);
+
+  assert.equal(ids.nodes.get(child), child, "a node keeps its id");
+  assert.equal(ids.trails.get(trailId), trailId);
+  assert.deepEqual(restored.getNode(child), store.getNode(child));
+  assert.equal(restored.children(root).length, 1, "and its shape");
+  assert.equal(
+    restored.getNode(child).form_state,
+    '{"entry":{}}',
+    "the blob that makes re-entry lossless survives the round trip"
+  );
+});
+
+test("a node minted after hydration cannot collide with a restored one", () => {
+  const restored = new TrailStore({ now: fixedClock() });
+  restored.hydrate({
+    trails: [{ id: 7, name: null, created_at: 1, updated_at: 1 }],
+    nodes: [{ id: 40, trail_id: 7, parent_id: null, url: "a", created_at: 1 }],
+  });
+
+  const trail = restored.createTrail();
+  const node = restored.addNode({ trailId: trail, url: "b" });
+  assert.ok(trail > 7, "trail ids continue past the highest restored one");
+  assert.ok(node > 40, "and so do node ids");
+  assert.equal(restored.getNode(40).url, "a", "the restored node is untouched");
+});
+
+test("hydration takes records in any order, not in id order", () => {
+  // `graft` can put a node under a parent created after it, so ordering by id
+  // is not a topological order and a single pass would drop the child.
+  const restored = new TrailStore({ now: fixedClock() });
+  restored.hydrate({
+    trails: [{ id: 1, name: null, created_at: 1, updated_at: 1 }],
+    nodes: [
+      { id: 2, trail_id: 1, parent_id: 3, url: "child", created_at: 2 },
+      { id: 3, trail_id: 1, parent_id: null, url: "parent", created_at: 3 },
+    ],
+  });
+  assert.deepEqual(
+    restored.children(3).map(n => n.id),
+    [2]
+  );
+});
+
+test("a refused set leaves the store empty, not half loaded", () => {
+  const restored = new TrailStore({ now: fixedClock() });
+  assert.throws(
+    () =>
+      restored.hydrate({
+        trails: [{ id: 1, name: null, created_at: 1, updated_at: 1 }],
+        nodes: [
+          { id: 1, trail_id: 1, parent_id: null, url: "a", created_at: 1 },
+          { id: 2, trail_id: 1, parent_id: 99, url: "b", created_at: 1 },
+        ],
+      }),
+    /missing parent/
+  );
+  assert.equal(restored.trails().length, 0, "nothing was written");
+  assert.equal(restored.nodes().length, 0);
+});
+
+test("a node whose trail did not come back is refused", () => {
+  const restored = new TrailStore({ now: fixedClock() });
+  assert.throws(
+    () =>
+      restored.hydrate({
+        trails: [],
+        nodes: [
+          { id: 1, trail_id: 5, parent_id: null, url: "a", created_at: 1 },
+        ],
+      }),
+    /missing trail/
+  );
+});
+
+test("hydrating a store that already has a tree is a programming error", () => {
+  const { store } = seeded();
+  assert.throws(() => store.hydrate({ trails: [], nodes: [] }), /empty store/);
+});
+
+test("a restored trail is still an ordinary trail", () => {
+  const restored = new TrailStore({ now: fixedClock() });
+  restored.hydrate({
+    trails: [{ id: 1, name: null, created_at: 1, updated_at: 1 }],
+    nodes: [{ id: 1, trail_id: 1, parent_id: null, url: "a", created_at: 1 }],
+  });
+
+  // The point of restoring is that yesterday's work can be continued, so every
+  // verb has to reach a restored node exactly as it reaches a fresh one.
+  const child = restored.visit(1, { url: "b" });
+  assert.equal(restored.getNode(child).parent_id, 1);
+  restored.nameTrail(1, "yesterday");
+  assert.equal(restored.getTrail(1).name, "yesterday");
+  assert.equal(restored.path(child).length, 2, "and the spine is walkable");
+});
