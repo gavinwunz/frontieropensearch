@@ -98,7 +98,9 @@ static const RedirEntry kRedirMap[] = {
     {"referrals", "https://www.firefox.com/invite/",
      nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
          nsIAboutModule::URI_MUST_LOAD_IN_CHILD},
-    {"rights", "https://www.mozilla.org/about/legal/terms/firefox/",
+    // Upstream points this at Mozilla's Firefox Terms of Use, which is a
+    // network fetch and is not the agreement that governs this fork.
+    {"rights", "chrome://browser/content/aboutRights.xhtml",
      nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
          nsIAboutModule::URI_MUST_LOAD_IN_CHILD},
     {"robots", "chrome://browser/content/aboutRobots.xhtml",
