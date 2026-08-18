@@ -47,6 +47,18 @@ execution, not invention: all three pillars have a written design.
   pillar has no UI report `NOT_WIRED` rather than falling through to a search.
   36 browser-chrome checks, 11 node tests, verified by screenshot in dark and
   light.
+- **The trail rail, and pillar B end to end.** `FOSTrailSession.sys.mjs`
+  captures every top-level navigation as a child node, re-enters any node by
+  replaying the SessionStore blob it stored (so scroll and form values come
+  back), marks the active trail's nodes, and registers `up`, `back`, `branch`,
+  `graft` and `name`. `FOSTrailRailView.sys.mjs` is the pure flattening —
+  collapse, hoist, spine, selection — and `FOSTrailRail.sys.mjs` renders it on
+  the design tokens. The history-sidebar shortcut now opens the rail.
+  **Pillar B's promise is verified in a real browser, not only in node**:
+  re-entering the root and navigating a second way leaves the first branch whole
+  as a sibling, with no duplicate node from the restore. 70 browser-chrome
+  checks, 83 node tests.
+
 - **First Phase 2 code.** `browser/components/fos/` holds marks
   (`FOSMarks.sys.mjs`), the action table (`FOSGrammar.sys.mjs`), the parser
   (`FOSCommandParser.sys.mjs`) and the trail tree (`FOSTrailTree.sys.mjs`), 37
@@ -60,26 +72,28 @@ Nothing running. Tree fully pushed; `main`, `agent/dev` and both tags on origin.
 
 ## Next task
 
-Phase 2 execution, in this order:
+Phase 2 execution. Pillars A and C are what remain.
 
-All the pure-logic pieces are now built and tested: marks, grammar, parser,
-trail tree, Field. What is left in Phase 2 all touches Gecko.
-
-1. **The trail rail**: render `FOSTrailTree` as the collapsible tree, and wire
-   `nsISHEntry` so clicking a node restores scroll and form state. `FIELD.md`
-   §10 says to settle what a region looks like for a deep tree *after* the rail
-   exists, so build the rail before touching the Field's rendering.
-   **Plugging a pillar into the bar is now two calls**: register its objects on
-   `bar.marks` so they become addressable, and `bar.actions.register(verb, fn)`
-   for each of its verbs. `browser_commandbar.js` reports which verbs are still
-   unwired, so that list is the Phase 2 to-do.
-2. **The Field's rendering**: `PageThumbs.captureToCanvas` for cards, reusing
-   the `tab-hover-preview.mjs` path; the model underneath is done and does not
-   need revisiting.
-3. Browser-chrome tests for each of the above **as it lands, not after**.
-4. The voice path is **no longer blocked** — see the ASR entry in `IDEAS.md`.
-   Remaining unknowns are model size and latency on this hardware, not
+1. **The Field's rendering** — `PageThumbs.captureToCanvas` for cards, reusing
+   the `tab-hover-preview.mjs` path. The model underneath (`FOSField.sys.mjs`)
+   is done and does not need revisiting, and `FIELD.md` §10's question about
+   what a region looks like for a deep tree can now be answered, because the
+   rail exists. Wiring a pillar into the bar is two calls: register its objects
+   on `bar.marks`, and `bar.actions.register(verb, fn)` per verb. The verbs
+   still unwired are `enter`, `field`, `dismiss` (A) and `context`, `pack`,
+   `what` (C); `browser_commandbar.js` prints the live list.
+2. **`prune`, and an export surface.** `IDEAS.md`'s acceptance bar for 2B is
+   that every action is performable *on* the tree — re-enter, rename, prune,
+   export. Re-entry, rename and graft are done and `toJSON` exists, but there is
+   no prune at all and no surface for export. Deliberately deferred rather than
+   forgotten: both need a new verb, the verb list is asserted by
+   `browser_commandbar.js` and specified in `GRAMMAR.md` §4, so it should be
+   done as a considered grammar change and not as a side effect of building a
+   rail.
+3. **The voice path.** Not blocked — see the ASR entry in `IDEAS.md`. The
+   remaining unknowns are model size and latency on this hardware, not
    availability. Measure those; do not re-litigate whether ASR is possible.
+4. Browser-chrome tests for each of the above **as it lands, not after**.
 
 **Test in Gecko, not only in node.** Two bugs this project has shipped were
 invisible to green node tests: a grammar bug found in one minute once the modules
@@ -114,6 +128,21 @@ None.
 None.
 
 ## Known staged state, not a defect
+
+The rail **overlays** the content area rather than reflowing it, so it covers
+the left of the page while open. Same construction as the command bar, and
+acceptable while both are transient overlays, but a rail meant to be read
+*beside* a page eventually has to take layout space. That belongs with the
+Field, which restructures the chrome anyway — do not fix it piecemeal first.
+
+`browser_aboutKeyboard.js`'s `testInit` **times out, and did so before this
+run's changes** — verified by reverting `browser-sets.inc.xhtml` to its
+pre-rail version and re-running, which failed identically. So it is not the
+trail rail taking `key_gotoHistory`. It may well be fallout from run 9 moving
+`focusURLBar`, `key_search` and friends onto `FOS:CommandBar`, which is worth
+checking: if the command bar broke a shipped surface, that is a real
+regression rather than an accepted staged state.
+
 
 The address bar and tab strip are **still visible and still work if clicked**.
 Only the keyboard gestures have been unified onto the command bar; removing the
@@ -151,6 +180,31 @@ meeting the single-surface criterion before the toolbar goes.
   `/* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */`
   with a reason, which is the in-tree convention.
 
+- **A restore is a navigation, and every listener will treat it as one.**
+  `enter` puts a page back with `setTabState`, which fires exactly the progress
+  notifications a click fires. Left alone it spawned a child of the node just
+  re-entered, so going back quietly grew a duplicate spine. Anything that
+  synthesises a load has to mark it as its own before starting it — the flag is
+  set *before* `setTabState`, not after, because the load can begin
+  synchronously.
+- **A tab's label describes the page it is about to show, not the one it is
+  showing.** It flips to a placeholder when the next load starts, which is
+  before the location change that creates the next node — so backfilling a
+  title from `tab.label` on trust wrote each page's name onto its predecessor
+  and shifted the whole trail by one. Check `browser.currentURI` against the
+  node's own URL before believing any tab attribute.
+- **`getTabState` lags content, and at the start of a load it is often empty.**
+  `{"entries":[]}` is the normal reading for the outgoing page at the instant
+  the next load begins. Do not add a retry: read the entry *behind* the current
+  page from session history once the new page has settled, where it is complete
+  and where waiting costs nothing. The scroll offset is in `entry.presState`,
+  **not** the top-level `scroll` key, which only exists while that entry is
+  current.
+- **A stylesheet appended in the same turn as the measurement has not applied
+  yet.** The rail measured 1280x104 — full width, content height — immediately
+  after `#build()` appended its `<link>`, and 294x750 a moment later. Nothing
+  was wrong. Before diagnosing a layout fault in a surface that builds its own
+  DOM, measure again rather than reading the first number.
 - **Inspect the running browser, not the tree.** The Phase 1 findings that
   mattered most — a network redirect and a locked pref — are invisible to
   grepping for strings. The harness is the `firefox-devtools` MCP: launch with
@@ -222,6 +276,37 @@ three-strikes rule only works if the counter is actually kept**, so count a
 repeated failure even when each run has a new explanation for it.
 
 ## Decisions taken
+
+- 2026-08-18 — **The rail may not hide where you are.** Collapse is honoured
+  everywhere except on the *ancestors* of the current node, which always render
+  open; the stored state is untouched and takes effect again once the user moves
+  away. The current node itself may be collapsed, since its children are forward
+  branches. See `FOSTrailRailView`'s header, rule 1.
+- 2026-08-18 — **Depth is bounded by hoisting, not by truncation**, and hoisting
+  is deliberately the same gesture as the Field's zoom so the two pillars share
+  one answer to scale. It is a view operation, so it gets no verb and needs no
+  spoken form.
+- 2026-08-18 — **Marks go to the whole active trail, not to the visible rows.**
+  `GRAMMAR.md` §2 makes stickiness the rule that gives marks their value, and a
+  letter that changed when a subtree collapsed would be a positional label with
+  extra steps. A trail is bounded, so this is within 26 in the ordinary case;
+  past that `assign` returns null and those nodes are reached by search, which
+  §2 already specifies.
+- 2026-08-18 — **Re-entry replays a stored SessionStore blob; it never calls
+  `gotoIndex`.** Session history truncates every forward entry the moment you go
+  back and navigate elsewhere, which is precisely the destruction pillar B
+  exists to prevent. Restoring through it would have destroyed the branch the
+  rail is there to show.
+- 2026-08-18 — **`back` is time, `up` is structure.** The node you were on a
+  moment ago and the node above you in the tree are different questions with
+  different answers after a branch, so they keep separate verbs.
+- 2026-08-18 — **Each tab opens its own trail.** A tab is already the user's own
+  statement that this is a separate line of enquiry; inferring trails from
+  navigation timing would guess at something they have said outright.
+- 2026-08-18 — **A same-document navigation updates the current node rather than
+  adding one.** Provisional, and flagged as such in the code: an application
+  that navigates entirely by `pushState` collapses to a single node, and if that
+  matters the fix is to compare paths rather than to record every fragment.
 
 - 2026-08-18 — **URL-or-search is decided at execution on `nsIURIFixup`, never
   in the grammar.** It turns on what schemes and hosts exist rather than on how
