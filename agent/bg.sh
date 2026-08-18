@@ -1,17 +1,26 @@
 #!/usr/bin/env bash
 # Start a long job that outlives this agent run.
 #
-# nohup alone is not enough. The supervisor restarts the agent by killing its
-# process group, which takes any plain background child with it — that is how
-# run 1 lost both a build and a push with no error in either log. setsid puts
-# the job in a new session with no controlling terminal, so the group signal
-# never reaches it.
+# The agent runs as the systemd user unit fos.service, Type=oneshot. When the
+# `claude -p` process returns, ExecStart is finished, systemd deactivates the
+# unit, and the default KillMode=control-group SIGTERMs every process still in
+# fos.service's cgroup. That is what killed the builds in runs 1 and 2.
+#
+# nohup does not help: the kill is not a HUP. setsid does not help either, and
+# this is the trap — a new session is still the same cgroup, and systemd kills
+# by cgroup membership, not by session or process tree. Run 2 verified the job
+# had its own session and concluded it was therefore safe; it was not.
+#
+# The only thing that escapes is a different cgroup, so the job is launched as
+# its own transient user unit:
 #
 #   ./agent/bg.sh build ./mach build
 #
-# Writes agent/logs/<name>-<epoch>.log, records the pid in
-# agent/logs/<name>.pid, and appends "=== EXIT <code> ===" as the log's last
-# line. Check that marker rather than guessing from a log that stops: a
+# lands in app.slice/fos-job-build.service, a sibling of fos.service rather
+# than a child, and survives any number of agent restarts.
+#
+# Writes agent/logs/<name>-<epoch>.log and appends "=== EXIT <code> ===" as its
+# last line. Check that marker rather than guessing from a log that stops: a
 # truncated log and a clean finish look identical without it.
 set -euo pipefail
 
@@ -20,21 +29,34 @@ shift
 [ $# -gt 0 ] || { echo "bg.sh: no command given" >&2; exit 2; }
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-log="$root/agent/logs/$name-$(date +%s).log"
+unit="fos-job-$name"
 mkdir -p "$root/agent/logs"
 
-setsid nohup bash -c '
-  cd "$1"; shift
-  log="$1"; shift
-  source agent/env.sh
-  echo "=== START $(date -u +%FT%TZ): $* ==="
-  "$@"
-  code=$?
-  echo "=== EXIT $code ==="
-  exit $code
-' _ "$root" "$log" "$@" > "$log" 2>&1 < /dev/null &
+# Refuse to start a second copy. A half-finished build plus a fresh one racing
+# on the same objdir corrupts it, and that is expensive to notice.
+if systemctl --user is-active --quiet "$unit.service" 2>/dev/null; then
+  echo "bg.sh: $unit is already running — not starting a second copy" >&2
+  exit 3
+fi
+systemctl --user reset-failed "$unit.service" 2>/dev/null || true
 
-pid=$!
-disown "$pid" 2>/dev/null || true
-echo "$pid" > "$root/agent/logs/$name.pid"
-echo "started $name pid=$pid log=${log#$root/}"
+log="$root/agent/logs/$name-$(date +%s).log"
+ln -sfn "$(basename "$log")" "$root/agent/logs/$name.current"
+
+# --collect drops the unit's record once it exits, so the next run can reuse
+# the name. The exit marker in the log, not systemd, is the record that lasts.
+systemd-run --user --unit="$unit" --collect --same-dir \
+  --setenv=HOME="$HOME" --setenv=SHELL=/bin/bash \
+  bash -c '
+    cd "$1"; shift
+    log="$1"; shift
+    exec > "$log" 2>&1 < /dev/null
+    source agent/env.sh
+    echo "=== START $(date -u +%FT%TZ): $* ==="
+    "$@"
+    code=$?
+    echo "=== EXIT $code ==="
+    exit $code
+  ' _ "$root" "$log" "$@" >/dev/null
+
+echo "started $name as $unit.service log=${log#$root/}"
