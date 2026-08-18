@@ -321,3 +321,59 @@ add_task(async function test_the_rail_renders_the_captured_tree() {
   rail().close();
   BrowserTestUtils.removeTab(tab);
 });
+
+add_task(async function test_a_reload_is_not_a_new_page() {
+  // Two things arrive at the progress listener looking like one: a reload, and
+  // the second half of a process switch, which is what re-entering a restored
+  // node into a fresh tab produces. Both would otherwise spawn a child holding
+  // the same page as its parent, so a trail grew a second copy of a page
+  // nobody navigated to.
+  const tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, PAGE_A);
+  const trail = session();
+  const before = trail.store.nodes().length;
+  const nodeId = trail.currentNodeId;
+
+  const reloaded = BrowserTestUtils.browserLoaded(
+    tab.linkedBrowser,
+    false,
+    PAGE_A
+  );
+  tab.linkedBrowser.reload();
+  await reloaded;
+
+  Assert.equal(
+    trail.store.nodes().length,
+    before,
+    "reloading a page does not add a node"
+  );
+  Assert.equal(trail.currentNodeId, nodeId, "and does not move off it");
+
+  BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function test_a_placeholder_label_never_replaces_a_title() {
+  // A tab labels itself with the URL of the page it is loading until the real
+  // title arrives. A node that already knows its title — one restored from the
+  // database, say — must not have that overwritten by the placeholder shown
+  // while it is being re-entered.
+  const tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, PAGE_A);
+  const trail = session();
+  const nodeId = trail.currentNodeId;
+  trail.store.getNode(nodeId).title = "A Known Title";
+
+  const reloaded = BrowserTestUtils.browserLoaded(
+    tab.linkedBrowser,
+    false,
+    PAGE_A
+  );
+  tab.linkedBrowser.reload();
+  await reloaded;
+
+  Assert.equal(
+    trail.store.getNode(nodeId).title,
+    "A Known Title",
+    "the title the node already had survives"
+  );
+
+  BrowserTestUtils.removeTab(tab);
+});

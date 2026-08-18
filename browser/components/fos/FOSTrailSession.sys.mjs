@@ -445,6 +445,20 @@ export class FOSTrailSession {
       return;
     }
 
+    // A load that ends where the browser already is is not a new page. Two
+    // things arrive here looking like one: a reload, and the second half of a
+    // process switch — restoring an https page into a tab showing about:blank
+    // fires one location change in the old process and another in the new one,
+    // and the restore flag above is spent on the first. Found by re-entering a
+    // restored node in a freshly started browser, which is the first thing
+    // anyone does after a restart: the trail quietly grew a second copy of the
+    // page it had just put back.
+    const current = currentId === null ? null : this.store.getNode(currentId);
+    if (current && current.url === location.spec) {
+      this.#changed();
+      return;
+    }
+
     let trailId = this.#trailByBrowser.get(browser);
     if (!trailId) {
       trailId = this.store.createTrail();
@@ -487,7 +501,14 @@ export class FOSTrailSession {
         if (tab.linkedBrowser.currentURI?.spec !== node.url) {
           return;
         }
-        const title = tab.linkedBrowser.contentTitle || tab.label;
+        // A tab loading a page labels itself with that page's URL until the
+        // title arrives, so the label is a fallback for a node that has no
+        // title at all and never a replacement for one that has. Restoring
+        // made the difference visible: a node came back from the database
+        // titled "Example Domain" and re-entering it wrote "example.org/" over
+        // the top.
+        const title =
+          tab.linkedBrowser.contentTitle || (node.title ? null : tab.label);
         if (title && title !== node.title) {
           node.title = title;
           this.#syncMarks();
