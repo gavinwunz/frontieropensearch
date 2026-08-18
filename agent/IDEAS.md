@@ -693,3 +693,70 @@ confirm the specification.
   URL" check is the kind that gets `localhost:8080` and `pack rat` wrong in opposite
   directions.
 - **Phase:** 2, built.
+
+### Hoisting: outliners bound tree depth by re-rooting, not by squeezing indent
+- **Found:** 2026-08-18, searching outliner navigation technique; Dynalist's
+  "Outliner 101" (help.dynalist.io/article/129-outliner-101), molodtsov.me
+  "The Evolution of Outliners", and Workflowy's zoom-by-bullet.
+- **What it is:** Outliners distinguish *collapsing*, which hides part of the
+  current outline, from *hoisting* (Workflowy calls it zoom), which changes the
+  root: the chosen node becomes the whole view and its ancestors become a
+  breadcrumb. MORE shipped this in the 1980s and every serious outliner since
+  has it.
+- **Verdict:** adopt for the trail rail.
+- **Why:** Criterion 2 — it names the specific failure it fixes. A rail is a few
+  hundred pixels wide and a real trail runs deep, so indentation runs out; the
+  obvious answers are all bad (shrink the indent until the tree stops reading as
+  a tree, truncate with an ellipsis, or scroll horizontally). Hoisting spends no
+  horizontal space at all, because depth becomes zero again at the new root.
+  Criterion 4 is what makes it the right choice rather than merely a workable
+  one: it is the *same gesture* as the Field's zoom into a region — "this part,
+  larger" — so the two pillars share one idea instead of each inventing a way to
+  handle scale. It is also honest about what it is: a view operation that moves
+  nothing and runs no action, so it needs no verb in the action table and no
+  spoken form, by the same argument that keeps Tab out of the grammar.
+- **Phase:** 2B, built — `FOSTrailRailView.railFor`'s `hoistRoot`, `z` and
+  Backspace in the rail.
+
+### A mark derived from a URL is derived from "https"
+- **Found:** 2026-08-18, looking at the rail's first screenshot in a real build.
+- **What it is:** Marks are assigned when an object first becomes addressable.
+  For a trail node that is the moment it is created, which is *before* the page
+  reports a title — so the only label available was the URL, and
+  `preferenceOrder` walks the label's distinct letters in order. Every URL
+  begins `https://`, so the first four nodes of every session took h, t, p, s.
+- **Verdict:** adopt the fix — derive the mark from the rail's display label
+  (title, else host) rather than the raw URL.
+- **Why:** Worth recording because the bug is not in the mark allocator, which
+  did exactly what it was designed to do, nor in stickiness, which correctly
+  refused to change the letters afterwards. It is in what was handed in as the
+  label, and the two correct rules combined to make a bad outcome permanent.
+  The general lesson: **stickiness makes the quality of the first label matter
+  much more than it looks**, because a mark assigned from a poor label is not
+  merely unhelpful once, it is unhelpful for the object's whole lifetime. Any
+  future pillar registering marks — cards, contexts — has to ask what its label
+  looks like at *creation* time, not at steady state.
+- **Phase:** 2B, fixed.
+
+### Capture the page you left from history, not at the moment you leave
+- **Found:** 2026-08-18, instrumenting `SessionStore.getTabState` during a real
+  navigation after the scroll assertion failed.
+- **What it is:** The intuitive capture point for "where was the user on the page
+  they just left" is the start of the next load. In practice the parent process's
+  collected state at that instant is routinely `{"entries":[]}` — the content
+  process has not reported yet — so most ordinary forward navigations captured
+  nothing. Once the *next* page settles, session history holds the previous entry
+  complete, with the scroll offset in its `presState`.
+- **Verdict:** adopt: capture after the fact from session history, guarded by a
+  URL check.
+- **Why:** Criterion 3, and it also corrects the earlier in-tree reading. The
+  `nsISHEntry` entry in this file said scroll and form state already exist per
+  entry, which is true, but implied they could be read at will; the missing half
+  is *when* they are populated. Two further details worth keeping: the offset
+  lives in `entry.presState`, not the top-level `scroll` key, which only appears
+  while the entry is current and the live collector has reported it; and waiting
+  is affordable here precisely because the entry being read is the one *behind*
+  the current page, so nothing more is going to change it. A flush at departure
+  would resolve after the tab had already moved on and would faithfully record
+  the wrong document.
+- **Phase:** 2B, built — `FOSTrailSession.#backfillPrevious`.
