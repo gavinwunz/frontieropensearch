@@ -476,48 +476,186 @@ add_task(async function test_a_card_without_a_snapshot_paints_the_stored_one() {
  * times over producing pictures nobody ever saw. This is the behaviour that
  * fix rests on; `browser_zzfieldperf.js` holds the numbers.
  */
-add_task(async function a_burst_of_resizes_renders_once() {
+add_task(async function a_burst_of_resizes_does_its_work_once() {
   await goTo(PAGE_A);
   const surface = field();
   surface.open();
-  await new Promise(resolve => window.requestAnimationFrame(resolve));
+  await frame();
 
-  const rendered = [];
-  const original = surface.render.bind(surface);
-  surface.render = () => {
-    rendered.push(1);
-    original();
-  };
+  const start = surface.resizePasses;
+  for (let i = 0; i < 10; i++) {
+    window.dispatchEvent(new Event("resize"));
+  }
+  Assert.equal(
+    surface.resizePasses,
+    start,
+    "nothing happens in the event's own tick"
+  );
+
+  await frame();
+  // The coalesced pass is scheduled on a frame, so it has run by the time the
+  // frame after that one arrives.
+  await frame();
+  Assert.equal(
+    surface.resizePasses,
+    start + 1,
+    "ten resize events produced one pass"
+  );
+
+  window.dispatchEvent(new Event("resize"));
+  await frame();
+  await frame();
+  Assert.equal(
+    surface.resizePasses,
+    start + 2,
+    "and a later resize is not swallowed by the one before it"
+  );
+
+  surface.close();
+});
+
+/**
+ * A resize moves what is on screen; it does not build it again.
+ *
+ * The stage's own box is what the layout is computed from, so setting it is
+ * the same input a window resize varies — and it varies it without a window
+ * manager in the test, which is the difference between a measurement and a
+ * flake. What makes the assertion worth anything is the comparison at the end:
+ * the repositioned overview has to be indistinguishable from the rebuilt one,
+ * because a faster path that draws something slightly different is not a
+ * faster path, it is a second layout.
+ */
+add_task(
+  async function a_resize_repositions_the_overview_rather_than_rebuilding() {
+    await goTo(PAGE_A);
+    await goTo(PAGE_B);
+    const surface = field();
+    surface.open();
+    await frame();
+
+    const stage = window.document.querySelector(".fos-field-stage");
+    const tilesBefore = [
+      ...window.document.querySelectorAll(".fos-field-tile"),
+    ];
+    const minisBefore = [
+      ...window.document.querySelectorAll(".fos-field-mini"),
+    ];
+    Assert.greater(tilesBefore.length, 0, "there is a tile to reposition");
+    Assert.greater(minisBefore.length, 0, "carrying a miniature to reposition");
+    const before = overviewGeometry();
+
+    const width = stage.clientWidth;
+    stage.style.width = `${Math.round(width * 0.6)}px`;
+    try {
+      window.dispatchEvent(new Event("resize"));
+      await frame();
+      await frame();
+
+      const tilesAfter = [
+        ...window.document.querySelectorAll(".fos-field-tile"),
+      ];
+      const minisAfter = [
+        ...window.document.querySelectorAll(".fos-field-mini"),
+      ];
+      Assert.ok(
+        tilesAfter.length === tilesBefore.length &&
+          tilesAfter.every((el, i) => el === tilesBefore[i]),
+        "the tiles are the same elements, not new ones"
+      );
+      Assert.ok(
+        minisAfter.length === minisBefore.length &&
+          minisAfter.every((el, i) => el === minisBefore[i]),
+        "and so are the miniatures"
+      );
+
+      const repositioned = overviewGeometry();
+      Assert.notDeepEqual(repositioned, before, "the overview did move");
+
+      surface.render();
+      Assert.deepEqual(
+        overviewGeometry(),
+        repositioned,
+        "and a rebuild at the same size draws it in exactly the same places"
+      );
+    } finally {
+      stage.style.width = "";
+      surface.close();
+    }
+  }
+);
+
+/**
+ * The refusal, on the difference that motivates it.
+ *
+ * A card the model has and the stage does not is not a scale problem, and the
+ * reposition path may not invent an element to solve it. It says so and the
+ * caller rebuilds — the check being that the stage catches up, since a path
+ * that refused and left it stale would pass an element-identity test by doing
+ * nothing at all.
+ */
+add_task(async function a_resize_rebuilds_when_the_model_has_moved_on() {
+  await goTo(PAGE_A);
+  await goTo(PAGE_B);
+  const surface = field();
+  surface.open();
+  await frame();
+
+  const stage = window.document.querySelector(".fos-field-stage");
+  const model = surface.model;
+  const card = model.cardForNode(nodeOn(PAGE_B).id);
+  const before = window.document.querySelectorAll(".fos-field-mini").length;
+
+  // Straight at the model, so the surface is not told. This is the state the
+  // refusal is about: what is drawn and what is true have come apart.
+  Assert.ok(model.dismiss(card.id), "a card left the model behind the surface");
+  Assert.equal(
+    window.document.querySelectorAll(".fos-field-mini").length,
+    before,
+    "and the stage has not noticed"
+  );
 
   try {
-    for (let i = 0; i < 10; i++) {
-      window.dispatchEvent(new Event("resize"));
-    }
-    Assert.equal(
-      rendered.length,
-      0,
-      "no render happens in the event's own tick"
-    );
-
-    await new Promise(resolve => window.requestAnimationFrame(resolve));
-    // The coalesced render is scheduled on a frame, so it has run by the time
-    // the frame after that one arrives.
-    await new Promise(resolve => window.requestAnimationFrame(resolve));
-    Assert.equal(rendered.length, 1, "ten resize events produced one render");
-
+    stage.style.width = `${Math.round(stage.clientWidth * 0.6)}px`;
     window.dispatchEvent(new Event("resize"));
-    await new Promise(resolve => window.requestAnimationFrame(resolve));
-    await new Promise(resolve => window.requestAnimationFrame(resolve));
+    await frame();
+    await frame();
+
     Assert.equal(
-      rendered.length,
-      2,
-      "and a later resize is not swallowed by the one before it"
+      window.document.querySelectorAll(".fos-field-mini").length,
+      before - 1,
+      "the resize rebuilt, so the dismissed card is gone from the stage"
     );
   } finally {
-    delete surface.render;
+    stage.style.width = "";
+    model.restore(nodeOn(PAGE_B).id);
+    surface.render();
     surface.close();
   }
 });
+
+/** One animation frame. */
+function frame() {
+  return new Promise(resolve => window.requestAnimationFrame(resolve));
+}
+
+/**
+ * Where every box in the overview is, as strings.
+ *
+ * Read from the inline styles rather than from `getBoundingClientRect`, so
+ * that a comparison is between what the two paths *wrote* and not between two
+ * roundings of it.
+ *
+ * @returns {string[]} One entry per tile and miniature, in DOM order.
+ */
+function overviewGeometry() {
+  return [
+    ...window.document.querySelectorAll(".fos-field-tile, .fos-field-mini"),
+  ].map(el => {
+    const id = el.dataset.regionId ?? `node-${el.dataset.nodeId}`;
+    const { left, top, width, height } = el.style;
+    return `${id} ${left} ${top} ${width} ${height}`;
+  });
+}
 
 /**
  * Property 3 where it can actually be violated: on screen.

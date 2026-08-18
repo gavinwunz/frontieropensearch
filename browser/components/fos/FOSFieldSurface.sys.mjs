@@ -124,6 +124,7 @@ export class FOSFieldSurface {
   #drag = null;
   #unsubscribe = null;
   #resizeFrame = 0;
+  #resizePasses = 0;
 
   /** node id -> data URL. */
   #thumbs = new Map();
@@ -181,6 +182,19 @@ export class FOSFieldSurface {
       this.#window.cancelAnimationFrame(this.#resizeFrame);
       this.#resizeFrame = 0;
     }
+  }
+
+  /**
+   * How many coalesced resize passes have run. Tests read this; nothing else
+   * does.
+   *
+   * Counting passes rather than renders is what survived the reposition path:
+   * a pass now does one of two things, and the claim the coalescing makes —
+   * one pass per frame, however many events arrive — is about neither of them
+   * in particular.
+   */
+  get resizePasses() {
+    return this.#resizePasses;
   }
 
   /** The card ids currently rendered, in DOM order. Tests read this. */
@@ -854,7 +868,10 @@ export class FOSFieldSurface {
     }
     this.#resizeFrame = this.#window.requestAnimationFrame(() => {
       this.#resizeFrame = 0;
-      this.render();
+      this.#resizePasses++;
+      if (!this.#repositionOverview()) {
+        this.render();
+      }
     });
   }
 
@@ -905,6 +922,98 @@ export class FOSFieldSurface {
         el.toggleAttribute("data-pinned", card.pinned);
       }
     }
+  }
+
+  /**
+   * Draw the overview at a new scale without rebuilding it.
+   *
+   * The resize comment above `addEventListener` says what a resize means here:
+   * nothing moves, the same arrangement is drawn at a different size. `render`
+   * does not know that. It empties the stage and builds every tile and every
+   * miniature again, which on the worst case the design permits — twelve
+   * trails, 480 cards — is 9.9ms of script and 7.7ms of layout, and does not
+   * fit in a frame however few times per frame it runs. This path writes four
+   * declarations per element instead and leaves the tree alone, so the cost is
+   * the layout and none of the construction.
+   *
+   * It is the overview's alone. The region level rebuilds on a resize as it
+   * did: its cards carry captions and marks whose size does not follow the
+   * scale, so a reposition there is not the same four declarations, and one
+   * region is a fraction of the crowded overview's cost anyway.
+   *
+   * Every reason to refuse is a difference between what is on screen and what
+   * the model now says, and the answer to all of them is the full rebuild the
+   * caller falls back to. That includes a card the model has gained or lost:
+   * this path may not invent an element, and a stale miniature left at a new
+   * scale would be a card claiming a place no card holds.
+   *
+   * @returns {boolean} True if the overview now shows the new size.
+   */
+  #repositionOverview() {
+    if (this.#level !== LEVEL.OVERVIEW || !this.#layout) {
+      return false;
+    }
+    const model = this.model;
+    const layout = overviewLayout({
+      slots: model.overview(),
+      viewport: this.#viewport,
+      geometry: model.geometry,
+    });
+    const tileEls = this.#stage.querySelectorAll(".fos-field-tile");
+    if (tileEls.length !== layout.tiles.length) {
+      return false;
+    }
+
+    // Every write is collected before any is applied. A refusal found halfway
+    // through would otherwise leave half the overview at the old scale and
+    // half at the new one, and the rebuild that follows would be repairing a
+    // surface this path had broken rather than one it declined to touch.
+    const writes = [];
+    for (const [index, tile] of layout.tiles.entries()) {
+      const el = tileEls[index];
+      const nested = tile.kind === "nest";
+      if (el.dataset.regionId !== (nested ? "nest" : String(tile.region.id))) {
+        return false;
+      }
+      writes.push([el, tile.x, tile.y, tile.width, tile.height]);
+
+      const regions = nested ? tile.regions : [tile.region];
+      const share = 1 / Math.max(regions.length, 1);
+      let expected = 0;
+      for (const [slot, region] of regions.entries()) {
+        const scale = miniScale(region, tile, nested ? share : 1);
+        for (const card of model.cardsIn(region.id)) {
+          const mini = el.querySelector(
+            `.fos-field-mini[data-node-id="${card.node_id}"]`
+          );
+          if (!mini) {
+            return false;
+          }
+          expected++;
+          writes.push([
+            mini,
+            slot * tile.width * share + card.x * scale,
+            card.y * scale,
+            model.geometry.cardWidth * scale,
+            model.geometry.cardHeight * scale,
+          ]);
+        }
+      }
+      // The check the lookups above cannot make: they find every card the
+      // model has, and say nothing about a miniature whose card is gone.
+      if (el.querySelectorAll(".fos-field-mini").length !== expected) {
+        return false;
+      }
+    }
+
+    for (const [el, x, y, width, height] of writes) {
+      el.style.left = `${x}px`;
+      el.style.top = `${y}px`;
+      el.style.width = `${width}px`;
+      el.style.height = `${height}px`;
+    }
+    this.#layout = layout;
+    return true;
   }
 
   // ---- input --------------------------------------------------------------
