@@ -649,3 +649,22 @@ not "do not write code while the harness is held" — the pure work this run is
 the right shape — but that the part of such a change which touches Gecko APIs
 is the part to re-read before queueing it, since node cannot check it and the
 queue will not report it for hours.
+
+**Later still**, the requeued measurement (`run26`) ran and failed on something
+better than a bug: both backends returned `Unable to get the ML engine from
+Remote Settings` in under three seconds. `MLEngineParent` pulls the ONNX runtime
+wasm from the `ml-onnx-runtime` Remote Settings collection; the tree packages the
+loader and not the runtime, and there is no settings dump for that collection, so
+there is no offline path at all. Run 23's note that the tree "ships both" was
+half right in the half that mattered least.
+
+That makes it the blocker on the voice pillar rather than a note beside it, and
+it is a decision rather than a fix: vendor the runtime (ONNX Runtime is MIT, and
+the loader is already vendored beside where the wasm would go), or accept a
+visible one-time fetch. The recommendation written into STATE is vendor the
+runtime and accept a surfaced fetch for the model weights, which are an order of
+magnitude larger. What the fork must not do is keep the current behaviour, where
+a machine with no network gets a microphone that fails with an error about
+Remote Settings. The ASR failure counter is at two with two distinct causes, and
+the three-strikes rule is being honoured by *not* attempting a third
+measurement: the next attempt is the decision, not the test.

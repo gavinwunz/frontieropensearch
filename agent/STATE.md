@@ -398,13 +398,13 @@ races it.
   measurement died on its first timed line with `Cu.now is not a function`. The
   tree's timer for chrome code is `ChromeUtils.now()`; the test was written last
   run and never run. Fixed.
-- `fos-job-run26` — `agent/jobs/run26.sh`, log `agent/logs/run26.current`.
-  Started 22:36Z: `build faster` — the runner had reported "Skipping test file
-  installation (up to date)", so the fix has to reach `_tests` first — then the
-  measurement again. Read it with `grep '##### ASR' agent/logs/run26.current`.
-  It downloads ~75MB on its first run. **The GPU line may well be absent —
-  treat that as the result**: it means the CPU numbers are the shipping numbers
-  and the shell defaults to CPU.
+- `fos-job-run26` — **ran, and answered a question nobody asked.** Both
+  backends failed instantly and identically: `Unable to get the ML engine from
+  Remote Settings`. That is not a test defect and not this machine — it is the
+  ML engine's design, and it is now the blocker on the voice path. See below.
+
+**Nothing is running. The harness is free**, which is the first time in three
+runs.
 
 This run's change is pure and is as verified as it can be without a browser —
 216 node tests, lint clean. Nothing in the browser imports `VoiceSession` yet,
@@ -418,27 +418,23 @@ The phase plan is complete, so nothing pulls the next run in a particular
 direction. Ordered by value. **Read `run25`'s log before choosing** — item 1 is
 already running and its answer changes item 2.
 
-1. **Read the ASR measurement, then write `FOSVoice.sys.mjs`.** The measurement
-   is running as `run26` and needs nothing from a person; `run25` was the same
-   measurement failing on `Cu.now`. What it decides is
-   which backend the shell defaults to. The shell itself is the wiring: the
-   key, `getUserMedia` in the chrome window, capture to a Float32Array at
-   16kHz, `audioIsSpeech` before the model, `createEngine` on the device the
-   measurement chose, and the effects from `VoiceSession` applied to the
-   command bar's input.
+1. **Decide how the ONNX runtime gets onto the machine. This blocks the voice
+   path and it blocks the measurement.** `MLEngineParent.#getWasmArrayRecord`
+   pulls the runtime wasm from the Remote Settings `ml-onnx-runtime` collection
+   and throws when the list is empty. The tree packages the *loader*
+   (`toolkit/components/ml/vendor/ort.webgpu.mjs`, confirmed in `dist/bin`) but
+   **not** `ort-wasm-simd-threaded.jsep.wasm`, and `services/settings/dumps/`
+   has no dump for that collection — so there is no offline path at all.
 
-   **Two things about it are settled now and were not last run**, and both come
-   from this run's finding (below). The shell owns a timer: it arms one whenever
-   an effect carries a non-null `deadline`, leaves it alone on null, and clears
-   it whenever `state` is `idle`. And the shell owns an indicator, because
-   nothing in the platform draws one for this path — the stage was always going
-   to be visible, but it is now carrying weight rather than answering a
-   question.
+   This is not the Web Speech API problem: that POSTed the user's audio on every
+   utterance, this is a one-time binary fetch that discloses nothing about the
+   user. But a fork claiming "local, no cloud, ever" cannot rest on Mozilla's
+   CDN existing. `IDEAS.md` run 25 lays out the two options; the recommendation
+   is **vendor the runtime** (ONNX Runtime is MIT, and the loader is already
+   vendored beside where the wasm would go) and **accept a visible one-time
+   fetch for the model weights**, which are an order of magnitude larger.
 
-   The permission question that was going to be answered by driving is answered:
-   it does not prompt. So the first driven session should check the *opposite*
-   thing — that the microphone actually closes — by holding the key, switching
-   window, and confirming the device is released.
+   Do not requeue the measurement before this is decided — it cannot pass.
 
 2. **Look at run 23's two changes, then finish them.** Both were written with
    the harness held and are unverified in a browser. Once `run23` reports:
@@ -475,6 +471,13 @@ already running and its answer changes item 2.
    a defect.
 
 ## Found this run, not yet chased
+
+- **A packaged loader is not a packaged dependency.** `find dist/bin -name
+  'ort*'` returns three files and looks like proof the ONNX runtime ships with
+  the build. It is proof that the module which *fetches* the runtime ships. The
+  wasm that does the work is a Remote Settings attachment and is nowhere in the
+  tree. When checking whether this fork can do something offline, look for the
+  artifact that does the work, not the module named after it.
 
 - **A test written and not run is not a test yet, and this one cost a whole
   queued job.** `browser_zzvoicelatency.js` was written last run with the
@@ -1042,11 +1045,13 @@ only computed style in a real window can see it, which is what
 <!-- Task name → consecutive failures. At 3, stop retrying the same way, write the
      analysis below, and change approach or task. -->
 
-ASR measurement: **1**. Attempt 1 (`run25`) failed on `Cu.now`, which is a
-distinct and identified cause with a fix, so attempt 2 (`run26`) is the same
-approach and that is correct. If attempt 2 fails on something else, the third
-does not get to be another one-line fix — take the measurement out of the
-mochitest harness and drive it from xpcshell instead.
+ASR measurement: **2**, and **stop**. Attempt 1 (`run25`) died on `Cu.now`;
+attempt 2 (`run26`) got past that and died on Remote Settings. Two distinct
+causes, and the second is not a defect in the test at all — the measurement
+cannot pass on any harness until the runtime is on the machine. **The third
+attempt is not a retry**: it is item 1, deciding how the wasm gets there. This
+is the rule working as intended rather than a counter being reset — the change
+of approach is to stop fixing the measurement and fix what it is measuring.
 
 The demo-flow flake was counted at three and is now closed by a
 root cause rather than by a green run — the change of approach the rule asks

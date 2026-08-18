@@ -1943,3 +1943,71 @@ are they still there".
 **Phase:** built this run — `FOSVoiceSession.sys.mjs`, `GRAMMAR.md` §8's
 seventh rule, and the property test that every abandoning event from every
 stage closes the microphone.
+
+### The local ASR path is not local yet, and the tree hides that behind a loader
+
+**What happened:** the measurement finally ran and answered a question nobody
+asked it. Both backends failed identically and instantly:
+
+```
+##### ASR gpu UNAVAILABLE Error: Unable to get the ML engine from Remote Settings.
+##### ASR cpu UNAVAILABLE Error: Unable to get the ML engine from Remote Settings.
+```
+
+**What it means.** `MLEngineParent.#getWasmArrayRecord` fetches the ONNX runtime
+from the Remote Settings `ml-onnx-runtime` collection and throws when the record
+list comes back empty, which is also what Remote Settings returns on error. So
+the ML engine cannot start without a successful fetch from a Mozilla service.
+
+Run 23's note that "the tree ships both — `ort.webgpu.mjs` is packaged" was
+half right, and the half it got wrong is the important half:
+
+| what | where it comes from |
+| --- | --- |
+| `ort.webgpu.mjs`, `ort-wasm-simd-threaded.jsep.mjs` | `toolkit/components/ml/vendor/`, packaged into the build — confirmed in `dist/bin/chrome/toolkit/content/global/ml/` |
+| `ort-wasm-simd-threaded.jsep.wasm` — the actual runtime | Remote Settings attachment, **not in the tree** |
+| the model weights | a model hub, over the network |
+
+And `services/settings/dumps/` has **no dump for the ML collection** — several
+other collections ship one, so this is a choice rather than an omission. There
+is therefore no offline path at all: a fresh profile with no network cannot run
+a local model, and fails with an error about Remote Settings rather than about
+what is missing.
+
+**Verdict: this is not the Web Speech API problem, but it is not nothing, and
+the fork has to choose.** The distinction worth being precise about, because it
+decides whether the voice pillar survives: the Web Speech API was disqualified
+because it POSTs *the user's audio* to a Mozilla endpoint on every utterance —
+a per-use, per-utterance disclosure of content. This is a one-time fetch of a
+binary, discloses nothing about the user beyond the request itself, and once it
+has happened everything really does run on the device. Those are different
+things and the fork should not pretend otherwise.
+
+But "local, no cloud, ever" cannot be built on a component that silently needs
+Mozilla's CDN to exist, especially in a fork that disabled the surrounding
+services in Phase 1. Two options, and the next run should decide between them
+rather than retry the measurement:
+
+1. **Vendor the runtime.** ONNX Runtime is MIT, so the licence permits it and
+   the fork already vendors the loader beside where the wasm would go. The cost
+   is package size and a binary artifact in a public tree, and the benefit is
+   that the claim becomes true — first run works offline, and nothing about the
+   voice path touches a Mozilla service.
+2. **Accept a one-time fetch and say so.** Cheaper, honest only if it is
+   surfaced: the voice path would need a visible "download the speech model"
+   step rather than a microphone that quietly fails on a machine with no
+   network. That is a worse first-run experience but a much smaller change.
+
+The recommendation is 1 for the runtime and 2 for the *model weights*, because
+they differ in size by an order of magnitude and only the runtime is small
+enough to package without argument. That also matches how the rest of the tree
+treats the two.
+
+**The general lesson, and the second one this run:** a packaged loader is not a
+packaged dependency. `find dist/bin -name 'ort*'` looked like proof the runtime
+shipped, and it was proof that the *file that fetches* the runtime shipped. When
+checking whether the fork can do something offline, look for the artifact that
+does the work, not the module named after it.
+
+**Phase:** decided next run. The measurement cannot run until it is decided,
+which makes this the blocker on the voice path rather than a note beside it.
