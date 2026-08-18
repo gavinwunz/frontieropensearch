@@ -1,0 +1,46 @@
+diff --git a/expat/lib/expat_external.h b/expat/lib/expat_external.h
+--- a/expat/lib/expat_external.h
++++ b/expat/lib/expat_external.h
+@@ -138,6 +138,9 @@ extern "C" {
+ #    endif
+ #  endif
+ 
++/* BEGIN MOZILLA CHANGE (typedef XML_Char to char16_t) */
++#if 0
++
+ #  ifdef XML_UNICODE /* Information is UTF-16 encoded. */
+ #    ifdef XML_UNICODE_WCHAR_T
+ typedef wchar_t XML_Char;
+@@ -151,6 +154,9 @@ typedef char XML_Char;
+ typedef char XML_LChar;
+ #  endif   /* XML_UNICODE */
+ 
++#endif
++/* END MOZILLA CHANGE */
++
+ #  ifdef XML_LARGE_SIZE /* Use large integers for file/stream positions. */
+ typedef long long XML_Index;
+ typedef unsigned long long XML_Size;
+diff --git a/expat/lib/xmlparse.c b/expat/lib/xmlparse.c
+--- a/expat/lib/xmlparse.c
++++ b/expat/lib/xmlparse.c
+@@ -194,6 +194,9 @@ typedef char ICHAR;
+ 
+ #endif
+ 
++/* BEGIN MOZILLA CHANGE (typedef XML_Char to char16_t) */
++#if 0
++
+ #ifdef XML_UNICODE
+ 
+ #  ifdef XML_UNICODE_WCHAR_T
+@@ -211,6 +214,9 @@ typedef char ICHAR;
+ 
+ #endif
+ 
++#endif
++/* END MOZILLA CHANGE */
++
+ #ifdef XML_LARGE_SIZE
+ #  define XML_INDEX_MAX LLONG_MAX
+ #else

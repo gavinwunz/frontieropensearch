@@ -42,3 +42,9 @@ user-visible string. Never invent a variant spelling.
   and Firefox trademarks must not appear in user-visible surfaces of the build.
 - Agent state lives in `agent/STATE.md`, `agent/IDEAS.md`, and
   `agent/JOURNAL.md`. Read at session start, update at session end.
+
+## Upstream
+
+This tree is a fork of mozilla-firefox/firefox. Upstream Firefox development
+guidance lives in `AGENTS.md` and `docs/`; it still applies to Gecko internals.
+Where the two disagree, this file wins.

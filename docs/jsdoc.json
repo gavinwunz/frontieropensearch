@@ -1,0 +1,6 @@
+{
+  "plugins": ["jsdoc-plugins/skip-anonymous-locals.mjs"],
+  "source": {
+    "includePattern": ".+\\.m?jsm?$"
+  }
+}

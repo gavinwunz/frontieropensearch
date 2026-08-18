@@ -1,0 +1,57 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+package org.mozilla.fenix.ui.efficiency.pageObjects
+
+import androidx.compose.ui.test.junit4.AndroidComposeTestRule
+import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
+import org.mozilla.fenix.helpers.TestAssetHelper.waitingTime
+import org.mozilla.fenix.ui.efficiency.helpers.BasePage
+import org.mozilla.fenix.ui.efficiency.helpers.Selector
+import org.mozilla.fenix.ui.efficiency.navigation.NavigationRegistry
+import org.mozilla.fenix.ui.efficiency.navigation.NavigationStep
+import org.mozilla.fenix.ui.efficiency.selectors.HomeSelectors
+import org.mozilla.fenix.ui.efficiency.selectors.MainMenuSelectors
+import org.mozilla.fenix.ui.efficiency.selectors.SettingsSelectors
+import org.mozilla.fenix.ui.efficiency.selectors.SystemSettingsSelectors
+
+class SystemSettingsPage(composeRule: AndroidComposeTestRule<HomeActivityIntentTestRule, *>) : BasePage(composeRule) {
+    override val pageName = "SystemSettingsPage"
+
+    init {
+        NavigationRegistry.register(
+            from = "HomePage",
+            to = pageName,
+            steps =
+                listOf(
+                    NavigationStep.Click(HomeSelectors.MAIN_MENU_BUTTON),
+                    NavigationStep.Click(MainMenuSelectors.SETTINGS_BUTTON),
+                    NavigationStep.Swipe(SettingsSelectors.NOTIFICATIONS_BUTTON),
+                    NavigationStep.Click(SettingsSelectors.NOTIFICATIONS_BUTTON),
+                ),
+        )
+    }
+
+    /** Open the Permissions list from the Android App info screen. */
+    fun openAppPermissions(): SystemSettingsPage {
+        // Waits first: the caller has just left Fenix via an intent, and the Settings activity may not have
+        // drawn yet. The legacy helper clicks immediately and races that launch.
+        mozVerify(SystemSettingsSelectors.APP_INFO_PERMISSIONS_ROW, timeout = waitingTime)
+        mozClick(SystemSettingsSelectors.APP_INFO_PERMISSIONS_ROW)
+        return this
+    }
+
+    /** Grant [permissionName] from the app-permissions list. */
+    fun allowAppPermission(permissionName: String): SystemSettingsPage {
+        mozVerify(SystemSettingsSelectors.APP_PERMISSION_ROW(permissionName), timeout = waitingTime)
+        mozClick(SystemSettingsSelectors.APP_PERMISSION_ROW(permissionName))
+        mozVerify(SystemSettingsSelectors.APP_PERMISSION_ALLOW_OPTION, timeout = waitingTime)
+        mozClick(SystemSettingsSelectors.APP_PERMISSION_ALLOW_OPTION)
+        return this
+    }
+
+    override fun mozGetSelectorsByGroup(group: String): List<Selector> {
+        return SystemSettingsSelectors.all.filter { it.groups.contains(group) }
+    }
+}
