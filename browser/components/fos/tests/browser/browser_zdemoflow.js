@@ -378,6 +378,19 @@ add_task(async function test_the_demo_flow() {
   // ------------------------------------------------ 5. export a context pack
   info("stage 5 — export a context pack");
 
+  // The store is asserted before the brief, and separately, because for
+  // several runs the two were indistinguishable. A pack missing a page can
+  // mean the engine never recorded it or the renderer dropped it, and reading
+  // that off the markdown alone sent this project after the wrong one three
+  // times. Asking the store first says which half is at fault in the failure
+  // message itself.
+  const contents = await (await settled()).contextContents(contextId);
+  Assert.deepEqual(
+    [...contents.pages.map(page => page.url)].sort(),
+    [RESULT, BRANCH_ONE, BRANCH_TWO, BRANCH_THREE].sort(),
+    "the store holds the enquiry's four pages, and exactly those"
+  );
+
   await SimpleTest.promiseClipboardChange(
     text => text.includes("# Context pack"),
     () => bar().run("pack")

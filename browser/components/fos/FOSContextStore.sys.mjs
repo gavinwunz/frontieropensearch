@@ -846,17 +846,34 @@ export class FOSContextStore {
   // ---- plumbing -----------------------------------------------------------
 
   /**
-   * Run an INSERT and return the new rowid.
+   * Run an INSERT and return the new row's `id`.
    *
-   * @param {string} sql
+   * `RETURNING` rather than a following `SELECT last_insert_rowid()`, and this
+   * is a correctness fix rather than a saved round trip. One store is shared by
+   * every window in the process, each window's engine serialises only its *own*
+   * writes, and `last_insert_rowid()` is a property of the connection across
+   * every table on it. So two statements meant one window could insert a trail
+   * and read back the rowid of another window's `visit` — a plausible integer,
+   * from the wrong table, with no error anywhere.
+   *
+   * What that produced was a database that pointed at rows which did not exist:
+   * nodes on a `trail_id` no trail had, `context_member` rows naming node ids
+   * nothing had ever written. Nothing deletes rows here, so those references
+   * were never going to resolve, and every read through them silently returned
+   * less than it should — an exported pack missing pages it holds membership
+   * rows for, which is how this was finally caught.
+   *
+   * Every table this inserts into declares `id INTEGER PRIMARY KEY`, so
+   * `RETURNING id` is the same number the old pair meant to read, obtained
+   * atomically. Keep it that way: a table without that column would need its
+   * own clause rather than this one.
+   *
+   * @param {string} sql An INSERT, without a RETURNING clause.
    * @param {object} params
    * @returns {Promise<number>}
    */
   async #insert(sql, params) {
-    await this.#connection.execute(sql, params);
-    const [row] = await this.#connection.execute(
-      `SELECT last_insert_rowid() AS id`
-    );
+    const [row] = await this.#connection.execute(`${sql} RETURNING id`, params);
     return row.getResultByName("id");
   }
 }
