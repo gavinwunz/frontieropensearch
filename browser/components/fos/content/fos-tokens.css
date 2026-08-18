@@ -1,0 +1,126 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* The fork's design tokens. `design/SYSTEM.md` is the prose; this is the
+ * contract it describes, and every FOS surface is styled from here.
+ *
+ * These sit on top of the platform token set rather than beside it. Where the
+ * platform names a role, that name is used unchanged and does not reappear
+ * below — there is no `--fos-border-color`, because `--border-color` already
+ * means the right thing and a second name for it is how two surfaces start
+ * disagreeing. What is here is the three things the platform does not settle
+ * for a surface like this one: the part of the type scale chrome is missing,
+ * the roles this fork has that Firefox does not (a mark, a trail row, a
+ * quieted label), and the stacking order of surfaces that all float above the
+ * toolbox. */
+
+@layer fos-tokens {
+  :root {
+    /* ---- type scale --------------------------------------------------- */
+
+    /* Chrome has no small text token, and this is deliberate upstream: in
+       `font.tokens.json` both `font.size.root` and `font.size.small` carry a
+       platform value of `unset`, so that chrome tracks the OS font size
+       instead of imposing one. `font.size.large` has no such override, so the
+       upper half of the scale does apply in chrome while the lower half
+       silently does not — `font-size: var(--font-size-small)` inherits, which
+       is to say it does nothing at all. Measured in a running window: 13.3px
+       against a 13.3px parent.
+    
+       That left 22 declarations across four surfaces asking for small text and
+       getting body text, which is most of the reason the rail, the sidebar and
+       the Field read as flat. A label and its detail, a title and its count are
+       primary/secondary pairs in every one of these surfaces, and they were
+       rendering identically.
+    
+       So the fork restores the missing step rather than redefining the
+       platform's. In `rem`, because in chrome the root font size *is* the OS
+       font size — which is the thing upstream was protecting, and `rem` tracks
+       it where a `px` would not and an `em` would compound. The ratio is the
+       platform's own: 0.867 is exactly as far below the base as `large`'s
+       1.133 is above it, so what lands is the symmetric scale upstream already
+       describes, with the half chrome drops put back.
+    
+       Namespaced, and never assigned to `--font-size-small`, so no upstream
+       widget in the chrome window changes size. */
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    --fos-font-size-small: 0.867rem;
+    --fos-font-size-large: var(--font-size-large);
+
+    /* ---- weight ------------------------------------------------------- */
+
+    /* "Where you are" — the current node, the spine of the trail, the row you
+       are on. One weight for that job: the rail said semibold and the sidebar
+       said bold for the same claim about the same node. */
+    --fos-font-weight-emphasis: var(--font-weight-semibold);
+    --fos-font-weight-heading: var(--font-weight-bold);
+
+    /* ---- quiet text ---------------------------------------------------- */
+
+    /* The one way to say "secondary". Not opacity — see SYSTEM.md §3. Opacity
+       de-emphasises an element and everything inside it, so a row quieted that
+       way takes its own mark's accent and its current-node rule down with it,
+       and contrast tooling reads the pre-composite colour and calls it a pass. */
+    --fos-text-color-quiet: var(--text-color-deemphasized);
+
+    /* ---- the mark ------------------------------------------------------ */
+
+    /* A mark is one letter standing for one node, and the same letter appears
+       in the command bar, the rail, the sidebar and on a Field card. It is the
+       only object in the fork that has to be recognised as the same thing in
+       four places, so it is the one that least survives four opinions — and it
+       had five treatments, three of them carrying comments claiming to match
+       one of the others.
+    
+       Monospace because the glyph sits in a fixed column in three of those four
+       surfaces and a proportional letter makes that column jitter. */
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    --fos-mark-font-family: monospace;
+    --fos-mark-font-size: var(--fos-font-size-small);
+    --fos-mark-font-weight: var(--font-weight-semibold);
+    --fos-mark-color: var(--color-accent-primary);
+    /* A mark laid over a thumbnail or a header needs a plate to stay legible.
+       The plate is the variation; the letter is not. */
+    --fos-mark-plate-background: var(--background-color-box);
+
+    /* ---- selection ------------------------------------------------------ */
+
+    /* Keyboard selection in a list, wherever the list is. The sidebar had
+       reached for the button hover tokens plus an inset focus ring instead,
+       which read as a different kind of state than the identical row in the
+       rail beside it. */
+    --fos-selected-background: var(--background-color-list-item-hover);
+    --fos-selected-text-color: var(--text-color-list-item-hover);
+
+    /* ---- gutter --------------------------------------------------------- */
+
+    /* The inline padding shared by every row, header and heading of a surface,
+       so that labels down a panel share one left edge. It is a property of the
+       surface, not of the row: a flanking panel is 22–24rem and a centred
+       dialog is 44rem, and the wider surface carries the wider gutter. Rows
+       inside a Field tile are miniatures rather than panel rows and are
+       exempt — stated here because that is the exception the rule needs. */
+    --fos-gutter-panel: var(--space-medium);
+    --fos-gutter-dialog: var(--space-large);
+
+    /* ---- layers --------------------------------------------------------- */
+
+    /* Every FOS surface floats above the toolbox, which is a flex item with
+       `z-index: 0` and therefore paints over anything lower however far up the
+       document the surface is appended. That is why these are at the top of the
+       range rather than at 10.
+    
+       The order between them is a design statement and was previously three
+       hand-written integers near maxint in three files, with nothing anywhere
+       saying which was meant to be on top. Command surfaces take the keyboard
+       and must cover what they act on; the panels flank; the Field is the
+       backdrop the panels are read against. */
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    --fos-layer-field: 2147483645;
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    --fos-layer-panel: 2147483646;
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    --fos-layer-command: 2147483647;
+  }
+}

@@ -455,6 +455,26 @@ module.exports = {
       },
     },
     {
+      // Frontier OpenSearch's chrome surfaces are written against the fork's
+      // own token layer, `browser/components/fos/content/fos-tokens.css`,
+      // which is documented in `design/SYSTEM.md`. Those tokens are named
+      // `--fos-*` and are defined in one file and consumed from five others,
+      // so this rule — which resolves custom properties only within the file
+      // it is checking — reads every one of them as an unknown literal.
+      //
+      // The rule's intent is kept rather than dropped: `fos-tokens.css` is the
+      // only FOS file permitted a literal value, and the invariants the rule
+      // would enforce are checked instead by
+      // `browser/components/fos/tests/browser/browser_designsystem.js`, which
+      // asserts them against computed style in a running window. That catches
+      // what this rule cannot — a token that resolves to nothing at all, which
+      // is exactly how the fork lost the lower half of its type scale.
+      files: ["browser/components/fos/**"],
+      rules: {
+        "stylelint-plugin-mozilla/use-design-tokens": null,
+      },
+    },
+    {
       name: "design-token-rules-on",
       files: [
         // Enable design token related rules only on the parts of devtools that can use them

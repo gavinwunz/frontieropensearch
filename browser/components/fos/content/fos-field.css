@@ -13,7 +13,7 @@
   inset: 0;
   /* Above the toolbox, which carries z-index: 0 and so paints over anything
      lower however far up the document this is appended. */
-  z-index: 2147483645;
+  z-index: var(--fos-layer-field);
   display: flex;
   flex-direction: column;
   background: var(--background-color-canvas);
@@ -29,18 +29,18 @@
   align-items: baseline;
   justify-content: space-between;
   gap: var(--space-small);
-  padding: var(--space-small) var(--space-large);
+  padding: var(--space-small) var(--fos-gutter-dialog);
   border-block-end: var(--border-width) solid var(--border-color);
 }
 
 .fos-field-crumbs {
-  font-size: var(--font-size-large);
-  font-weight: var(--font-weight-bold);
+  font-size: var(--fos-font-size-large);
+  font-weight: var(--fos-font-weight-heading);
 }
 
 .fos-field-status {
-  font-size: var(--font-size-small);
-  opacity: var(--opacity-deemphasized-strong);
+  font-size: var(--fos-font-size-small);
+  color: var(--fos-text-color-quiet);
 }
 
 .fos-field-stage {
@@ -62,7 +62,7 @@
   inset-block-start: 40%;
   inset-inline: 0;
   text-align: center;
-  opacity: var(--opacity-deemphasized-strong);
+  color: var(--fos-text-color-quiet);
 }
 
 /* ---- the overview ------------------------------------------------------- */
@@ -92,7 +92,7 @@
   justify-content: space-between;
   gap: var(--space-xsmall);
   padding: var(--space-xxsmall) var(--space-small);
-  font-size: var(--font-size-small);
+  font-size: var(--fos-font-size-small);
   border-block-end: var(--border-width) solid var(--border-color);
 }
 
@@ -103,7 +103,7 @@
 }
 
 .fos-field-tile-count {
-  opacity: var(--opacity-deemphasized-strong);
+  color: var(--fos-text-color-quiet);
   font-variant-numeric: tabular-nums;
 }
 
@@ -194,10 +194,11 @@
   min-inline-size: var(--size-item-small);
   padding-inline: var(--space-xxsmall);
   border-radius: var(--border-radius-small);
-  background: var(--background-color-box);
-  color: var(--text-color);
-  font-size: var(--font-size-small);
-  font-weight: var(--font-weight-bold);
+  background: var(--fos-mark-plate-background);
+  color: var(--fos-mark-color);
+  font-family: var(--fos-mark-font-family);
+  font-size: var(--fos-mark-font-size);
+  font-weight: var(--fos-mark-font-weight);
   text-align: center;
 }
 
@@ -207,7 +208,7 @@
 .fos-field-caption {
   flex: none;
   padding-inline: var(--space-xxsmall);
-  font-size: var(--font-size-small);
+  font-size: var(--fos-font-size-small);
   line-height: 1.2;
   overflow: hidden;
   text-overflow: ellipsis;

@@ -18,7 +18,7 @@
   inset-inline-end: 0;
   /* Above the toolbox, which carries z-index: 0 and so paints over anything
      lower however far up the document this is appended. */
-  z-index: 2147483646;
+  z-index: var(--fos-layer-panel);
   /* A measure, not a component size: wide enough for a page title and a time
      on one line, narrow enough to leave the page readable beside it. No size
      token expresses that pair. SearchBar's participants disagreed that a pane
@@ -40,7 +40,7 @@
 /* ---- header ------------------------------------------------------------- */
 
 .fos-sidebar-header {
-  padding: var(--space-medium);
+  padding: var(--fos-gutter-panel);
   border-block-end: var(--border-width) solid var(--border-color);
 }
 
@@ -49,8 +49,8 @@
   align-items: baseline;
   gap: var(--space-small);
   margin: 0;
-  font-size: var(--font-size-large);
-  font-weight: var(--font-weight-bold);
+  font-size: var(--fos-font-size-large);
+  font-weight: var(--fos-font-weight-heading);
 }
 
 .fos-sidebar-title {
@@ -60,18 +60,19 @@
 /* The context's own mark, in the same treatment the rail gives a node's. */
 .fos-sidebar-mark {
   flex: none;
-  font-family: monospace;
-  font-size: var(--font-size-small);
+  font-family: var(--fos-mark-font-family);
+  font-size: var(--fos-mark-font-size);
+  font-weight: var(--fos-mark-font-weight);
   padding-inline: var(--space-xsmall);
   border-radius: var(--border-radius-small);
-  background: var(--button-background-color);
-  color: var(--button-text-color);
+  background: var(--fos-mark-plate-background);
+  color: var(--fos-mark-color);
 }
 
 .fos-sidebar-summary {
   margin-block: var(--space-xsmall) 0;
-  font-size: var(--font-size-small);
-  opacity: var(--opacity-deemphasized-strong);
+  font-size: var(--fos-font-size-small);
+  color: var(--fos-text-color-quiet);
 }
 
 /* ---- body --------------------------------------------------------------- */
@@ -93,18 +94,18 @@
 
 .fos-sidebar-heading {
   margin: 0;
-  padding: var(--space-xsmall) var(--space-medium);
-  font-size: var(--font-size-small);
-  font-weight: var(--font-weight-bold);
+  padding: var(--space-xsmall) var(--fos-gutter-panel);
+  font-size: var(--fos-font-size-small);
+  font-weight: var(--fos-font-weight-emphasis);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  opacity: var(--opacity-deemphasized-strong);
+  color: var(--fos-text-color-quiet);
 }
 
 .fos-sidebar-note {
   margin: 0;
-  padding: 0 var(--space-medium) var(--space-xsmall);
-  font-size: var(--font-size-small);
+  padding: 0 var(--fos-gutter-panel) var(--space-xsmall);
+  font-size: var(--fos-font-size-small);
 }
 
 .fos-sidebar-list {
@@ -115,9 +116,9 @@
 
 .fos-sidebar-empty {
   margin: 0;
-  padding: var(--space-medium);
-  font-size: var(--font-size-small);
-  opacity: var(--opacity-deemphasized-strong);
+  padding: var(--fos-gutter-panel);
+  font-size: var(--fos-font-size-small);
+  color: var(--fos-text-color-quiet);
 }
 
 /* ---- rows --------------------------------------------------------------- */
@@ -126,7 +127,7 @@
   display: flex;
   align-items: baseline;
   gap: var(--space-small);
-  padding: var(--space-xsmall) var(--space-medium);
+  padding: var(--space-xsmall) var(--fos-gutter-panel);
 }
 
 /* Only a row that goes somewhere offers to be clicked. An entity is a topic,
@@ -135,14 +136,13 @@
   cursor: default;
 }
 
-.fos-sidebar-row[data-enterable]:hover,
-.fos-sidebar-row[aria-selected="true"] {
+.fos-sidebar-row[data-enterable]:hover {
   background: var(--button-background-color-hover);
 }
 
 .fos-sidebar-row[aria-selected="true"] {
-  outline: var(--focus-outline);
-  outline-offset: calc(var(--focus-outline-width) * -1);
+  background: var(--fos-selected-background);
+  color: var(--fos-selected-text-color);
 }
 
 .fos-sidebar-label {
@@ -150,31 +150,32 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--font-size-small);
+  font-size: var(--fos-font-size-small);
 }
 
 .fos-sidebar-detail {
   flex: none;
-  font-size: var(--font-size-small);
-  opacity: var(--opacity-deemphasized-strong);
+  font-size: var(--fos-font-size-small);
+  color: var(--fos-text-color-quiet);
 }
 
 .fos-sidebar-rowmark {
   flex: none;
-  font-family: monospace;
-  font-size: var(--font-size-small);
-  opacity: var(--opacity-deemphasized-strong);
+  font-family: var(--fos-mark-font-family);
+  font-size: var(--fos-mark-font-size);
+  font-weight: var(--fos-mark-font-weight);
+  color: var(--fos-mark-color);
 }
 
 /* The page you are on, in the list of pages you have been on. */
 .fos-sidebar-row[data-current] .fos-sidebar-label {
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--fos-font-weight-emphasis);
 }
 
 /* A dismissed card is not a deleted page: it is dimmed here and still
    enterable, exactly as it is on the rail. */
 .fos-sidebar-row[data-dismissed] .fos-sidebar-label {
-  opacity: var(--opacity-deemphasized-strong);
+  color: var(--fos-text-color-quiet);
 }
 
 /* Outcome is carried by a leading rule rather than by colour alone, so it
@@ -186,7 +187,7 @@
   border-inline-start-width: var(--border-width);
   border-inline-start-style: solid;
   border-inline-start-color: transparent;
-  padding-inline-start: calc(var(--space-medium) - var(--border-width));
+  padding-inline-start: calc(var(--fos-gutter-panel) - var(--border-width));
 }
 
 .fos-sidebar-row[data-outcome="read"] {
@@ -200,7 +201,7 @@
 /* A question that opened nothing: shown, because an abandoned line of enquiry
    is a thing you did, but plainly not somewhere to go. */
 .fos-sidebar-row[data-kind="query"]:not([data-enterable]) .fos-sidebar-label {
-  opacity: var(--opacity-deemphasized-strong);
+  color: var(--fos-text-color-quiet);
   font-style: italic;
 }
 

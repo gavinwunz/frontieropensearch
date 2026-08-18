@@ -15,7 +15,7 @@
   inset-inline-start: 0;
   /* Above the toolbox, which carries z-index: 0 and so paints over anything
      lower however far up the document this is appended. */
-  z-index: 2147483646;
+  z-index: var(--fos-layer-panel);
   /* A measure, not a component size: wide enough for a title at the indents a
      real trail reaches, narrow enough to leave the page usable beside it. No
      size token expresses that pair. */
@@ -38,7 +38,7 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--space-xsmall);
-  padding: var(--space-small) var(--space-medium);
+  padding: var(--space-small) var(--fos-gutter-panel);
   border-block-end: var(--border-width) solid var(--border-color);
 }
 
@@ -48,7 +48,7 @@
   background: transparent;
   color: inherit;
   padding: 0;
-  font-size: var(--font-size-small);
+  font-size: var(--fos-font-size-small);
   cursor: default;
 }
 
@@ -57,11 +57,11 @@
 .fos-rail-crumb + .fos-rail-crumb::before {
   content: "›";
   padding-inline-end: var(--space-xsmall);
-  opacity: var(--opacity-deemphasized-strong);
+  color: var(--fos-text-color-quiet);
 }
 
 .fos-rail-crumb:last-child {
-  font-weight: var(--font-weight-semibold);
+  font-weight: var(--fos-font-weight-emphasis);
 }
 
 .fos-rail-list {
@@ -84,14 +84,14 @@
   /* The indent is the tree. Hoisting bounds how deep it can get, so this can
      stay a real indent rather than collapsing to a guide line. */
   /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
-  padding-inline: calc(var(--space-small) + var(--fos-rail-depth, 0) * 0.75rem) var(--space-medium);
+  padding-inline: calc(var(--space-small) + var(--fos-rail-depth, 0) * 0.75rem) var(--fos-gutter-panel);
   padding-block: var(--space-xxsmall);
   cursor: default;
 }
 
 .fos-rail-row[aria-selected="true"] {
-  background: var(--background-color-list-item-hover);
-  color: var(--text-color-list-item-hover);
+  background: var(--fos-selected-background);
+  color: var(--fos-selected-text-color);
 }
 
 /* Where you are, and how you got there. The spine is the path from the root to
@@ -99,7 +99,7 @@
    route — without it a branching tree gives no answer to "which of these am I
    on the far end of". */
 .fos-rail-row[data-spine] .fos-rail-label {
-  font-weight: var(--font-weight-semibold);
+  font-weight: var(--fos-font-weight-emphasis);
 }
 
 .fos-rail-row[data-current] {
@@ -110,9 +110,13 @@
 }
 
 /* Dismissed is not deleted. It reads as quieter, never as absent, because the
-   page is still on the trail and Enter still restores it. */
-.fos-rail-row[data-dismissed] {
-  opacity: var(--opacity-deemphasized-strong);
+   page is still on the trail and Enter still restores it.
+
+   The label carries it, not the row. Dimming the row took its mark and its
+   current-node rule down with it, so a dismissed node you were standing on
+   lost both the letter it answers to and the marker saying you were there. */
+.fos-rail-row[data-dismissed] .fos-rail-label {
+  color: var(--fos-text-color-quiet);
 }
 
 .fos-rail-twisty {
@@ -121,7 +125,7 @@
   /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   width: 1em;
   flex: none;
-  font-size: var(--font-size-small);
+  font-size: var(--fos-font-size-small);
 }
 
 .fos-rail-mark {
@@ -131,30 +135,31 @@
   width: 1em;
   flex: none;
   text-align: center;
-  font-size: var(--font-size-small);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-accent-primary);
+  font-family: var(--fos-mark-font-family);
+  font-size: var(--fos-mark-font-size);
+  font-weight: var(--fos-mark-font-weight);
+  color: var(--fos-mark-color);
 }
 
 .fos-rail-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--font-size-small);
+  font-size: var(--fos-font-size-small);
 }
 
 .fos-rail-count {
   margin-inline-start: auto;
   flex: none;
-  font-size: var(--font-size-small);
-  color: var(--text-color-deemphasized);
+  font-size: var(--fos-font-size-small);
+  color: var(--fos-text-color-quiet);
 }
 
 .fos-rail-empty {
-  padding: var(--space-medium);
+  padding: var(--fos-gutter-panel);
   margin: 0;
-  font-size: var(--font-size-small);
-  color: var(--text-color-deemphasized);
+  font-size: var(--fos-font-size-small);
+  color: var(--fos-text-color-quiet);
 }
 
 .fos-rail-empty[hidden] {

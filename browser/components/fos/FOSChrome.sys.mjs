@@ -14,6 +14,9 @@
 /** Windows to the sheets already loaded into them. */
 const loaded = new WeakMap();
 
+/* The design tokens every other FOS sheet is written against. */
+const TOKENS = "chrome://browser/content/fos/fos-tokens.css";
+
 /**
  * Put a stylesheet on a chrome window, synchronously, once.
  *
@@ -40,6 +43,12 @@ export function ensureStylesheet(window, url) {
   }
   if (sheets.has(url)) {
     return;
+  }
+  // The token sheet underlies every FOS surface, so it is loaded here rather
+  // than `@import`ed by each of them: one place that cannot drift, and it is
+  // guaranteed present whichever surface a window happens to open first.
+  if (url != TOKENS) {
+    ensureStylesheet(window, TOKENS);
   }
   const utils = window.windowUtils;
   utils.loadSheetUsingURIString(url, utils.AUTHOR_SHEET);
