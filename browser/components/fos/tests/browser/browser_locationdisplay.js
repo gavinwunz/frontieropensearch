@@ -23,6 +23,9 @@ const { FOSCommandBar } = ChromeUtils.importESModule(
 const { FOSLocationDisplay } = ChromeUtils.importESModule(
   "resource:///modules/FOSLocationDisplay.sys.mjs"
 );
+const { FOSFieldSurface } = ChromeUtils.importESModule(
+  "resource:///modules/FOSFieldSurface.sys.mjs"
+);
 
 const PAGE = "https://example.com/";
 
@@ -85,6 +88,27 @@ add_task(async function a_press_opens_the_command_bar() {
     bar().input,
     "and the focus is in the command bar, not the address bar"
   );
+  bar().close();
+});
+
+add_task(async function the_mouse_can_reach_the_field_from_here() {
+  // The claim this whole file exists to make: with no tab strip and no typable
+  // address bar, a mouse still has a complete path to every surface, because
+  // the one press it has left opens the grammar rather than a text field.
+  // Pressing, typing a verb and running it is that path end to end.
+  bar().close();
+  EventUtils.synthesizeMouseAtCenter(gURLBar.inputField, {}, window);
+  Assert.ok(bar().isOpen, "pressed the address bar");
+
+  const surface = FOSFieldSurface.forWindow(window);
+  bar().run("field");
+  await TestUtils.waitForCondition(() => surface.isOpen, "the Field opened");
+  Assert.ok(
+    surface.isOpen,
+    "running `field` from a bar opened by mouse showed the Field"
+  );
+
+  surface.close();
   bar().close();
 });
 

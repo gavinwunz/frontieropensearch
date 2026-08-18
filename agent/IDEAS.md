@@ -1203,3 +1203,83 @@ honest answer is not a sixth tier: it is that an old trail should be findable
 *as a trail*, which is the surface already deferred in `STATE.md`. Adding
 "every page you have ever recorded" as a tier would rank the whole database by
 nothing in particular, which is the bookmark graveyard argument again.
+
+### Hiding the origin is the failure mode of every chrome-minimising fork
+
+- **Searched:** browsers without an address bar, origin spoofing, kiosk chrome;
+  then eye-tracking studies on whether users look at the address bar at all.
+- **Found:** Zen — a Firefox fork with the same ambitions as this one — shipped
+  GHSA-vjfv-85qf-v25c, an origin-spoofing advisory whose root cause was chrome
+  that hid where the user actually was.
+  https://github.com/zen-browser/desktop/security/advisories/GHSA-vjfv-85qf-v25c
+  On the other side, a 2008 lab study of 63 participants found subjects spent
+  minimal time inspecting the address bar, and an eye-tracking study of phishing
+  judgements found 23% of participants never looked at browser cues at all —
+  those participants then chose wrong 40% of the time.
+  https://arxiv.org/pdf/1911.00953
+- **Verdict:** **adopt**, as the constraint that decided the shape of the
+  change — the address bar's *entry* half is replaceable and its *display* half
+  is not.
+- **Phase:** 2, shipped as `FOSLocationDisplay.sys.mjs`.
+
+The two findings look contradictory and are not. They are about different
+halves of the same widget. The evidence that users ignore the address bar is
+evidence about it as a *security indicator*: as a thing you are supposed to
+read before typing a password, it underperforms badly. The evidence from the
+Zen advisory is about what happens when the origin is not displayed *at all* —
+which is not "users ignore it slightly more" but a new attack surface, because
+an attacker can then render an origin of their choosing inside content and
+nothing contradicts it. An indicator that is often ignored still constrains
+what a page can claim; an absent one does not.
+
+So the seam to cut along was already there. Entry moves to the command bar,
+which is the half the fork has a better answer for. Display stays exactly where
+it is, in the element that already holds the eTLD+1 emphasis, punycode handling
+for lookalike domains, mixed-content and certificate state, and the site's
+granted permissions. The decisive practical point is that re-implementing that
+inside a command bar would mean re-earning fifteen years of adversarial work in
+an afternoon, and the advisory above is what that looks like when it goes
+wrong.
+
+`readOnly` turned out to be the supported way to do it rather than an invention:
+popup windows and taskbar tabs have shipped an address bar that shows an origin
+and refuses typing for years, so every anchor, panel and identity surface keeps
+working with no code of ours. This is the fourth time this project has found
+the mechanism it wanted already in the tree — see also the tab strip below.
+
+**Rejected along the way:** a hand-built origin strip of our own, showing
+origin plus the page's mark. Attractive, because the mark would give the strip
+a reason to be looked at that is not security theatre, and the whole problem
+with the address bar as an indicator is that nobody has a daily reason to read
+it. Rejected for this run on the grounds above — the strip would have to
+re-derive punycode and certificate state to be safe — but the *mark* half is
+worth revisiting as an addition to the kept element rather than a replacement
+for it.
+
+### The tab strip hides on grounds the tree already accepts
+
+- **Searched:** how Firefox forks remove the tab strip; then, in-tree,
+  `TabBarVisibility`.
+- **Found:** `browser/components/tabbrowser/content/tab-bar-visibility.js`
+  hides the strip when "only a single tab is visible **or tabs are displayed
+  elsewhere**", and vertical tabs is the existing case of the second clause.
+- **Verdict:** **adopt** — add one condition to that rule rather than build a
+  second way to collapse a toolbar.
+- **Phase:** 2A, shipped.
+
+Zen's answer to the same problem is a vertical tab sidebar that compact mode
+can hide, which is a different tab strip rather than no tab strip, so there was
+nothing to take from it. The tree's own answer was better: the rule already
+distinguishes "hidden and the tabs are gone" from "hidden because they are
+drawn somewhere else", and the Field is exactly the second. The tabs themselves
+stay — a tab is still where a document lives — so nothing is lost, and the
+comment warning that hiding the strip must not lose tabs is satisfied by
+construction rather than by argument.
+
+The cost showed up immediately and is worth writing down: upstream's tab tests
+measure, click and drag the strip, and one of them hung and aborted the whole
+directory. They now run with `browser.fos.field.replacesTabStrip=false`. That
+is not a way of hiding a regression — it is that those files are the coverage
+keeping the strip working for the pref that restores it, and the window with no
+strip has its own tests. Any surface this fork replaces will want the same
+treatment, and the manifest pref is the pattern.
