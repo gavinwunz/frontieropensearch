@@ -382,59 +382,91 @@ one.
   the microphone and lands on idle. `GRAMMAR.md` §8's seventh rule, `IDEAS.md`
   run 25. 216 node tests.
 
+- **The voice pillar's runtime blocker is closed, and it was never the blocker
+  it looked like.** Run 26 read "Unable to get the ML engine from Remote
+  Settings" as proof this fork has no offline ML, and `IDEAS.md` run 25 posed a
+  choice between vendoring the ONNX wasm runtime and accepting a first-run
+  fetch. Both answered a malformed question. The measurement passed `device` and
+  never passed `backend`, and `MLEngineChild` reads `opts.backend ||
+  BACKENDS.onnx` — so an unnamed backend *is* the wasm backend, and both arms
+  asked for the one runtime this build does not contain. **The tree already
+  ships a second one:** `onnx-native` runs on `libonnxruntime.so`, which
+  bootstrap pulls as a build toolchain and which is already in `dist/bin`
+  (10.5MB, every dependency resolves, exports `OrtGetApiBase@@VERS_1.22.0`), and
+  `WASM_BACKENDS` excludes it so Remote Settings is never consulted. Nothing is
+  vendored, nothing joins git, and a machine with no network has a working
+  inference stack on first launch. It is CPU-only and **that costs nothing**:
+  whisper-tiny q8 transcribes a command-length utterance in **324ms** and the
+  longest utterance the grammar allows in **520ms**, against a budget of ~1s
+  natural and 2s tolerable. Load is 1.3s, paid once at arm time. `GRAMMAR.md`
+  §8's eighth rule, `IDEAS.md` run 27.
+
+- **The ASR measurement runs, and its weights come off localhost.** mochitest
+  aborts the process on any non-local connection, so the measurement could never
+  have fetched from a model hub whatever the backend — that is what killed run27
+  *after* the native runtime had loaded cleanly. `agent/jobs/local-hub.py`
+  imports the handler out of the tree's own `hooks_local_hub.py` and serves
+  `/data/ml-models/onnx-models` on a loopback port, because `--hooks` is a
+  `mach perftest` flag that mochitest rejects despite `head.js` recommending it.
+  `agent/jobs/fetch-whisper.sh` mirrors whisper-tiny q8 there, outside the repo.
+  The measurement now skips with an explanation when no hub is set rather than
+  taking the browser down with it.
+
 ## In progress
 
-Nothing waits on a person. **One chain left, and the queue is the whole point:**
-harness time is exclusive, so a job that has to follow another belongs in the
-same script waiting on `systemctl --user is-active`, not in a second unit that
-races it.
+Nothing waits on a person. **Nothing is running — the harness is free.**
 
-- `fos-job-run22` — **finished OK at 22:34Z.** Both answers are below.
-- `fos-job-run23` — **finished OK at 22:35Z: 574 passed, 0 failed.** That is the
-  acceptance gate for run 23's two changes — the transform-scaled overview and
-  the unseen mark — and it passes. What is still owed them is *eyes*, not
-  assertions: item 2 below.
-- `fos-job-run25` — **failed, and not on the question it was asking.** The
-  measurement died on its first timed line with `Cu.now is not a function`. The
-  tree's timer for chrome code is `ChromeUtils.now()`; the test was written last
-  run and never run. Fixed.
-- `fos-job-run26` — **ran, and answered a question nobody asked.** Both
-  backends failed instantly and identically: `Unable to get the ML engine from
-  Remote Settings`. That is not a test defect and not this machine — it is the
-  ML engine's design, and it is now the blocker on the voice path. See below.
+The ASR chain finished this run and the question it was asked is answered:
 
-**Nothing is running. The harness is free**, which is the first time in three
-runs.
+- `fos-job-run27` — **failed usefully.** With `backend: "onnx-native"` named,
+  the engine loaded from the packaged `libonnxruntime.so`, logged "Using backend
+  onnx-native", initialised the pipeline and never touched Remote Settings. It
+  then died fetching *weights*: mochitest aborts the process on a non-local
+  connection. That split one problem into two and closed the important half.
+- `fos-job-run28` — **died in two seconds on a flag.** `--hooks` is a
+  `mach perftest` argument; mochitest rejects it, despite `head.js` printing it
+  as the fix.
+- `fos-job-run29` — **green: 3 checks, 0 unexpected.** Numbers in the Done
+  section and in `IDEAS.md` run 27. The wasm arms report UNAVAILABLE rather than
+  failing the run, which is the behaviour that file was written to have.
 
-This run's change is pure and is as verified as it can be without a browser —
-216 node tests, lint clean. Nothing in the browser imports `VoiceSession` yet,
-so the FOS suite cannot tell it is there.
+Model weights live at `/data/ml-models/onnx-models`, outside the repo, put there
+by `agent/jobs/fetch-whisper.sh` (~43MB). Any future ASR run needs
+`agent/jobs/local-hub.py` serving them and `MOZ_MODELS_HUB` pointed at it —
+`agent/jobs/run29.sh` is the working template.
 
-`main` is at `phase-3`. `agent/dev` is pushed through `b194d5ea7f07`.
+Nothing in the browser imports `VoiceSession` yet, so the FOS suite still cannot
+tell the voice path is there. That is the next task, and it is now unblocked.
+
+`main` is at `phase-3`. `agent/dev` is pushed through this run's commits.
 
 ## Next task
 
 The phase plan is complete, so nothing pulls the next run in a particular
-direction. Ordered by value. **Read `run25`'s log before choosing** — item 1 is
-already running and its answer changes item 2.
+direction. Ordered by value.
 
-1. **Decide how the ONNX runtime gets onto the machine. This blocks the voice
-   path and it blocks the measurement.** `MLEngineParent.#getWasmArrayRecord`
-   pulls the runtime wasm from the Remote Settings `ml-onnx-runtime` collection
-   and throws when the list is empty. The tree packages the *loader*
-   (`toolkit/components/ml/vendor/ort.webgpu.mjs`, confirmed in `dist/bin`) but
-   **not** `ort-wasm-simd-threaded.jsep.wasm`, and `services/settings/dumps/`
-   has no dump for that collection — so there is no offline path at all.
+1. **Wire the voice path into the browser. Everything it was waiting on is
+   done.** `FOSVoiceSession.sys.mjs` and `FOSVoiceTranscript.sys.mjs` are
+   written, pure and tested at 216 node tests, and nothing imports them. The
+   runtime question that blocked them is closed — `onnx-native`, packaged,
+   offline, 324ms for a command — so what remains is the shell the state machine
+   was designed against: a push-to-talk key, `getUserMedia` on the chrome
+   window, the engine created at arm time with
+   `backend: "onnx-native", dtype: "q8", modelId: "onnx-community/whisper-tiny"`,
+   and the transcript handed to the adapter that already turns it into the line
+   the keyboard would have produced. GRAMMAR.md §5 is the contract and §8 is the
+   seven rules the shell has to honour, including the indicator the platform
+   does not draw for a privileged microphone.
 
-   This is not the Web Speech API problem: that POSTed the user's audio on every
-   utterance, this is a one-time binary fetch that discloses nothing about the
-   user. But a fork claiming "local, no cloud, ever" cannot rest on Mozilla's
-   CDN existing. `IDEAS.md` run 25 lays out the two options; the recommendation
-   is **vendor the runtime** (ONNX Runtime is MIT, and the loader is already
-   vendored beside where the wasm would go) and **accept a visible one-time
-   fetch for the model weights**, which are an order of magnitude larger.
+   Two things to settle while building it, both already researched rather than
+   open: the weights need the visible one-time download step (§8's eighth rule
+   — never a microphone that fails with an error about a fetch nobody asked
+   for), and load is 1.3s so the engine is created when the turn is *armed*,
+   not when the key goes down.
 
-   Do not requeue the measurement before this is decided — it cannot pass.
+   The measurement is `agent/jobs/run29.sh` and it is green; it is also the only
+   thing in the tree that has ever driven this engine, so it is the reference
+   for how to construct one.
 
 2. **Look at run 23's two changes, then finish them.** Both were written with
    the harness held and are unverified in a browser. Once `run23` reports:
@@ -471,6 +503,35 @@ already running and its answer changes item 2.
    a defect.
 
 ## Found this run, not yet chased
+
+- **A wrong default costs more than a missing value.** `MLEngineChild` reads
+  `opts.backend || BACKENDS.onnx`, so leaving `backend` unset does not produce a
+  complaint about the missing option — it produces a confident error about a
+  runtime the caller never asked for. Four runs went into "why can this fork not
+  reach Remote Settings" when the question was "why is it asking". When a
+  component fails on a resource you did not know it wanted, check what it thinks
+  you asked for before concluding the resource is unavailable.
+
+- **Run 25's lesson was drawn one step too narrowly, and the sharper version is
+  about `find`.** "A packaged loader is not a packaged dependency" is true, but
+  the reason `find dist/bin -name 'ort*'` misled is that it answers *which files
+  match a name* when the question was *which file does the work*. The artifact
+  that actually runs the models is `libonnxruntime.so` — it does not match `ort*`
+  and was sitting in `dist/bin` the whole time, packaged, while two runs
+  concluded the fork had no offline inference at all.
+
+- **mochitest kills the process on any non-local connection.** Not an error the
+  test can catch and report — `FATAL ERROR: Non-local network connections are
+  disabled`, then the browser exits and the log is thirty lines of channel
+  errors. Any test that needs a real asset needs a loopback server, and the
+  tree's own is `toolkit/components/ml/tests/tools/hooks_local_hub.py`.
+
+- **`head.js` recommends a flag mochitest does not accept.** Its error message
+  says to run with `--hooks toolkit/components/ml/tests/tools/hooks_local_hub.py`,
+  which is a `mach perftest` argument. `agent/jobs/local-hub.py` imports that
+  hook's handler and serves it directly instead, which keeps the query-arg
+  stripping and `If-None-Match` handling ModelHub depends on coming from the
+  tree rather than from a reimplementation.
 
 - **A packaged loader is not a packaged dependency.** `find dist/bin -name
   'ort*'` returns three files and looks like proof the ONNX runtime ships with

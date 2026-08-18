@@ -668,3 +668,50 @@ a machine with no network gets a microphone that fails with an error about
 Remote Settings. The ASR failure counter is at two with two distinct causes, and
 the three-strikes rule is being honoured by *not* attempting a third
 measurement: the next attempt is the decision, not the test.
+
+---
+
+## Run 27 — 2026-08-18 — the runtime was in the build all along
+
+**Phase:** post-plan. **Task:** item 1, the ONNX runtime decision blocking the
+voice pillar. **Tests:** ASR measurement green (3 checks, 0 unexpected); lint
+clean.
+
+The task was to choose between vendoring the ONNX wasm runtime and accepting a
+one-time fetch. The answer is neither, and the framing was wrong.
+
+Run 26's `Unable to get the ML engine from Remote Settings` was read as a fact
+about the fork's offline capability. It was a fact about a default: the
+measurement passed `device` and never passed `backend`, and `MLEngineChild`
+reads `opts.backend || BACKENDS.onnx`, so both arms silently asked for the wasm
+runtime — the one artifact this build genuinely does not contain. Meanwhile
+`libonnxruntime.so` was already sitting in `dist/bin`, 10.5MB, pulled by
+`./mach bootstrap` as an ordinary build toolchain, with `WASM_BACKENDS`
+explicitly excluding the native backend from the Remote Settings path. Two runs
+had concluded the fork had no offline inference while the runtime that provides
+it was packaged and loadable.
+
+Also corrected: the `ml-onnx-runtime` collection is not empty — it carries the
+required `jsep.wasm` at exactly version 5.0.0 — and this machine's network is
+fine. The empty record list came from `EmptyDatabaseError`, an unsynced local
+Remote Settings database inside the *mochitest harness*, which run 25
+generalised into a property of the browser.
+
+Four attempts then failed on four distinct causes before the measurement ran:
+`Cu.now` (run25), the unnamed backend (run26), mochitest killing the process on
+a non-local weight fetch (run27), and `--hooks` being a perftest flag that
+mochitest rejects despite `head.js` recommending it (run28). run29 is green.
+
+**And the numbers make the decision easy.** `onnx-native` on CPU transcribes a
+command-length utterance in a **median 324ms** and the longest utterance the
+grammar permits in **520ms**, against run 23's budget of ~1s natural and 2s
+tolerable — roughly threefold headroom. The apparent cost of the offline path,
+that it gives up WebGPU, turns out not to be a cost at whisper-tiny's size.
+Model load is 1.3s, paid once, and belongs at arm time where the design already
+put it. Nothing is vendored, no blob joins a public git tree, and no Mozilla
+service is touched in a voice turn. The weights remain a surfaced one-time
+download — a separate problem, an order of magnitude larger, and the only half
+of this that run 25 got right.
+
+`GRAMMAR.md` §8 gains an eighth rule. The voice path's shell is now unblocked
+and is the next task.

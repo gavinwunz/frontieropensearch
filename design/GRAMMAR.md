@@ -450,3 +450,45 @@ A listen that runs out is a key that came up: the audio is transcribed rather
 than discarded, and the long-utterance case needs no telling apart from the
 lost-key-up case, because a room that nobody is talking in does not clear the
 audio gate that already exists.
+
+### The runtime is the one already in the build, and it runs on the CPU
+
+The transcript has to come from somewhere, and the choice of engine is a design
+decision rather than a packaging detail, because it is what decides whether
+"local, no cloud, ever" survives contact with a machine that has no network.
+
+The tree offers two ONNX backends and they are not variations on one thing:
+
+| | `onnx` | `onnx-native` |
+| --- | --- | --- |
+| runtime | `ort-wasm-simd-threaded.jsep.wasm` | `libonnxruntime.so` |
+| how it arrives | Remote Settings attachment, first use | build toolchain, already in `dist/bin` |
+| works with no network | no | **yes** |
+| devices | cpu, WebGPU | cpu only |
+
+**The fork uses `onnx-native`.** It is the only one of the two that can honour
+the claim: the runtime is a build dependency, so a fresh profile on a machine
+that has never had a network still has a working inference stack. Nothing is
+vendored into the tree to achieve it — bootstrap already places the library —
+and no Mozilla service is consulted at any point in a voice turn.
+
+The obvious objection is that this gives up the GPU, since Transformers.js is
+handed `supportedDevices: ["cpu"]` for the native backend. Measured on
+`whisper-tiny` q8, that objection does not survive the numbers:
+
+| utterance | median | budget |
+| --- | --- | --- |
+| 1.5s — a command, "enter cap, branch" at speed | **324ms** | ~1s natural |
+| 3s — the longest one utterance can be, free text being terminal | **520ms** | 2s tolerable |
+
+Both clear the natural budget with roughly threefold headroom, so the GPU was
+never the knob this depended on. Model load is 1.3s and is paid once; it belongs
+at arm time, before the first press, which is the same place the design already
+put it.
+
+What is *not* solved by this is the model weights, which are still a download.
+They are a different problem from the runtime — an order of magnitude larger,
+and the reason the two get different answers. The weights get a visible,
+one-time "download the speech model" step. What the fork must never ship is the
+shape run 26 had: a microphone that fails with an error about Remote Settings on
+a machine whose only real problem is that nobody told it to fetch anything.

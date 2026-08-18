@@ -2093,3 +2093,40 @@ adoption", which is a caution worth holding until the numbers land.
 
 **Phase:** the runtime half of the voice pillar's blocker is closed. The
 measurement it was blocking is running as `run27`.
+
+### The numbers, and the decision holds
+
+`run29` measured it. The native arm loaded from the local hub and ran:
+
+| arm | load | 1.5s utterance | 3s utterance |
+| --- | --- | --- | --- |
+| `onnx-native/cpu` | 1315ms | **median 324ms** (316–346) | **median 520ms** (502–584) |
+| `onnx/gpu` | — | unavailable, Remote Settings | — |
+| `onnx/cpu` | — | unavailable, Remote Settings | — |
+
+Run 23's budget was ~1s to feel natural and 2s to be tolerable. A command-length
+utterance transcribes in **a third of the natural budget** and the longest thing
+the grammar permits in one utterance takes half of it. The GPU arm was worth
+measuring and turns out not to have been worth wanting: the trade this decision
+looked like it was making — offline runtime *or* fast — is not a trade at all at
+whisper-tiny's size. `EmbeddingsGenerator`'s caution about native on Linux is
+noted and did not bite here.
+
+Load is 1.3s, paid once, and belongs at arm time rather than in the turn — which
+is where `VoiceSession` already puts it.
+
+**The three-strikes ledger, since this took five attempts.** run25 `Cu.now`,
+run26 unnamed backend, run27 non-local fetch is fatal under mochitest, run28
+`--hooks` is a perftest flag, run29 green. That is not one failure retried five
+times: every attempt died of a different cause and each got strictly further
+than the last, which is the distinction the rule is actually about. The one that
+mattered was run26→27, where the fix was to stop believing the error message —
+"Unable to get the ML engine from Remote Settings" is emitted for a backend the
+caller never chose and had no reason to want.
+
+**The lesson worth keeping:** a default that is wrong for you is more expensive
+than a missing value, because it produces a confident error about the path it
+chose rather than a complaint about the one you left out. `opts.backend ||
+BACKENDS.onnx` cost four runs. When a component fails on a resource you did not
+know it wanted, check what it thinks you asked for before concluding the
+resource is unavailable.
