@@ -45,19 +45,19 @@
 # and kept in English.
 -firefox-suggest-brand-name = Firefox Suggest
 
-# ”Home" can be localized, “Firefox” must be treated as a brand
-# and kept in English.
--firefox-home-brand-name = Firefox Home
+# Frontier OpenSearch fork: upstream names this "Firefox Home".
+-firefox-home-brand-name = Frontier Home
 
-# View" can be localized, “Firefox” must be treated as a brand
-# and kept in English.
--firefoxview-brand-name = Firefox View
+# Frontier OpenSearch fork: upstream names this "Firefox View". The feature is
+# scheduled to be replaced by the Field in phase 2, so it is given a plain
+# descriptive name rather than fork branding it is about to lose.
+-firefoxview-brand-name = Recent Browsing
 
 # Firefox Labs is the name for a page in Settings to allow users to learn about
 # experimental and in-development features, and turn those features on and off.
 # The "Labs" portion can be localized, “Firefox” must be treated as a brand
 # and kept in English.
--firefoxlabs-brand-name = Firefox Labs
+-firefoxlabs-brand-name = Frontier Labs
 
 -smart-window-brand-name =
     { $plural-form ->

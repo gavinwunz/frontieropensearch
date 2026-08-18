@@ -17,6 +17,7 @@ thesis of the browser in one shape.
 """
 
 import os
+
 from PIL import Image, ImageDraw
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -28,8 +29,8 @@ STROKE = 5.0
 # The glyph is drawn in the 64-unit box, then inset so it breathes in the tile.
 INSET = 0.86
 
-INK = "#0E1726"      # tile
-STRAND = "#4FD1C5"   # glyph
+INK = "#0E1726"  # tile
+STRAND = "#4FD1C5"  # glyph
 
 # The stem rises, forks at FORK, and the three branches all overshoot it.
 FORK = (32.0, 34.0)
@@ -51,12 +52,10 @@ def quad(p0, p1, p2, steps=48):
     for i in range(steps + 1):
         t = i / steps
         u = 1.0 - t
-        pts.append(
-            (
-                u * u * p0[0] + 2 * u * t * p1[0] + t * t * p2[0],
-                u * u * p0[1] + 2 * u * t * p1[1] + t * t * p2[1],
-            )
-        )
+        pts.append((
+            u * u * p0[0] + 2 * u * t * p1[0] + t * t * p2[0],
+            u * u * p0[1] + 2 * u * t * p1[1] + t * t * p2[1],
+        ))
     return pts
 
 
@@ -96,6 +95,7 @@ def svg(size=64, tile=True):
 
 def wordmark():
     """Glyph plus name, sized to sit in the about dialog header."""
+
     def f(v):
         return f"{v:.2f}"
 
@@ -107,8 +107,20 @@ def wordmark():
         f"M{f(FORK[0])},{f(FORK[1])} Q{f(RIGHT[1][0])},{f(RIGHT[1][1])} "
         f"{f(RIGHT[2][0])},{f(RIGHT[2][1])}"
     )
+    # The viewBox width has to clear the end of the text or the name is simply
+    # cut off: the about dialog paints this with background-size "auto 44px", so
+    # the viewBox is the crop, not a hint. At font-size 30 and weight 600,
+    # "Frontier OpenSearch" measures 350.35px in the product itself, less 7.6px
+    # of letter-spacing over 19 characters, starting at x=86 — so the glyphs run
+    # to x≈429. The first cut of this file said 372 and shipped a dialog reading
+    # "Frontier OpenSea".
+    #
+    # 470 leaves headroom rather than hugging that number, because system-ui
+    # resolves to a different font on other systems and a wider one would clip
+    # again. The extra width costs nothing: it is trailing transparent space in
+    # a left-aligned background image.
     return (
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 372 99" fill="none">\n'
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 470 99" fill="none">\n'
         f'  <g transform="translate(0,14) scale({f(k)})">'
         f'<path d="{d}" stroke="context-fill" stroke-width="{f(STROKE)}" '
         'stroke-linecap="round" stroke-linejoin="round"/></g>\n'
@@ -126,9 +138,7 @@ def png(size, tile=True, ss=8):
     img = Image.new("RGBA", (n, n), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     if tile:
-        d.rounded_rectangle(
-            [0, 0, n - 1, n - 1], radius=TILE_RADIUS * scale, fill=INK
-        )
+        d.rounded_rectangle([0, 0, n - 1, n - 1], radius=TILE_RADIUS * scale, fill=INK)
     w = max(1, round(STROKE * INSET * scale))
     for line in polylines():
         pts = [(x * scale, y * scale) for x, y in (inset(p) for p in line)]

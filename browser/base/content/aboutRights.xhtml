@@ -1,0 +1,50 @@
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+
+<!-- Upstream maps about:rights to https://www.mozilla.org/about/legal/terms/firefox/,
+   - so opening it fetched Mozilla's Firefox Terms of Use over the network and
+   - presented a binding agreement between the reader and Mozilla Corporation as
+   - though it governed this build. It does not, and the page is a Firefox
+   - surface besides. This is the local replacement: no network, and it says only
+   - what is actually true of the fork. -->
+
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src chrome:; object-src 'none'"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <title data-l10n-id="fos-rights-page-title"></title>
+    <link
+      rel="stylesheet"
+      href="chrome://global/skin/in-content/info-pages.css"
+      media="all"
+    />
+    <link rel="icon" href="chrome://branding/content/icon32.png" />
+    <link rel="localization" href="branding/brand.ftl" />
+  </head>
+
+  <body class="wide-container">
+    <h1 data-l10n-id="fos-rights-heading"></h1>
+
+    <p data-l10n-id="fos-rights-licence">
+      <a data-l10n-name="licence-link" href="about:license" target="_blank"></a>
+    </p>
+
+    <p data-l10n-id="fos-rights-trademark"></p>
+
+    <p data-l10n-id="fos-rights-warranty"></p>
+
+    <p data-l10n-id="fos-rights-services"></p>
+
+    <p data-l10n-id="fos-rights-source">
+      <a
+        data-l10n-name="source-link"
+        href="https://github.com/gavinwunz/frontieropensearch"
+      ></a>
+    </p>
+  </body>
+</html>

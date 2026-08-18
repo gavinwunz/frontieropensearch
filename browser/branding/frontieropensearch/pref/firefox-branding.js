@@ -26,3 +26,35 @@ pref("startup.homepage_welcome_url.additional", "");
 // Number of usages of the web console.
 // If this is less than 5, then pasting code into the web console is disabled.
 pref("devtools.selfxss.count", 5);
+
+// Telemetry. The build is compiled without MOZ_TELEMETRY_REPORTING, so nothing
+// is uploaded, but the collection prefs still default to on and a fresh profile
+// recorded extended data locally. Turn the collection itself off so the pref
+// state matches what the build actually does.
+//
+// toolkit.telemetry.enabled is deliberately absent: Preferences.cpp locks it at
+// startup, so a line here would be silently ignored and would read as a
+// guarantee this file cannot give. It is switched off in TelemetryPrefValue().
+pref("toolkit.telemetry.unified", false);
+pref("toolkit.telemetry.archive.enabled", false);
+pref("toolkit.telemetry.newProfilePing.enabled", false);
+pref("toolkit.telemetry.shutdownPingSender.enabled", false);
+pref("toolkit.telemetry.updatePing.enabled", false);
+pref("toolkit.telemetry.bhrPing.enabled", false);
+pref("toolkit.telemetry.firstShutdownPing.enabled", false);
+
+// Mozilla services. Each of these is a user-visible surface carrying the
+// Firefox name and a network path to Mozilla: Relay offers an email mask in the
+// password manager, and Firefox Accounts puts a "Sign in" button on the first
+// run screen. The fork has no account system, so both are switched off rather
+// than rebranded.
+pref("signon.firefoxRelay.feature", "disabled");
+pref("identity.fxaccounts.enabled", false);
+
+// Mozilla product promotion. The protections report and the settings panes
+// advertise Mozilla VPN, Mozilla Monitor and the Firefox mobile apps. Observed
+// live in about:preferences on a fresh profile; all three are adverts for
+// products this fork has nothing to do with.
+pref("browser.vpn_promo.enabled", false);
+pref("browser.contentblocking.report.hide_vpn_banner", true);
+pref("browser.contentblocking.report.show_mobile_app", false);
