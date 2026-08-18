@@ -98,22 +98,43 @@ execution, not invention: all three pillars have a written design.
   test asserts it. 121 node tests, 39 xpcshell checks, 174 browser-chrome
   checks. Screenshot in `agent/reports/context-what.png`.
 
+- **Trails survive a restart, so pillar B's promise is no longer session-only.**
+  `TrailStore.hydrate` adopts `trail` and `trail_node` rows keeping their ids,
+  links children in a second pass so a grafted node survives any ordering, and
+  validates before it writes so a refused set leaves the store empty rather
+  than half loaded; `fromJSON` delegates to it, since an exported trail and a
+  database row are the same shape by design. `FOSContextStore.restorable()` is
+  the read side and `FOSContextEngine.#hydrate` the caller: it seeds the id
+  maps from what it read, which is what stops the next reconciliation writing
+  those rows a second time and doubling the tree at every launch. Reconciliation
+  also stopped rewriting nodes it has already written, which mattered once the
+  session-store blob joined the columns it writes. **Verified in a real browser
+  across an actual restart** — `agent/reports/restore-*.png`: the named trail,
+  its tree, its titles, its marks and its context all come back, `enter <mark>`
+  puts the page up, and the database still holds exactly the rows it started
+  with. 128 node tests, 54 xpcshell checks, 184 browser-chrome checks.
+
 ## In progress
 
 Nothing running. Tree fully pushed; `main`, `agent/dev` and both tags on origin.
 
 ## Next task
 
-Pillar C exists but is one third built: it records well and surfaces thinly.
-In rough order of value.
+Pillar C records well and surfaces thinly; the Field now restores pages it
+cannot draw. In rough order of value.
 
-1. **Rehydrate the trail tree from the database at startup.** This is the
-   biggest hole and it is not in the Context Engine — it is pillar B. The
-   in-memory `TrailStore` is session-scoped and numbers its ids from 1 each
-   launch, so a restart still opens an empty Field and an empty rail while the
-   database holds everything. The engine keeps a session-scoped id mapping
-   precisely because of this. Until it is fixed, "never lose a page" is true
-   within a session only, which is the weakest thing about the fork right now.
+1. **A restored card has no thumbnail.** The Field's snapshots live in memory
+   only, so after a restart every card is a grey rectangle with a caption —
+   see `agent/reports/restore-field.png`. This is the honest cost of the
+   restore just shipped and it undercuts it: PadPrints' evidence (`IDEAS.md`)
+   is that a thumbnail hierarchy pays *at revisitation*, and a restart is
+   revisitation. Gecko already keeps a thumbnail disk cache in the profile —
+   `PageThumbs.getThumbnailURL(url)` yields a `moz-page-thumb://` URL usable
+   straight from chrome — but the Field captures with
+   `captureTabPreviewThumbnail`, which does not write it. So this is two small
+   pieces: store on departure as well as cache in memory, and fall back to the
+   stored one when a card has no snapshot. Check whether the disk cache is
+   even enabled in this build before designing around it.
 2. **The context sidebar** — `SCHEMA.md`'s second surface, "what you know so
    far". `what` currently answers in one sentence, which is deliberately the
    smaller thing and not a stand-in. `contextContents()` already returns
@@ -129,9 +150,12 @@ In rough order of value.
    the shallow extractor gets nothing from a lower-case query. It should merge
    contexts across trails with `source = 'embedding'`, never replacing the
    provenance floor.
-5. **`prune`, and an export surface for trails** — still deferred from run 10,
-   still a considered grammar change.
-6. **The voice path.** Unchanged: measure model size and latency; do not
+5. **The tab strip still exists.** Unchanged and still the widest blast radius
+   in the phase; still wants its own run.
+6. **`prune`, and an export surface for trails** — still deferred, still a
+   considered grammar change. A surface for finding old trails is also what
+   would let a *named* trail be pinned past the restore window (see below).
+7. **The voice path.** Unchanged: measure model size and latency; do not
    re-litigate availability.
 
 **Test in Gecko, not only in node.** Two bugs this project has shipped were
@@ -222,6 +246,23 @@ few of them; that is a budget change with cross-pillar blast radius and it
 wants a decision, not a patch. Search by name is the other answer and is what
 `GRAMMAR.md` §2 already specifies for going past 26.
 
+**Restoration is bounded by rank, and only one window gets it.** The twelve
+most recently updated trails come back, whole or not at all; a named trail is
+not privileged, because naming touches `updated_at` and so a name is recent by
+construction on the day it is given and ages out afterwards. Pinning names past
+that wants a surface for finding old trails first — restoring them into the
+Field forever is how a bookmark graveyard is built. The claim to restore lives
+on the store, so the first window to open gets the past and the rest open as
+they always did: two windows each holding a copy of one trail would put it on
+two Fields and have both reconcile onto the same rows.
+
+**A load that ends where the browser already is adds no node.** That is what
+stops a reload growing the tree, and it is what stops a restore's process
+switch duplicating the node it just put back. Its cost is real and small: a
+form posted to the URL it is already on re-renders a genuinely different page
+and now gets no node of its own. Do not narrow this rule back to the restore
+path without also solving the reload.
+
 **A query is attached to the next node created after it.** That is right in the
 ordinary case — you search, a page opens — and it is a guess if several nodes
 are written in one reconciliation pass. Nothing better is available without
@@ -233,6 +274,15 @@ stall browsing. So the database is a very good record and not a guaranteed one;
 do not build anything that assumes a row must exist.
 
 ## Gotchas worth not rediscovering
+
+- **`source agent/env.sh` before any `mach build`.** Without it configure dies
+  with `Cannot find ccache`, which reads like a missing toolchain and is only
+  an unset `MOZBUILD_STATE_PATH`. `mach test` and `mach lint` do not need it.
+- **The devtools MCP forgets `profilePath` on the first restart after a
+  restart**, and silently falls back to the objdir profile — which it then
+  warns looks like a real profile. Send the full configuration again and the
+  second call takes it. Check the warning text before believing a browser came
+  up empty.
 
 - **A screenshot of the chrome, without touching the real display.** The X-grab
   route is forbidden (there is no Xvfb on this box, and `:10.0` is Gavin's own
@@ -398,6 +448,19 @@ three-strikes rule only works if the counter is actually kept**, so count a
 repeated failure even when each run has a new explanation for it.
 
 ## Decisions taken
+
+- 2026-08-18 — **What comes back after a restart is bounded by rank, not by a
+  clock.** The twelve most recently updated trails return, whether that is
+  yesterday's work or last month's. A time window was the alternative and it
+  decides the same question worse: it makes a fortnight away from the machine
+  indistinguishable from having finished. Nothing is deleted either way — an
+  older trail waits in the database for a surface that asks for it.
+- 2026-08-18 — **A trail comes back whole or not at all.** The node budget
+  drops whole trails from the tail of the ordering rather than truncating one,
+  because a trail missing its middle draws a tree nobody browsed.
+- 2026-08-18 — **A load that ends where the browser already is is not a new
+  page.** One rule for a reload and for the second half of a process switch,
+  rather than a special case for restores.
 
 - 2026-08-18 — **A context is seeded by provenance, never by a clock.** A
   recency window is the obvious implementation and is wrong most of the time it

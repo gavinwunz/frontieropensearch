@@ -893,3 +893,44 @@ nothing to maintain and nothing to tangle.
   component has no network access at all, and it still has an injection surface, because
   the untrusted input arrived through the browser and leaves through the clipboard.
 - **Phase:** 2C, done, with a test that a forged link does not render as a link.
+
+### Nyxt's history persists but nobody solved how much of it to reopen
+
+Searched: Nyxt global history tree persistence, restore across restarts,
+unbounded growth. https://nyxt.atlas.engineer/article/global-history-tree.org
+and atlas-engineer/nyxt#1007. Nyxt saves the whole global tree to a file and
+restores it, and the project's own thread worries about how fast a 10,000-entry
+history flattens and where it slows the browser; the suggestion floated was to
+chunk history to a running 30-day window. Nothing was implemented, and the
+crash-restore path is buggy enough to have its own issue (#1560, "owner with
+identifier does not exist").
+
+Verdict: **adapt, and reject the window.** The finding worth having is that the
+question is unsolved rather than that Nyxt solved it — a persistent navigation
+tree needs a policy for what to *reopen*, which is a different question from
+what to *keep*. A 30-day window answers it badly: this project already decided
+a clock is a poor judge of what a user is still working on (task boundaries top
+out near 70% precision), and a fortnight away from the machine would read as
+having finished. Bounding by rank instead — the K most recently updated trails,
+whole or not at all — gives the same protection against unbounded reopening
+without pretending to know what recency means. Nothing is deleted; an older
+trail waits for a surface that asks for it. Shipped this run.
+
+### A restart is revisitation, which is exactly where thumbnails pay
+
+Follows from the PadPrints entry above rather than from a new search, and
+recorded because restoring made it concrete. PadPrints' result was that a
+thumbnail hierarchy pays at revisitation and nowhere else — no time difference
+on general browsing, 61.2% on revisitation tasks. Reopening yesterday's session
+is revisitation by definition, and it is the moment the Field has the least to
+show: snapshots live in memory, so every restored card is a grey rectangle with
+a caption (`agent/reports/restore-field.png`). So the thumbnail work that would
+be a nice-to-have on a live session is load-bearing on a restored one, which
+moves it to the top of the queue rather than leaving it as polish.
+
+Verdict: **adopt as the next task.** Gecko keeps a thumbnail disk cache in the
+profile and `PageThumbs.getThumbnailURL(url)` hands back a `moz-page-thumb://`
+URL that chrome can use directly; the Field currently captures through
+`captureTabPreviewThumbnail`, which does not populate it. Store on departure,
+fall back to the stored image when a card has no live snapshot. Verify the disk
+cache is enabled in this build first.
