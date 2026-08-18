@@ -163,6 +163,31 @@ export function miniScale(region, tile, share = 1) {
 }
 
 /**
+ * How one region's miniatures are placed inside an overview tile.
+ *
+ * The miniatures themselves are drawn in unscaled field units and never move,
+ * so everything a resize changes about them is here: the tile's share of the
+ * width they start at, and the scale that fits the region into it. That is one
+ * declaration per region rather than four per card, and it is the compositor
+ * that does the scaling rather than layout.
+ *
+ * It is legitimate at this level and not at the region level. A miniature is a
+ * plain box with a picture in it, and nothing about it should keep a fixed size
+ * as its tile shrinks; a card carries a caption and a mark whose size must not
+ * follow the scale, which is why the region level keeps its rebuild.
+ *
+ * Both the build and the reposition go through this function, so the two paths
+ * cannot write strings that differ by a rounding.
+ *
+ * @param {number} offsetX Where this region's share of the tile starts, in px.
+ * @param {number} scale From `miniScale`.
+ * @returns {string} A `transform` value.
+ */
+export function miniTransform(offsetX, scale) {
+  return `translate(${offsetX}px, 0) scale(${scale})`;
+}
+
+/**
  * Lay one region out: its cards, scaled to fit the window.
  *
  * A region grows downward when it runs out of seats (§6, capacity), so the

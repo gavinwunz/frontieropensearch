@@ -37,6 +37,7 @@ import {
   cardCaption,
   lineageCards,
   miniScale,
+  miniTransform,
   moveFocus,
   overviewLayout,
   pointerToField,
@@ -717,22 +718,34 @@ export class FOSFieldSurface {
     // being false on screen.
     const share = 1 / Math.max(regions.length, 1);
     regions.forEach((region, index) => {
-      const scale = miniScale(region, tile, nested ? share : 1);
+      // Each region gets a wrapper carrying its own translate and scale, and
+      // its miniatures are placed inside it in unscaled field units. The scale
+      // then lives in one declaration per region instead of four per card,
+      // which is what a resize has to rewrite — see `miniTransform`.
+      const nest = doc.createElementNS(HTML_NS, "div");
+      nest.className = "fos-field-mininest";
+      nest.dataset.regionId = String(region.id);
+      nest.style.transform = miniTransform(
+        index * tile.width * share,
+        miniScale(region, tile, nested ? share : 1)
+      );
+
       for (const card of model.cardsIn(region.id)) {
         const mini = doc.createElementNS(HTML_NS, "div");
         mini.className = "fos-field-mini";
         mini.dataset.nodeId = String(card.node_id);
-        mini.style.left = `${index * tile.width * share + card.x * scale}px`;
-        mini.style.top = `${card.y * scale}px`;
-        mini.style.width = `${model.geometry.cardWidth * scale}px`;
-        mini.style.height = `${model.geometry.cardHeight * scale}px`;
+        mini.style.left = `${card.x}px`;
+        mini.style.top = `${card.y}px`;
+        mini.style.width = `${model.geometry.cardWidth}px`;
+        mini.style.height = `${model.geometry.cardHeight}px`;
 
         const shot = doc.createElementNS(HTML_NS, "div");
         shot.className = "fos-field-shot";
         shot.toggleAttribute("data-empty", true);
         mini.appendChild(shot);
-        body.appendChild(mini);
+        nest.appendChild(mini);
       }
+      body.appendChild(nest);
     });
 
     el.append(head, body);
@@ -932,9 +945,11 @@ export class FOSFieldSurface {
    * does not know that. It empties the stage and builds every tile and every
    * miniature again, which on the worst case the design permits — twelve
    * trails, 480 cards — is 9.9ms of script and 7.7ms of layout, and does not
-   * fit in a frame however few times per frame it runs. This path writes four
-   * declarations per element instead and leaves the tree alone, so the cost is
-   * the layout and none of the construction.
+   * fit in a frame however few times per frame it runs. This path leaves the
+   * tree alone, so the cost is none of the construction; and because a
+   * miniature is placed in field units under a wrapper that carries its
+   * region's scale, what it writes is four declarations per tile and one per
+   * region — a dozen or so, rather than one per card.
    *
    * It is the overview's alone. The region level rebuilds on a resize as it
    * did: its cards carry captions and marks whose size does not follow the
@@ -968,49 +983,66 @@ export class FOSFieldSurface {
     // through would otherwise leave half the overview at the old scale and
     // half at the new one, and the rebuild that follows would be repairing a
     // surface this path had broken rather than one it declined to touch.
-    const writes = [];
+    const boxes = [];
+    const transforms = [];
     for (const [index, tile] of layout.tiles.entries()) {
       const el = tileEls[index];
       const nested = tile.kind === "nest";
       if (el.dataset.regionId !== (nested ? "nest" : String(tile.region.id))) {
         return false;
       }
-      writes.push([el, tile.x, tile.y, tile.width, tile.height]);
+      boxes.push([el, tile.x, tile.y, tile.width, tile.height]);
 
       const regions = nested ? tile.regions : [tile.region];
       const share = 1 / Math.max(regions.length, 1);
-      let expected = 0;
+      const nests = el.querySelectorAll(".fos-field-mininest");
+      if (nests.length !== regions.length) {
+        return false;
+      }
       for (const [slot, region] of regions.entries()) {
-        const scale = miniScale(region, tile, nested ? share : 1);
-        for (const card of model.cardsIn(region.id)) {
-          const mini = el.querySelector(
-            `.fos-field-mini[data-node-id="${card.node_id}"]`
-          );
-          if (!mini) {
+        const nest = nests[slot];
+        if (nest.dataset.regionId !== String(region.id)) {
+          return false;
+        }
+        // The miniatures are not written at all: they are in field units, and
+        // a resize does not move a card. So what was a write per card is now a
+        // read per card, checking the one thing that makes leaving them alone
+        // correct — that the arrangement on screen is still the model's. A
+        // card the model has moved, gained or lost is a difference this path
+        // cannot express, and the answer to all three is the rebuild.
+        const cards = model.cardsIn(region.id);
+        const minis = nest.children;
+        if (minis.length !== cards.length) {
+          return false;
+        }
+        for (const [i, card] of cards.entries()) {
+          const mini = minis[i];
+          if (
+            mini.dataset.nodeId !== String(card.node_id) ||
+            mini.style.left !== `${card.x}px` ||
+            mini.style.top !== `${card.y}px`
+          ) {
             return false;
           }
-          expected++;
-          writes.push([
-            mini,
-            slot * tile.width * share + card.x * scale,
-            card.y * scale,
-            model.geometry.cardWidth * scale,
-            model.geometry.cardHeight * scale,
-          ]);
         }
-      }
-      // The check the lookups above cannot make: they find every card the
-      // model has, and say nothing about a miniature whose card is gone.
-      if (el.querySelectorAll(".fos-field-mini").length !== expected) {
-        return false;
+        transforms.push([
+          nest,
+          miniTransform(
+            slot * tile.width * share,
+            miniScale(region, tile, nested ? share : 1)
+          ),
+        ]);
       }
     }
 
-    for (const [el, x, y, width, height] of writes) {
+    for (const [el, x, y, width, height] of boxes) {
       el.style.left = `${x}px`;
       el.style.top = `${y}px`;
       el.style.width = `${width}px`;
       el.style.height = `${height}px`;
+    }
+    for (const [el, transform] of transforms) {
+      el.style.transform = transform;
     }
     this.#layout = layout;
     return true;

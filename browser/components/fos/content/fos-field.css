@@ -133,6 +133,18 @@
   flex: 1;
 }
 
+/* One region's miniatures, in unscaled field units. The wrapper carries the
+   scale so that a resize is one declaration per region rather than four per
+   card, and so that the scaling is the compositor's work and not layout's. */
+.fos-field-mininest {
+  position: absolute;
+  /* Physical, like every offset the Field's JS writes: a miniature's own
+     `left` is physical, so the wrapper it sits in has to agree with it. */
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+
 .fos-field-mini {
   position: absolute;
   border-radius: var(--border-radius-small);

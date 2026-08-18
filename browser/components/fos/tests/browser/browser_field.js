@@ -543,6 +543,10 @@ add_task(
     Assert.greater(tilesBefore.length, 0, "there is a tile to reposition");
     Assert.greater(minisBefore.length, 0, "carrying a miniature to reposition");
     const before = overviewGeometry();
+    // Snapshotted as strings, not read back off the elements later: the arrays
+    // above hold the live nodes, so a comparison made afterwards would be
+    // between each element and itself.
+    const miniStylesBefore = minisBefore.map(el => el.style.cssText);
 
     const width = stage.clientWidth;
     stage.style.width = `${Math.round(width * 0.6)}px`;
@@ -570,6 +574,21 @@ add_task(
 
       const repositioned = overviewGeometry();
       Assert.notDeepEqual(repositioned, before, "the overview did move");
+
+      // What makes the pass cheap, stated as a property rather than as a
+      // timing: the scale is carried by one wrapper per region, so a resize
+      // does not touch the miniatures at all however many of them there are.
+      Assert.deepEqual(
+        minisAfter.map(el => el.style.cssText),
+        miniStylesBefore,
+        "no miniature was written to — they are placed in field units"
+      );
+      Assert.ok(
+        [...window.document.querySelectorAll(".fos-field-mininest")].every(
+          el => el.style.transform
+        ),
+        "and every wrapper carries the scale that moved instead"
+      );
 
       surface.render();
       Assert.deepEqual(
@@ -645,15 +664,22 @@ function frame() {
  * that a comparison is between what the two paths *wrote* and not between two
  * roundings of it.
  *
- * @returns {string[]} One entry per tile and miniature, in DOM order.
+ * The wrappers are in here because a miniature's own box is in field units and
+ * does not change with the window: all of the scale is on the wrapper, so a
+ * probe that read only boxes would compare the two paths on the one thing
+ * neither of them varies.
+ *
+ * @returns {string[]} One entry per tile, wrapper and miniature, in DOM order.
  */
 function overviewGeometry() {
   return [
-    ...window.document.querySelectorAll(".fos-field-tile, .fos-field-mini"),
+    ...window.document.querySelectorAll(
+      ".fos-field-tile, .fos-field-mininest, .fos-field-mini"
+    ),
   ].map(el => {
     const id = el.dataset.regionId ?? `node-${el.dataset.nodeId}`;
-    const { left, top, width, height } = el.style;
-    return `${id} ${left} ${top} ${width} ${height}`;
+    const { left, top, width, height, transform } = el.style;
+    return `${id} ${left} ${top} ${width} ${height} ${transform}`;
   });
 }
 
