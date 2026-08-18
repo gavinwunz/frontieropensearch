@@ -760,3 +760,62 @@ confirm the specification.
   would resolve after the tab had already moved on and would faithfully record
   the wrong document.
 - **Phase:** 2B, built — `FOSTrailSession.#backfillPrevious`.
+
+### PadPrints: a thumbnail hierarchy pays at revisitation, and only there
+
+**Searched:** PadPrints zoomable graphical history evaluation; Hightower, Ring,
+Helfman, Bederson, Hollan, *Graphical Multiscale Web Histories: A Study of
+PadPrints*, Hypertext '98.
+<https://research.cs.vt.edu/ns/cs5724papers/6.theoriesofuse.distcog.hightower.padprints.pdf>
+
+**Found:** the closest measured relative of the Field, and one this project had
+only met second-hand through Data Mountain's dismissal of it. PadPrints builds a
+left-to-right hierarchy of thumbnails as you browse, in a zooming UI, beside an
+unmodified Netscape. Two experiments, and the split between them is the finding:
+
+- Experiment 1, general navigation over two site collections, 37 subjects:
+  significantly *fewer pages accessed* (p = .0002) but **no** difference in task
+  time (p = .34). Satisfaction was significantly higher on every QUIS section
+  that moved.
+- Experiment 2, tasks explicitly requiring returns to prior pages: users
+  finished in **61.2% of the time** taken without it.
+
+Its own framing of the problem is still exactly right thirty years on, and is
+worth quoting against the fork's own premise: 0.1% of page accesses went through
+the history list while 42% went through the Back button — "pages are revisited
+with a high frequency, [but] the history list is largely unused", because it is
+incomplete (branches vanish), textual, and buried behind a menu.
+
+**Verdict: adopt, narrowly — and the narrowness is the useful part.** Hierarchy
+is not a constant benefit that earns constant screen space; it is a benefit at
+the moment you are trying to get back to something. That is the argument for
+showing lineage *transiently*, on focus, rather than drawing the tree inside
+every region — and it settles `FIELD.md` §10, now written up as §11. It also
+corrects an impression this project had taken from Data Mountain's related work:
+PadPrints is cited there as automatic layout "for short term use", which is true
+and is why the Field seeds rather than arranges, but it is not evidence that
+showing hierarchy failed. It did not fail. It was measured, and it won where the
+task was revisitation.
+
+### Users reach for proximity and leave the explicit links alone
+
+**Searched:** spatial hypertext implicit structure versus explicit node-link
+overlay; Shipman & Marshall on spatial hypertext; Storyspace's map view; VKB.
+<https://dl.acm.org/doi/pdf/10.1145/3720553.3746683>,
+<https://scispace.com/pdf/spatial-hypertext-designing-for-change-3532t615lt.pdf>
+
+**Found:** systems that offered both an implicit spatial arrangement and an
+explicit link overlay in the same view — Storyspace's map, the Visual Knowledge
+Builder — consistently saw users express relationships through proximity and
+visual attributes and avoid the explicit linking mechanism. Implicit structure
+is not the poor relation of explicit structure in these tools; it is what people
+actually used.
+
+**Verdict: adopt as the argument against a persistent overlay.** Combined with
+the PadPrints entry it gives the Field a coherent answer rather than a
+compromise: the structure is real and worth showing, and the way to show it is
+not a drawn graph. It matters more here than in the systems studied, because the
+Field invites dragging — any edge set drawn over an arrangement people rearrange
+becomes spaghetti within a session. Lineage is derived on focus, so there is
+nothing to maintain and nothing to tangle.
+

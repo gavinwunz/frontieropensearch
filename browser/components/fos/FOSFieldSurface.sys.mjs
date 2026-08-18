@@ -190,6 +190,14 @@ export class FOSFieldSurface {
     // this a card in another region would be unaddressable, which is most of
     // what the Field is for.
     this.#session.retain(() => this.model.cards().map(card => card.node_id));
+    // §7: captured on navigation. A page that has been navigated away from has
+    // no browser behind it any more, so capturing only on the way into the
+    // Field left every card but the current one blank — and a card without a
+    // thumbnail is a list entry with extra steps, which is the condition Data
+    // Mountain measured as its *weakest*.
+    this.#session.onDeparture((nodeId, browser) =>
+      this.#capture(browser, nodeId)
+    );
     this.sync();
 
     bar.actions.register("field", () => {
@@ -504,9 +512,6 @@ export class FOSFieldSurface {
     }
 
     for (const tile of layout.tiles) {
-      if (tile.kind === "empty") {
-        continue;
-      }
       this.#stage.appendChild(this.#buildTile(tile));
     }
     this.#applyFocus();
@@ -637,6 +642,10 @@ export class FOSFieldSurface {
       cards
     );
 
+    // Lineage reads as "these, and not those", so the stage has to know a chain
+    // is lit: an outline colour alone was not tellable from the focus ring in a
+    // screenshot, and a highlight nobody can see is not a highlight.
+    this.#stage.toggleAttribute("data-lineage-active", lineage.size > 0);
     for (const card of layout.cards) {
       this.#stage.appendChild(this.#buildCard(card, lineage));
     }

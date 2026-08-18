@@ -114,6 +114,7 @@ export class FOSTrailSession {
   #trailByBrowser = new WeakMap();
   #markedNodes = new Set();
   #retainers = new Set();
+  #departures = new Set();
   #restoring = new WeakMap();
   #recent = [];
   #activeTrailId = null;
@@ -215,6 +216,38 @@ export class FOSTrailSession {
   }
 
   /**
+   * Be told when a page is about to be left, while its browser still shows it.
+   *
+   * This is the only instant at which anything can be read off the outgoing
+   * page — the same instant, and for the same reason, that the scroll offset is
+   * captured. The Field uses it to take a card's thumbnail: a page navigated
+   * away from has no browser behind it afterwards, so a snapshot taken any
+   * later is a snapshot of the next page.
+   *
+   * @param {Function} listener Called as `(nodeId, browser)`.
+   * @returns {Function} An unsubscribe function.
+   */
+  onDeparture(listener) {
+    this.#departures.add(listener);
+    return () => this.#departures.delete(listener);
+  }
+
+  /**
+   * @param {number} nodeId The node being left.
+   * @param {object} browser The browser leaving it.
+   */
+  #departed(nodeId, browser) {
+    for (const listener of this.#departures) {
+      try {
+        listener(nodeId, browser);
+      } catch (e) {
+        // A listener that throws must not stop the navigation it is watching.
+        console.error(e);
+      }
+    }
+  }
+
+  /**
    * Register a supplier of node ids that must keep their marks.
    *
    * Marks go to the active trail, which is right for the rail and wrong for
@@ -282,6 +315,7 @@ export class FOSTrailSession {
     const nodeId = this.#nodeByBrowser.get(browser);
     if (nodeId) {
       this.#captureNow(nodeId, browser);
+      this.#departed(nodeId, browser);
     }
   }
 

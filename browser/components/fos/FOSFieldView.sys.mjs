@@ -79,7 +79,18 @@ export function overviewLayout({
   geometry,
   metrics = VIEW_METRICS,
 }) {
-  const count = Math.max(slots.length, 1);
+  // Only the slots that hold something. Sizing the grid for all nine left two
+  // thirds of the window empty at three trails — the desert fog of §2 arriving
+  // in the surface written to avoid it, and the tiles small into the bargain.
+  //
+  // This does not cost the landmark property of §5, which is what the model's
+  // permanent slots are for: a region never changes its place in the reading
+  // order, and never swaps with another. The grid rescaling as the world gains
+  // a trail is the same rescaling a window resize does, and §9.2 already makes
+  // that the licensed kind of change — what is forbidden is the system moving
+  // a card *within* its region, not the world being drawn at a new size.
+  const occupied = slots.filter(entry => entry.kind !== "empty");
+  const count = Math.max(occupied.length, 1);
   const cols = Math.ceil(Math.sqrt(count));
   const rows = Math.ceil(count / cols);
 
@@ -111,7 +122,7 @@ export function overviewLayout({
   // into its own tile individually — see `miniScale`.
   const scale = tileW / geometry.regionWidth;
 
-  const tiles = slots.map((entry, index) => {
+  const tiles = occupied.map((entry, index) => {
     const col = index % cols;
     const row = Math.floor(index / cols);
     return {

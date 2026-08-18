@@ -154,13 +154,18 @@
 
 /* The focused card's ancestors within this region, lit only while it is
    focused. FIELD.md §10: the tree is drawn properly in the rail, and a
-   persistent node-link overlay on a canvas people drag becomes spaghetti. */
+   persistent node-link overlay on a canvas people drag becomes spaghetti.
+
+   Rendered by dimming everything else rather than by tinting the chain. Three
+   shades of outline on three neighbouring cards was not readable — the point of
+   a lineage is the contrast between what came from where you are and what did
+   not, so the cheapest legible encoding is to take the unrelated cards down. */
 .fos-field-card[data-lineage] {
   outline-color: var(--color-accent-primary);
-  /* A tint, not a colour: it has to read as "related to what you are looking
-     at" without competing with the focus ring. No token expresses a wash. */
-  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent-primary) 25%, transparent);
+}
+
+.fos-field-stage[data-lineage-active] .fos-field-card:not([data-lineage], [data-focus]) {
+  opacity: var(--opacity-deemphasized-strong);
 }
 
 /* A refused drop. §6: refusing is correct, because the alternative is silently

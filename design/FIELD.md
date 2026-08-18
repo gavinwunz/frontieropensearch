@@ -298,11 +298,59 @@ Recorded rather than guessed at, to be settled by building.
   region-of-regions (§3) is the obvious rule, but "least recently touched" may be
   the wrong metric — a trail parked deliberately is not a trail abandoned. The
   Context Engine has the dwell data to do better; revisit once 2C has real data.
-- **What a region looks like when its trail is a deep tree.** A region is a trail,
-  but a trail is a tree, and this spec treats regions as flat. Whether branch
-  structure should be visible inside a region, or stay in the trail rail where it
-  is already rendered, is undecided. Resolve it after the rail exists — building
-  the tree twice in two surfaces is the failure mode to avoid.
+- ~~**What a region looks like when its trail is a deep tree.**~~ **Settled: the
+  structure is transient, and it is lineage rather than a tree.** See §11.
 - **Whether pinning should be explicit as well as implicit.** Moving a card pins
   it. There may need to be a way to pin without moving, and to unpin. Cheap to
   add later, and premature to design before anyone has used it.
+
+---
+
+## 11. Lineage — the answer to §10's deep-tree question
+
+A region is a trail, a trail is a tree, and §1–§8 treat regions as flat. The
+question deferred until the rail existed was whether branch structure belongs
+inside a region too.
+
+**It does, but only while a card is focused, and as lineage rather than as a
+tree.** Focus a card and its ancestors *within that region* stay lit while every
+other card dims. Nothing is drawn persistently: no edges, no layout constraint,
+no second rendering of the tree.
+
+Three things decide it, and they pull in different directions until you notice
+that they are answering different questions.
+
+**Hierarchy earns its space at revisitation, and nowhere else.** PadPrints
+(Hypertext '98) is the closest measured relative of this design — a zoomable
+hierarchy of page thumbnails, tested against Netscape's own history — and its
+two experiments split exactly along that line. On general browsing it produced
+significantly fewer page accesses but *no* difference in task time. On tasks
+that required returning to a page already seen, its users finished in 61.2% of
+the time. Structure is not a constant benefit that justifies constant ink; it is
+a benefit at the moment you are trying to get back to something.
+
+**Users reach for proximity and leave explicit links alone.** That is the
+consistent finding of the spatial-hypertext work already recorded in
+`IDEAS.md`. Systems offering both an implicit spatial arrangement and an
+explicit node-link overlay — Storyspace's map view, VKB — saw the spatial
+relations do the work. And a persistent overlay is worse here than in those
+systems, because the Field invites the user to drag cards: any edge set drawn
+over an arrangement people rearrange becomes spaghetti inside a session.
+
+**The rail already renders the tree properly.** §10's stated failure mode was
+building the tree twice, and a transient highlight is not a second rendering —
+it is derived from positions that already exist, which is why it survives a drag
+without any maintenance.
+
+The encoding is dimming the unrelated cards rather than tinting the chain. That
+is not taste: three shades of outline on three neighbouring cards was not
+tellable apart in a screenshot, and a highlight nobody can see is not a
+highlight. It is the same correction Data Mountain made when it had to bind a
+floating title to its thumbnail with a matching halo — contrast, not decoration.
+
+### What this does not settle
+
+Lineage is drawn *within one region*. A page reached from another trail has an
+ancestor that is not in this region at all, and nothing on screen says so. That
+is the trail-crossing case in `IDEAS.md`, and it belongs with the Context
+Engine, which is where the relationship between trails is actually modelled.
