@@ -2011,3 +2011,85 @@ does the work, not the module named after it.
 
 **Phase:** decided next run. The measurement cannot run until it is decided,
 which makes this the blocker on the voice path rather than a note beside it.
+
+---
+
+## Run 27 — the ONNX runtime is already in the build, and run 25 asked the wrong question
+
+**Searched:** nothing on the web. This was a tree-reading exercise, and it should
+have been run 25's.
+
+**The decision item 1 asked for is "neither option".** Run 25 framed a choice
+between vendoring the ONNX runtime and accepting a one-time fetch. Both were
+answers to a question that turned out to be malformed, because the tree already
+ships an ONNX runtime that needs no fetch and no vendoring:
+
+| | wasm backend (`onnx`) | native backend (`onnx-native`) |
+| --- | --- | --- |
+| runtime artifact | `ort-wasm-simd-threaded.jsep.wasm` | `libonnxruntime.so` |
+| where it comes from | Remote Settings attachment | `./mach bootstrap` toolchain |
+| in this build? | **no** | **yes** — `dist/bin/libonnxruntime.so`, 10.5MB |
+| needs a Mozilla service? | yes, at first use | **no** |
+| devices | cpu, gpu (WebGPU) | **cpu only** |
+
+Verified rather than assumed, which is the whole lesson of run 25:
+`ldd` resolves every dependency of the packaged `libonnxruntime.so` and it
+exports `OrtGetApiBase@@VERS_1.22.0`, so it is a real, loadable ONNX Runtime
+1.22. `WASM_BACKENDS = [BACKENDS.onnx]` excludes the native backend, and the
+wasm fetch at `MLEngineChild.sys.mjs:443` is gated on that list, so the native
+path never reaches `getWasmArrayBuffer`. `dom/onnx/` is a full native
+`InferenceSession`/`Tensor` WebIDL implementation gated on
+`INFERENCE_REMOTE_TYPE`, a first-class Gecko process type. `Pipeline.mjs`
+already defaults to `onnx-native`.
+
+**Why run 26 failed, precisely.** Not the hardware, not the fork's prefs, and
+not "there is no offline path". The measurement passed `device` and never
+passed `backend`, and `MLEngineChild` reads `opts.backend || BACKENDS.onnx` —
+so an unnamed backend *is* the wasm backend. Both arms therefore asked for the
+one runtime this build does not contain, and failed identically before the
+device axis ever came into it.
+
+Two further corrections to run 25's write-up, both from checking rather than
+inferring:
+
+- **The `ml-onnx-runtime` collection is not empty.** It carries 13 records
+  including `ort-wasm-simd-threaded.jsep.wasm` at version 5.0.0, which is
+  exactly the major version `WASM_MAJOR_VERSION[onnx] = 5` demands. Fetched
+  over HTTPS from this machine, which also has working network to
+  `huggingface.co` and `model-hub.mozilla.org`.
+- **The failure was local, and the log says so**: `EmptyDatabaseError` from
+  `services-settings/Database.sys.mjs`. The mochitest harness starts with an
+  unpopulated Remote Settings database and does not sync one, and there is no
+  packaged dump for that collection to fall back on. So the wasm backend is
+  untestable under mochitest by construction — a fact about the harness, which
+  run 25 generalised into a fact about the browser.
+
+Run 25's "a packaged loader is not a packaged dependency" was a good lesson
+drawn one step too narrowly. The sharper version: **`find` told us which files
+matched a name, and the question was which files do the work.** Searching for
+`ort*` found the wasm loader and missed `libonnxruntime.so` entirely, because
+the artifact that actually runs the models is not named after the module that
+loads it.
+
+**Verdict: adopt `onnx-native` as the fork's ASR runtime.** It clears the bar
+that mattered — the runtime is a build dependency, so a machine with no network
+has a working inference stack on first launch, and nothing about the runtime
+touches a Mozilla service. Nothing is vendored into the public tree and no
+10.5MB blob joins git, because bootstrap already places it.
+
+**What this does not solve, and the recommendation stands.** The *model weights*
+are still a network fetch, and run 25's option 2 is still the right answer for
+them: a surfaced, one-time "download the speech model" step, never a microphone
+that quietly fails. The runtime and the weights were always separate problems
+and only the runtime is now closed.
+
+**The cost of the native path is the GPU arm.** `ONNXPipeline` hands
+Transformers.js `supportedDevices: ["cpu"]` for `onnx-native`, so the offline
+runtime is CPU-only. If CPU Whisper misses run 23's ~1s/2s budget, the choice
+becomes a real one — offline and slow against fast and dependent on a Mozilla
+CDN — and that is precisely what `run27` is measuring. `EmbeddingsGenerator`
+carries a comment deferring native "until onnx-native has wider Linux
+adoption", which is a caution worth holding until the numbers land.
+
+**Phase:** the runtime half of the voice pillar's blocker is closed. The
+measurement it was blocking is running as `run27`.

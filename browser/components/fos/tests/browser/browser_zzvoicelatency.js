@@ -40,11 +40,22 @@
  * command's length by `max_new_tokens`. Accuracy needs real speech and is a
  * separate exercise.
  *
- * Off unless `FOS_MEASURE_ASR` is set, the same gate `browser_zdemoflow.js`
- * uses for its screenshots: this downloads ~75MB on its first run and takes
- * minutes, neither of which belongs in the suite.
+ * **The weights come off a local hub, and they have to.** mochitest aborts the
+ * whole process on any non-local connection — "FATAL ERROR: Non-local network
+ * connections are disabled" — which is what killed run27 *after* the native
+ * runtime had loaded cleanly. The tree's supported answer is the local hub
+ * hook, which serves `$MOZ_ML_LOCAL_DIR/onnx-models` over localhost and exports
+ * `MOZ_MODELS_HUB`. This file refuses to run without it rather than reaching
+ * for the network and taking the browser down with it.
  *
- *   FOS_MEASURE_ASR=1 ./mach mochitest --keep-open=false \
+ * Off unless `FOS_MEASURE_ASR` is set, the same gate `browser_zdemoflow.js`
+ * uses for its screenshots: this is minutes of inference, which does not belong
+ * in the suite.
+ *
+ *   agent/jobs/fetch-whisper.sh          # once, ~43MB, outside the repo
+ *   FOS_MEASURE_ASR=1 MOZ_ML_LOCAL_DIR=/data/ml-models \
+ *     ./mach mochitest --keep-open=false \
+ *     --hooks toolkit/components/ml/tests/tools/hooks_local_hub.py \
  *     browser/components/fos/tests/browser/browser_zzvoicelatency.js
  *
  * Read the results by grepping the log for `##### ASR`.
@@ -127,6 +138,7 @@ async function measure(backend, device, durations) {
   const options = {
     taskName: "automatic-speech-recognition",
     modelId: "onnx-community/whisper-tiny",
+    modelHubRootUrl: Services.env.get("MOZ_MODELS_HUB"),
     modelHubUrlTemplate: "{model}/{revision}",
     modelRevision: "main",
     dtype: "q8",
@@ -190,6 +202,20 @@ add_task(async function measure_asr_latency() {
     ok(
       true,
       "skipped: set FOS_MEASURE_ASR to measure whisper-tiny on this machine"
+    );
+    return;
+  }
+
+  // Without a local hub the model fetch is a non-local connection, and under
+  // mochitest that is fatal to the process rather than an error this file
+  // could report. Refuse up front and say how to fix it: a skipped measurement
+  // is a result, a killed browser is thirty lines of log and no result.
+  if (!Services.env.get("MOZ_MODELS_HUB")) {
+    ok(
+      true,
+      "skipped: no MOZ_MODELS_HUB. Run agent/jobs/fetch-whisper.sh, then " +
+        "pass --hooks toolkit/components/ml/tests/tools/hooks_local_hub.py " +
+        "with MOZ_ML_LOCAL_DIR set."
     );
     return;
   }
