@@ -59,8 +59,11 @@ the built binary.
    launch the browser and read the first-run surfaces, rather than grepping the
    tree. The about dialog and the l10n override path are the two known gaps.
    **Do not mass-sed the tree.**
-2. Confirm the mark actually ships — `generate-mark.py` emits the SVG and PNGs,
-   but nothing has yet checked that the window and about dialog show it.
+2. The mark ships and is ours — `dist/bin/browser/chrome/icons/default/` holds
+   default{16,32,48,64,128}.png and `default64.png` hashes identical to
+   `browser/branding/frontieropensearch/default64.png` and different from both
+   `unofficial/` and `nightly/`. What is still unchecked is whether the *window*
+   and the about dialog actually render it, which needs a UI look, not a hash.
 3. Then Phase 2 execution, in this order:
    - The Field's card and region model (`design/FIELD.md`) — the last
      pure-logic piece, and a region is a trail, so it builds on `FOSTrailTree`.
