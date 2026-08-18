@@ -1283,3 +1283,49 @@ is not a way of hiding a regression — it is that those files are the coverage
 keeping the strip working for the pref that restores it, and the window with no
 strip has its own tests. Any surface this fork replaces will want the same
 treatment, and the manifest pref is the pattern.
+
+---
+
+## Run 16 — ambient notification, and what the demo flow settled
+
+**Searched:** peripheral awareness displays, ambient display heuristics and
+their evaluation (Mankoff et al., *Heuristic evaluation of ambient displays*,
+CHI 2003, and the peripheral-display evaluation literature that followed).
+<https://dl.acm.org/doi/abs/10.1145/642611.642642> — paywalled; read the
+surrounding literature rather than the paper itself.
+
+**Verdict: adapt, for the background-tab signal.** The finding that matters is
+the definition the field settled on: an ambient display succeeds when it
+changes awareness of, or behaviour towards, some information *without requiring
+an attention shift*. That is a sharper bar than "show a badge", and it rules
+out most of what a browser would reach for first. The Field already knows which
+card is new; the signal belongs on the Field's own affordance rather than in a
+new surface, and it must be legible without the Field being opened. Explicitly
+**reject** a notification system, a toast, and a count badge on a toolbar
+button: each demands the attention shift the literature says disqualifies it,
+and the second and third rebuild the tab strip's worst property — a number that
+grows and shames.
+
+Left open deliberately: *what* the peripheral channel is here. The candidates
+are the Field's own edge, the command bar's resting state, and motion at the
+window margin. That wants a design pass, not a guess, and it is now item 5 on
+the Phase 3 list rather than something to bolt on.
+
+**Not researched again:** zero-prefix suggestion lists (run 15 found only
+ranking-from-recent-queries material, which this project rejected for context
+membership). Do not re-search it.
+
+## Run 16 — settled by building, not by searching
+
+- **A query belongs to the context of the page it opened, not to the context
+  that happened to be active while it was typed.** The second is a guess and is
+  usually *nothing at all*, because a search into a fresh tab is recorded
+  before the page that would create the context exists. Both memberships are
+  kept — a question asked while working on one topic that opens another really
+  was asked in both.
+- **A pinned context needs a release, and the release is the bare verb.**
+  "A context switched into deliberately must not be taken away by the next
+  navigation" is right and was implemented as "cannot be taken away by
+  anything", which is a different claim. `context` with no target follows
+  provenance again, exactly as bare `back` applies to where you already are. No
+  new word: the grammar stays at twelve.

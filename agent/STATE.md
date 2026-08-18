@@ -9,8 +9,10 @@ Keep it short — this is state, not a log. History belongs in `JOURNAL.md`.
 
 **Phase 0 — Bootstrap: COMPLETE** (tagged `phase-0`, report `agent/reports/phase-0.md`).
 **Phase 1 — Rebrand: COMPLETE** (tagged `phase-1`, report `agent/reports/phase-1.md`).
-Now on **Phase 2 — The novel UI**, which is the heart of the project and is
-execution, not invention: all three pillars have a written design.
+**Phase 2 — The novel UI: COMPLETE** (tagged `phase-2`, report
+`agent/reports/phase-2.md`, merged to `main`). The acceptance criterion runs as
+one automated sequence in `tests/browser/browser_zdemoflow.js`.
+Now on **Phase 3 — Beautiful and tested**.
 
 ## Done
 
@@ -194,52 +196,81 @@ execution, not invention: all three pillars have a written design.
   checks. Screenshots in `agent/reports/no-tab-strip.png` and
   `one-surface-{rest,rest-dark,open}.png`.
 
+- **The demo flow, and with it Phase 2's acceptance criterion.**
+  `tests/browser/browser_zdemoflow.js` drives all five stages as one sequence —
+  search, branch three ways, zoom out to the Field, switch context, export a
+  context pack — in **its own chrome window**, because each pillar is
+  instantiated per window and six files' worth of accumulated cards had
+  otherwise already spent the 26 marks the fourth stage needs. It found two
+  real defects that six green files could not, both fixed: a query never joined
+  its own context, so every pack of an enquiry that began with a search said
+  "0 questions asked"; and a pinned context could never be released, so one
+  deliberate `context <mark>` aimed the ranking, `what` and `pack` at that
+  enquiry for the rest of the session. `context` now takes an optional target
+  and the bare form follows provenance again. 335 browser-chrome checks, 179
+  node tests, xpcshell green. Screenshots per stage in
+  `agent/reports/demo-*.png`, the exported brief in `demo-pack.md`.
+
 ## In progress
 
-`tabtests5` is running the 193 remaining upstream tab tests — see Background
-jobs. `agent/dev` pushed through the single-surface commits; `main` and both
-tags unchanged on origin.
+Nothing. `agent/dev` and `main` both carry Phase 2; `phase-2` is tagged. The
+final push (`push5`) went out at the end of the run — check it landed before
+assuming origin is current.
 
 ## Next task
 
-The single-surface gap is closed, and with it the last item that was blocking
-the phase's own acceptance criterion. In rough order of value.
+Phase 2 closed, so the list is Phase 3's: visual polish on one coherent design
+system, 60fps pan and zoom, the test pyramid filled out, and a README with real
+screenshots and an architecture doc. In rough order of value.
 
-1. **Drive the demo flow end to end, in one test.** This is Phase 2's "done
-   when" verbatim — search, branch three ways, zoom out to the Field, switch
-   context, export a context pack — and every piece of it now exists and is
-   separately tested. Nothing has ever run them as one sequence, so the honest
-   answer to "is Phase 2 finished" is currently unknown rather than yes. Do
-   this before building anything else: it either closes the phase or it names
-   exactly what is missing, and both outcomes are worth more than another
-   feature. Name the file so it sorts **last** in
-   `browser/components/fos/tests/browser/` — the directory shares one window
-   and runs alphabetically, and a flow test that seeds a trail early would
-   change what every later file sees. If it passes: merge to `main`, tag,
-   write `agent/reports/phase-2.md` with the screenshots, and notify. That is
-   the only notification this phase gets.
-2. **A background tab arrives with no signal at all.** Surfaced by removing the
-   strip and the first thing a real session would notice: a `target=_blank`
-   load, or anything opened behind the page in front, is now invisible until
-   the Field is opened. The strip was doing that job incidentally. This is not
-   an argument for the strip — it is that the Field needs an ambient way to say
-   "something arrived", and the card model already knows which card is new.
-   Cheapest honest answer first; do not build a notification system.
-3. **The embedding pass**, on `EmbeddingsGenerator` and `ClusterAlgos`. Target
-   unchanged: query understanding, because the shallow extractor gets nothing
-   from a lower-case query. Merge contexts across trails with
-   `source = 'embedding'`, never replacing the provenance floor. It would also
-   give the ranking a sixth signal without giving it a sixth tier — a merged
-   context is still tier 2.
-4. **`prune`, and an export surface for trails.** Deferred again, and this run
-   strengthened the case: a page on an old trail whose Places record has been
-   cleared is reachable by no tier, and the honest answer is that an old trail
-   should be findable *as a trail* rather than that the ranking should grow a
-   tier holding the whole database. Also what would let a *named* trail be
-   pinned past the restore window.
-5. **The voice path.** Unchanged: measure model size and latency; do not
-   re-litigate availability. Note that `suggest` already resolves a spoken mark
-   word, so the addressing half of this surface is done.
+1. **The design system, written down and then applied.** Four chrome surfaces
+   were each styled as they landed and they already share tokens, but nothing
+   states the spacing scale, the type scale or the dark/light pairs as a
+   contract. Phase 3's first line is "one coherent design system"; write it as
+   `design/SYSTEM.md` with the tokens that exist, find where the four surfaces
+   disagree, and reconcile. Do this before any repainting — otherwise the
+   polish pass is six independent opinions.
+2. **Measure the Field's pan and zoom before optimising it.** "60fps canvas pan
+   and zoom, no layout jank" is the criterion and there is no measurement yet.
+   The Field is DOM, not canvas, and `#applyPositions` writes transforms on
+   every pointer move. Get a profile with a real session's worth of cards
+   (40+), then decide. Do not optimise from a guess.
+3. **The scripted end-to-end smoke run.** The demo flow already exists as a
+   browser-chrome test and the canvas screenshot route works — Phase 3 asks for
+   the two joined: a scripted run that drives the flow and saves screenshots to
+   `agent/reports/`. This run built exactly that as a scratch file and deleted
+   it; making it a permanent, non-manifest harness is most of the work.
+4. **README with real screenshots and an architecture doc.** The pillar designs
+   are in `design/FIELD.md`, `design/GRAMMAR.md` and `context-engine/SCHEMA.md`;
+   the missing piece is the document that says how the three fit together and
+   why, plus the MPL and trademark notes.
+5. **A background tab still arrives with no signal at all.** Carried over from
+   Phase 2 and unchanged: a `target=_blank` load is invisible until the Field
+   is opened. The card model already knows which card is new. Ambient-display
+   research is now in `IDEAS.md`; cheapest honest answer first.
+6. **The embedding pass, `prune`, and the voice path.** All three carried over
+   from Phase 2's list, all three still worth doing, none of them blocking a
+   Phase 3 criterion. See `IDEAS.md`.
+
+## Found this run, not yet chased
+
+- **The active card can have no thumbnail.** In the Field's region level the
+  search result's card painted blank while its three children painted
+  correctly, after every page had been dwelt on long enough to settle. Visible
+  in `agent/reports/demo-3-field-region.png` — the card marked `m`. The node
+  was departed three times by re-entry, so the departure capture is not firing
+  on the re-entry path the way it fires on an ordinary navigation. Narrow, but
+  it is the flagship surface and it is the one card the eye goes to.
+- **Closing the rail while the Field is open leaves Escape with nowhere to
+  go.** Found by a scratch screenshot test: open the rail, open the Field,
+  toggle the rail shut, and Escape no longer zooms the Field out. Focus is
+  presumably left on a removed element. Not on the demo flow's path, which is
+  why it is recorded rather than fixed.
+- **The address bar still says "Search or enter address".** It is `readOnly`
+  now and refuses the typing its own placeholder invites — visible in
+  `agent/reports/demo-1-search.png`. The cursor was fixed when the bar was
+  retired as an input; the placeholder was missed. One string, and it belongs
+  with the Phase 3 polish pass.
 
 **Test in Gecko, not only in node.** Two bugs this project has shipped were
 invisible to green node tests: a grammar bug found in one minute once the modules
@@ -269,22 +300,18 @@ build input is not.
 
 ## Background jobs
 
-Started with `./agent/bg.sh <name> <cmd>`; check with `./agent/bg-status.sh`.
+None outstanding. Started with `./agent/bg.sh <name> <cmd>`; check with
+`./agent/bg-status.sh`.
 Each runs as its own transient systemd unit `fos-job-<name>.service`, in
 `app.slice` beside `fos.service` rather than inside it, which is what makes it
 survive a restart. `agent/logs/<name>.current` symlinks the live log.
 
-`tabtests6` — the upstream tab tests, minus the three files below, from the
-list in `agent/tabtests-rest.txt`:
-
-```bash
-./mach test $(tr '\n' ' ' < agent/tabtests-rest.txt)
-```
-
-Started 2026-08-18T18:15Z. Read the tail for `Unexpected results`. Anything
-there is fallout from the strip going and wants the manifest pref rather than a
-code change — but check first, because two of the three excluded files were
-**not** ours.
+The upstream tab tests were run to completion this run: **193 of 194 pass**.
+The one failure, `browser_bfcache_exemption_about_pages.js`, crashes a content
+process on `about:newtab` in a private window and **fails identically with both
+FOS surface prefs off** — verified by re-running it that way. It joins the
+x11/24.04 family this manifest already skips files for. `agent/tabtests-rest.txt`
+is the file list without the three excluded ones.
 
 ## Blockers
 
@@ -382,6 +409,15 @@ already have arrowed down. The id of the selected row is read out of the DOM
 before the rebuild and looked up again after; a row that has gone takes the
 selection back to the typed line rather than handing it to whatever replaced
 it. Do not "optimise" this into an index.
+
+**A demo or a flow test wants its own window, not the shared one.** Every file
+in `tests/browser/` shares one chrome window, and by the seventh file the 26
+marks are gone. `BrowserTestUtils.openNewBrowserWindow()` gives a fully wired
+FOS window — `browser-init.js` builds a bar, session, Field, engine and sidebar
+per window — over the one shared profile database. That is what a fresh session
+is, and it is the right shape for anything testing a sequence rather than a
+property. It does not make the mark-budget question below go away; it means a
+sequence test is not the place to discover it.
 
 **A named context can fail to get a mark under real mark pressure.** Contexts
 take letters only after being named, and only from what the active trail and
