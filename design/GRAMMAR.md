@@ -320,8 +320,8 @@ the separate accessibility mode §5 forbids would get built by accident.
 ## 8. Rules the voice front end forced
 
 §5 promised that a transcript and a keystroke meet as one token stream. Building
-the front end that produces the transcript settled seven things the promise
-leaves open. All six hold the same line §5 and §7 hold: whatever cannot be modality-
+the front end that produces the transcript settled ten things the promise leaves
+open. All ten hold the same line §5 and §7 hold: whatever cannot be modality-
 blind is pushed *out* of the grammar rather than into it, and lives in the input
 adapter where it can be replaced.
 
@@ -338,6 +338,31 @@ because they answer the question a voice user actually has, which is not "did it
 understand" but "is it listening yet". A key that comes up before the microphone
 opened is a tap, not a turn, and is refused with the same reason a recording too
 short to be a word gets — to the user it is the same mistake.
+
+### There are two gestures and one turn
+
+Push-to-talk is the default, and it is the wrong *only* gesture. Sustained
+pressure is precisely what tremor, arthritis, carpal tunnel and fatigue make
+expensive, and the dictation tools written for those users converge on
+tap-to-start, tap-to-stop — so a hands-free path reachable only by holding a key
+down has excluded part of the audience §5's "no separate accessibility mode"
+was written for, and excluded them from the modality that was supposed to be
+their way in.
+
+The answer is a second gesture and not a second mode, and the difference is
+testable rather than rhetorical: a latched turn arms, listens, transcribes and
+executes down the same path, and the whole of the difference is one flag in
+`FOSVoiceSession` plus which event ends it. Shift is the arm because a bare tap
+would make a mis-press open the microphone for the whole thirty seconds, and a
+modifier is reachable one-fingered through the platform's own sticky keys, which
+is a mechanism these users already have turned on.
+
+Two rules fall out of the microphone being open with nobody holding anything.
+**Any press ends a latched turn**, not only a press carrying the modifier:
+ending early costs one utterance, failing to end leaves a device open that this
+build draws no platform indicator for, and the two are not the same size of
+mistake. And **the indicator has to say how to stop**, because for a held turn
+the user's own finger is that answer and for a latched turn nothing is.
 
 ### The echo is the latency budget
 
@@ -540,18 +565,29 @@ user is speaking — and the decode lands after the key is up, where a model is
 about to run anyway. Decoding into an `OfflineAudioContext` built at 16kHz
 resamples the device's rate to Whisper's on the way.
 
-### Open: holding a key is the wrong gesture for some of the people this is for
+### Settled: shift latches, and the deadline had to stop going through the key
 
-Push-to-talk was chosen because a press makes the microphone's state something
-the user did (§8). But sustained pressure is exactly what carpal tunnel,
-arthritis, tremor and fatigue conditions make expensive, and accessibility
-dictation tools converge on tap-to-start/tap-to-stop for that reason. A voice
-path whose only gesture is a held key has quietly excluded part of the audience
-that §5's "no separate accessibility mode" was written for.
+The gesture this section opened as a question is built — §8's "two gestures and
+one turn" is the rule it became, and `IDEAS.md` (run 31) has what shipped.
 
-The answer is not a second mode. It is a second gesture on the same key, ending
-in the same transcript: a latched turn that a tap starts and a tap ends, bounded
-by the same `LISTENING` deadline that already exists, cancelled by the same
-Escape. What it must not do is make a mis-press open a 30-second microphone,
-which is what latching the current tap — today's "too short to hear" — would do.
-`IDEAS.md` (run 30) carries the candidates.
+Building it moved one thing that was not obvious from the design. A latched turn
+ignores the key coming up, and the `LISTENING` deadline had been implemented as
+"a listen that runs out is a key that came up" — literally, by calling `release`.
+So the deadline would have bounded every turn in the design *except* the only one
+with nobody's finger on the key, which is the only one that needed bounding.
+Both now end the recording through the same private step, and `release` is a
+thin caller of it rather than the thing itself. The lesson generalises past
+voice: **when a safety bound is expressed as "this is the same as that ordinary
+event", adding a mode that suppresses the ordinary event silently removes the
+bound.** Nothing about the deadline changed — what changed was that it stopped
+being defined in terms of a gesture.
+
+### Still open: whether the latch should need a modifier at all
+
+Shift is the safe half of run 30's pair. The other candidate is the bare tap —
+today's "too short to hear" — which needs no modifier and so needs no second key
+press at all, and which is what a user with one reliable finger would rather
+have. It was not taken because a mis-tap would open the microphone for the whole
+thirty-second deadline, and that is a question about how often a mis-tap happens
+in use rather than a question this document can settle. It stays open until the
+latch has been used by somebody.

@@ -123,6 +123,21 @@ const NOTICES = {
   [NOTICE_UNAVAILABLE]: "The microphone or the speech model is unavailable.",
 };
 
+/**
+ * What a latched turn says instead, where the words above are advice about a
+ * gesture the user deliberately did not use.
+ *
+ * Only "too short" needs it, and it needs it because the code is reachable two
+ * ways. A key that came up before the microphone opened is held-only — a
+ * latched turn stopped that early is a cancel and says nothing at all — but the
+ * *audio gate* raises the same code for a recording too brief to be a word, and
+ * that one a latched turn reaches by pressing twice in quick succession. Telling
+ * that user to hold a key down is advice for the other gesture.
+ */
+const LATCHED_NOTICES = {
+  [NOTICE_TOO_SHORT]: `Too short to hear — speak, then press ${TALK_KEY} to stop.`,
+};
+
 /** What the indicator says at each stage. */
 const STAGES = {
   [ARMING]: "Getting ready…",
@@ -476,6 +491,16 @@ export class FOSVoiceInput {
     }
   }
 
+  /**
+   * Whether the turn now ending was latched, for the words it is told in.
+   *
+   * The session clears its own latch when the turn resets, and a notice is
+   * chosen after that — the audio gate's verdict in particular arrives a whole
+   * transcode later. So the shell keeps its own copy, taken at the press and
+   * read at the notice, which are the two ends of one turn.
+   */
+  #latchedTurn = false;
+
   #press({ latch = false } = {}) {
     // The bar is the surface the words appear in, so it opens with the press
     // rather than when the transcript lands: a user has to be able to see that
@@ -486,9 +511,15 @@ export class FOSVoiceInput {
       this.#bar.open();
       this.#openedBar = true;
     }
-    this.#apply(
-      this.#session.press({ text: this.#bar.input?.value ?? "", latch })
-    );
+    const effect = this.#session.press({
+      text: this.#bar.input?.value ?? "",
+      latch,
+    });
+    // Read off the session rather than off `latch`, because the press that
+    // *ends* a latched turn does not carry the modifier and must not be taken
+    // for the start of a held one.
+    this.#latchedTurn = this.#session.latched;
+    this.#apply(effect);
   }
 
   // ---- effects ------------------------------------------------------------
@@ -527,7 +558,11 @@ export class FOSVoiceInput {
     // why nothing happened, and a complaint about the microphone on top of it
     // is the very line the rule was written against.
     if (effect.notice && !this.#downloading) {
-      this.#bar.notify(NOTICES[effect.notice] ?? NOTICES[NOTICE_UNAVAILABLE]);
+      this.#bar.notify(
+        (this.#latchedTurn ? LATCHED_NOTICES[effect.notice] : null) ??
+          NOTICES[effect.notice] ??
+          NOTICES[NOTICE_UNAVAILABLE]
+      );
     }
     if (effect.run !== null) {
       // From here the line is indistinguishable from a typed one, which is the

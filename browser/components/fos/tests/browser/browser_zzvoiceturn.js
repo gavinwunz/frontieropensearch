@@ -138,6 +138,68 @@ add_task(async function test_one_real_turn_end_to_end() {
       15000,
       "inside the deadline the transcribing stage carries"
     );
+
+    // The same turn, latched, on the same resident engine. What a double
+    // cannot tell you — and what is the whole of the risk this gesture adds —
+    // is whether a *real* device stays open across the key-up that follows the
+    // press, and whether a real one closes on the press that ends the turn.
+    // Both of those are `MediaRecorder` and `getUserMedia` behaviour, not the
+    // state machine's, and the state machine is already covered in node.
+    bar.dismissNotice();
+    const latchStarted = ChromeUtils.now();
+    EventUtils.synthesizeKey(
+      `KEY_${TALK_KEY}`,
+      { type: "keydown", shiftKey: true },
+      win
+    );
+    EventUtils.synthesizeKey(
+      `KEY_${TALK_KEY}`,
+      { type: "keyup", shiftKey: true },
+      win
+    );
+    await TestUtils.waitForCondition(
+      () => voice.state === LISTENING,
+      "the latched turn arms, and its own key-up did not end it"
+    );
+    info(
+      `##### VOICE latched, armed in ${Math.round(
+        ChromeUtils.now() - latchStarted
+      )}ms with no key held`
+    );
+
+    // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+    await new Promise(resolve => setTimeout(resolve, UTTERANCE_MS));
+    Assert.equal(
+      voice.state,
+      LISTENING,
+      "a real device stayed open for a whole utterance with nothing held down"
+    );
+
+    const stopPressed = ChromeUtils.now();
+    // Without the modifier, which is the forgiveness the session promises: a
+    // user who latched with shift and reached back for the bare key stops.
+    EventUtils.synthesizeKey(`KEY_${TALK_KEY}`, { type: "keydown" }, win);
+    await TestUtils.waitForCondition(
+      () => voice.state === IDLE,
+      "the second press ends the latched turn",
+      500,
+      120
+    );
+    const latchedMs = ChromeUtils.now() - stopPressed;
+    EventUtils.synthesizeKey(`KEY_${TALK_KEY}`, { type: "keyup" }, win);
+
+    info(
+      `##### VOICE latched turn: ${UTTERANCE_MS}ms of audio answered in ` +
+        `${Math.round(latchedMs)}ms — transcript "${voice.lastHeard}", ` +
+        `report "${reportText(win)}"`
+    );
+    Assert.equal(voice.state, IDLE, "and left nothing running");
+    Assert.less(latchedMs, 15000, "inside the same deadline a held turn has");
+    Assert.equal(
+      voice.state,
+      IDLE,
+      "the key-up after the stopping press started nothing"
+    );
   } finally {
     voice.destroy();
     await BrowserTestUtils.closeWindow(win);

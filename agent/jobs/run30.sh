@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# One real voice turn: the key, the device, the recorder, the model, the bar.
+# Real voice turns: the key, the device, the recorder, the model, the bar.
+#
+# Both gestures, on one resident engine: the held turn run 30 measured, and the
+# latched turn run 31 added — where the key comes up in the middle and a second
+# press ends it. The latch is the one that needs a real device to mean anything,
+# because what it risks is a microphone nothing is holding open on purpose.
 #
 # run29 answered "can this fork transcribe offline, and how fast". This answers
 # the question after it: does the path the user actually presses work when

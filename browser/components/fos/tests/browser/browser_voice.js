@@ -448,6 +448,50 @@ add_task(async function test_a_quiet_room_never_reaches_the_model() {
   bar().dismissNotice();
 });
 
+add_task(async function test_a_latched_turn_is_never_told_to_hold_a_key() {
+  // The audio gate's "too short" is reachable by both gestures — a latched
+  // turn gets there by two presses in quick succession — and the words it had
+  // were advice about the gesture the user did not use. The notice is the
+  // shell's to word, so this is the surface that can catch it.
+  const mic = backend({
+    audio: { samples: new Float32Array(160), sampleRate: 16000 },
+  });
+
+  await latchTalkKey();
+  talkKey("keydown");
+  await TestUtils.waitForCondition(
+    () => voice().state === IDLE,
+    "the turn ends"
+  );
+  talkKey("keyup");
+
+  Assert.equal(mic.requests.length, 0, "the model never saw it");
+  const words = reportText();
+  Assert.ok(
+    words.toLowerCase().includes("short"),
+    `the user is told why: "${words}"`
+  );
+  Assert.ok(
+    words.includes(TALK_KEY),
+    "in terms of the gesture they are actually using"
+  );
+  Assert.ok(
+    !words.toLowerCase().includes("hold"),
+    `and is not told to hold a key they are not holding: "${words}"`
+  );
+  bar().dismissNotice();
+
+  // The held turn keeps the words that are right for it.
+  backend({ audio: { samples: new Float32Array(160), sampleRate: 16000 } });
+  await holdTalkKey();
+  await releaseTalkKey();
+  Assert.ok(
+    reportText().toLowerCase().includes("hold"),
+    `a held turn is still told to hold the key: "${reportText()}"`
+  );
+  bar().dismissNotice();
+});
+
 add_task(async function test_the_weights_are_a_visible_one_time_step() {
   // GRAMMAR.md §8's last rule. The press is what asks for the download, so the
   // download is allowed to happen — what is not allowed is a microphone that
