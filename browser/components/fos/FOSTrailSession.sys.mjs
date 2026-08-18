@@ -879,6 +879,16 @@ export class FOSTrailSession {
    * exact thing that section rejects. A trail is a bounded set, so this is
    * within the 26 letters in the ordinary case; past that `assign` returns null
    * and those nodes are reached by search, which §2 already specifies.
+   *
+   * Which nodes lose out past twenty-six is the whole question. A trail is
+   * bounded but not small — an afternoon on one line of enquiry passes
+   * twenty-six pages easily — and the nodes are visited in order, so first
+   * come, first served hands every letter to the pages you opened first and
+   * leaves the page you are on unaddressable. That is the failure this method
+   * exists to prevent, and it arrived from the trail itself rather than from
+   * the Field. So the active trail is considered most recently visited first,
+   * and a page may take a letter back from an *older page of its own trail*
+   * when there is nothing retained left to take.
    */
   #syncMarks() {
     if (!this.#marks || this.#activeTrailId === null) {
@@ -890,7 +900,16 @@ export class FOSTrailSession {
     // from a retained page in some other trail. Retention is a claim on a
     // letter, not a guarantee of one: a Field holding forty cards must not be
     // able to leave the page under the cursor unaddressable.
-    const primary = this.store.nodes(this.#activeTrailId).map(n => n.id);
+    // Most recently visited first, so that when the alphabet runs out it runs
+    // out on the pages furthest behind you rather than on the one in front of
+    // you. Stickiness is unaffected: order decides who gets a letter when they
+    // are scarce, never which letter, and a node that already holds one keeps
+    // it wherever it sorts.
+    const primary = this.store
+      .nodes(this.#activeTrailId)
+      .slice()
+      .sort((a, b) => (b.last_visited_at ?? 0) - (a.last_visited_at ?? 0))
+      .map(n => n.id);
     const inPrimary = new Set(primary);
     const secondary = [];
     for (const supplier of this.#retainers) {
@@ -911,10 +930,13 @@ export class FOSTrailSession {
       if (live.has(key)) {
         continue;
       }
-      live.add(key);
       if (inPrimary.has(id) && !this.#marks.markOf(key)) {
-        this.#evictForPrimary(inPrimary);
+        // `live` is every key this pass has already reached, and nothing in it
+        // may be a victim: those are the nodes ahead of this one in the order
+        // above, which is to say the more recent ones.
+        this.#evictForPrimary(node, inPrimary, live);
       }
+      live.add(key);
       this.#marks.assign(key, {
         // The label the rail shows, never the raw URL. A mark is assigned the
         // moment a node is created, which is before the title arrives, so
@@ -937,32 +959,52 @@ export class FOSTrailSession {
   /**
    * Free one letter for a node of the active trail, if the alphabet is full.
    *
-   * The victim is a marked node outside the active trail — a retained one, held
-   * for a surface that addresses pages across trails — and the least recently
-   * visited of those, because that is the page least likely to be reached for
-   * next. Nothing in the active trail is ever a victim, and the page loses only
-   * its letter: it is still on its trail, still on the Field, and still
-   * reachable by search, which is what `GRAMMAR.md` §2 already says happens
-   * past twenty-six.
+   * Two ranks of victim, tried in order. First a marked node outside the active
+   * trail — a retained one, held for a surface that addresses pages across
+   * trails — because a claim made on behalf of a card is weaker than a claim
+   * made by the trail you are reading. Then, only when there is no retained
+   * letter left to take, an older page of the active trail itself: a trail past
+   * twenty-six pages otherwise spends its whole alphabet on the pages it opened
+   * first, and the page you are on is the one that cannot be addressed.
    *
-   * @param {Set<number>} protectedIds Node ids that may not be evicted.
+   * Both ranks take the least recently visited candidate, as the page least
+   * likely to be reached for next, and neither will take a letter from a page
+   * more recent than the one asking — which is what stops the letters churning
+   * between old nodes on every navigation. A page loses only its letter: it is
+   * still on its trail, still on the Field, and still reachable by search,
+   * which is what `GRAMMAR.md` §2 already says happens past twenty-six.
+   *
+   * @param {object} claimant The node that needs a letter.
+   * @param {Set<number>} inPrimary Node ids of the active trail.
+   * @param {Set<string>} protectedKeys Keys marked earlier in this pass.
    */
-  #evictForPrimary(protectedIds) {
-    let victim = null;
+  #evictForPrimary(claimant, inPrimary, protectedKeys) {
+    let retained = null;
+    let older = null;
     for (const key of this.#markedNodes) {
       const id = nodeIdFromKey(key);
-      if (id === null || protectedIds.has(id) || !this.#marks.markOf(key)) {
+      if (id === null || protectedKeys.has(key) || !this.#marks.markOf(key)) {
         continue;
       }
       const node = this.store.getNode(id);
       if (!node) {
+        // A marked key with no node behind it is a letter held by nothing.
         this.#marks.release(key);
+        this.#markedNodes.delete(key);
         return;
       }
-      if (!victim || node.last_visited_at < victim.at) {
-        victim = { key, at: node.last_visited_at };
+      const at = node.last_visited_at ?? 0;
+      if (!inPrimary.has(id)) {
+        if (!retained || at < retained.at) {
+          retained = { key, at };
+        }
+      } else if (id !== claimant.id && at < (claimant.last_visited_at ?? 0)) {
+        if (!older || at < older.at) {
+          older = { key, at };
+        }
       }
     }
+    const victim = retained ?? older;
     if (victim) {
       this.#marks.release(victim.key);
       this.#markedNodes.delete(victim.key);

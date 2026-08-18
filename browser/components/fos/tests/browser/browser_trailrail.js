@@ -377,3 +377,48 @@ add_task(async function test_a_placeholder_label_never_replaces_a_title() {
 
   BrowserTestUtils.removeTab(tab);
 });
+
+add_task(
+  async function test_a_long_trail_still_addresses_the_page_you_are_on() {
+    // There are twenty-six letters and a real trail passes twenty-six pages in an
+    // afternoon. Marks are assigned as nodes are created, so first come, first
+    // served would spend the whole alphabet on the pages opened first and leave
+    // the page in front of you the one that cannot be reached by `enter <mark>`.
+    // This is the check that scarcity falls on the pages furthest behind.
+    const tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, PAGE_A);
+    const trail = session();
+    const marks = FOSCommandBar.forWindow(window).marks;
+    const trailId = trail.activeTrailId;
+
+    for (let i = 0; i < 30; i++) {
+      await goTo(`https://example.com/?page=${i}`);
+    }
+
+    const nodes = trail.store.nodes(trailId);
+    Assert.greater(nodes.length, 26, "the trail is longer than the alphabet");
+
+    const current = trail.store.getNode(trail.currentNodeId);
+    Assert.ok(
+      marks.markOf(nodeKey(current.id)),
+      "the page you are on has a letter"
+    );
+
+    // And the letters went to the recent end of the trail rather than the old
+    // one: the pages you have just come through are the ones worth addressing.
+    const byRecency = nodes
+      .slice()
+      .sort((a, b) => b.last_visited_at - a.last_visited_at);
+    const marked = byRecency.filter(node => marks.markOf(nodeKey(node.id)));
+    const recentMarked = byRecency
+      .slice(0, 10)
+      .filter(node => marks.markOf(nodeKey(node.id)));
+    Assert.equal(
+      recentMarked.length,
+      10,
+      `the ten most recent pages all hold letters (${marked.length} marked)`
+    );
+
+    BrowserTestUtils.removeTab(tab);
+    marks.clear();
+  }
+);

@@ -46,6 +46,26 @@ function bar() {
 }
 
 /**
+ * The most recently visited node for a URL, on one trail.
+ *
+ * Deliberately not `store.nodes().find(...)`: every file in this directory
+ * shares one window, so nodes accumulate and a search across every trail
+ * returns the *oldest* match — a node from a trail this test never touched,
+ * which then has no card and no mark for reasons that have nothing to do with
+ * what is being tested. The page these tests mean is the one they just opened.
+ *
+ * @param {string} url The page.
+ * @param {?number} [trailId] The trail to look on, or the active one.
+ * @returns {?object} A node, or undefined.
+ */
+function nodeOn(url, trailId = session().activeTrailId) {
+  return session()
+    .store.nodes(trailId)
+    .filter(node => node.url === url)
+    .sort((a, b) => b.last_visited_at - a.last_visited_at)[0];
+}
+
+/**
  * Navigate the selected tab and wait for the load to commit.
  *
  * @param {string} url Where to go.
@@ -193,9 +213,7 @@ add_task(async function test_enter_by_mark_from_the_command_bar() {
   await goTo(PAGE_B);
 
   const model = field().model;
-  const nodeA = session()
-    .store.nodes()
-    .find(node => node.url === PAGE_A);
+  const nodeA = nodeOn(PAGE_A);
   Assert.ok(model.cardForNode(nodeA.id), "the page is on the Field");
   // One page, one mark, and it belongs to the page rather than to the card —
   // so the same letter reaches it from the rail and from the Field.
@@ -241,9 +259,7 @@ add_task(async function test_enter_restores_into_the_tab_that_owns_the_trail() {
     "a new tab opened its own trail"
   );
 
-  const nodeA = session()
-    .store.nodes()
-    .find(node => node.url === PAGE_A && node.trail_id === firstTrail);
+  const nodeA = nodeOn(PAGE_A, firstTrail);
   const card = field().model.cardForNode(nodeA.id);
 
   await field().enterCard(card.id);
@@ -268,9 +284,7 @@ add_task(async function test_dismiss_is_free_and_restore_is_lossless() {
   await goTo(PAGE_B);
 
   const model = field().model;
-  const nodeB = session()
-    .store.nodes()
-    .find(node => node.url === PAGE_B);
+  const nodeB = nodeOn(PAGE_B);
   const card = model.cardForNode(nodeB.id);
   const mark = bar().marks.markOf(`node:${nodeB.id}`);
 
