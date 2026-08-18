@@ -32,6 +32,7 @@ import {
   completionsFor,
   viewFor,
 } from "./FOSCommandBarView.sys.mjs";
+import { R_PAGE } from "./FOSSuggest.sys.mjs";
 
 import { ensureStylesheet } from "./FOSChrome.sys.mjs";
 
@@ -86,6 +87,23 @@ export class FOSCommandBar {
   #view = null;
   #selected = -1;
 
+  /**
+   * Where ranked page suggestions come from, and what accepting one means.
+   *
+   * Set by pillar C through `setSuggestions`. The bar deliberately holds a
+   * pair of callbacks rather than importing the engine: it must keep working
+   * — teaching the verbs, running commands, searching — in a window whose
+   * context store failed to open, and a bar that imported the engine to ask it
+   * for rows would be a bar that could not.
+   */
+  #suggest = null;
+  #activate = null;
+  /** Rows from the last completed read, and the input they answer. */
+  #suggestions = [];
+  #suggestedFor = null;
+  /** Bumped on every input change, so a late read knows it is late. */
+  #suggestToken = 0;
+
   constructor(window) {
     this.#window = window;
     this.actions = new FOSActionDispatcher(window);
@@ -98,6 +116,18 @@ export class FOSCommandBar {
   /** The input element, or null before first open. Tests read this. */
   get input() {
     return this.#input;
+  }
+
+  /**
+   * Attach a source of ranked page suggestions.
+   *
+   * @param {object} source
+   * @param {Function} source.suggest `(query) => Promise<object[]>`.
+   * @param {Function} source.activate `(row) => void`, when one is accepted.
+   */
+  setSuggestions({ suggest, activate }) {
+    this.#suggest = suggest;
+    this.#activate = activate;
   }
 
   toggle() {
@@ -120,6 +150,9 @@ export class FOSCommandBar {
     this.#root.hidden = true;
     this.#input.value = "";
     this.#selected = -1;
+    this.#suggestions = [];
+    this.#suggestedFor = null;
+    this.#suggestToken++;
     // Focus has to go somewhere the user can keep browsing from. The content
     // area is the only honest answer while there is no tab strip to return to.
     this.#window.gBrowser?.selectedBrowser?.focus();
@@ -274,16 +307,86 @@ export class FOSCommandBar {
     }
 
     this.#view = viewFor(result, { marks: this.marks, resolved, input: text });
+    // Typing clears the selection, which is also upstream's rule: a list that
+    // renumbers under a held selection is how a user ends up opening a page
+    // they never looked at.
     this.#selected = -1;
+    this.#askForSuggestions(result, text);
     this.#render();
+  }
+
+  /**
+   * Start a suggestion read, and decide what to show until it lands.
+   *
+   * Rows from the previous keystroke stay up while the new read is in flight.
+   * That is Firefox's own behaviour — its view holds stale rows rather than
+   * emptying between queries — and the reason is the same: a list that blinks
+   * out on every keystroke is unreadable, and these rows are usually still
+   * right, since the new query is the old one plus a letter.
+   *
+   * @param {object} result The parse of the current input.
+   * @param {string} text The raw input.
+   */
+  #askForSuggestions(result, text) {
+    const token = ++this.#suggestToken;
+    const query = result.type === QUERY ? text.trim() : "";
+
+    // Anything that is not a query has no pages to offer, and its own rows are
+    // the answer — a pending command is asking for a mark, not for a page. Drop
+    // the stale ones at once rather than leaving pages under a prompt that has
+    // stopped being about them.
+    if (!query || !this.#suggest) {
+      this.#suggestions = [];
+      this.#suggestedFor = null;
+      return;
+    }
+    if (query === this.#suggestedFor) {
+      return;
+    }
+
+    Promise.resolve(this.#suggest(query))
+      .then(rows => {
+        if (token !== this.#suggestToken || !this.isOpen) {
+          return;
+        }
+        this.#suggestions = rows ?? [];
+        this.#suggestedFor = query;
+        this.#render();
+      })
+      .catch(error => {
+        // A store that cannot answer costs the user their suggestions, never
+        // their command bar.
+        console.error(error);
+      });
+  }
+
+  /**
+   * Everything the list is showing: the view's own rows, then ranked pages.
+   *
+   * Action-word completions come first because they are few and because they
+   * are the only teaching this bar does; pages follow because there can be
+   * eight of them and because a user reaching for a page will read down.
+   * `FOSSuggest` decides the order among the pages themselves.
+   */
+  get #rows() {
+    return [...(this.#view?.rows ?? []), ...this.#suggestions];
   }
 
   #render() {
     const doc = this.#window.document;
-    const { status, rows } = this.#view;
+    const { status } = this.#view;
+    const rows = this.#rows;
 
     this.#status.textContent = status.text;
     this.#status.setAttribute("data-kind", status.kind);
+
+    // What the user had highlighted, by identity rather than by position. A
+    // read that lands while they are arrowing down must not move the row under
+    // the selection: the list is allowed to change beneath them, but the thing
+    // Enter would open is not. If the row is gone, the selection returns to
+    // the line they typed rather than landing on whatever took its place.
+    const anchor =
+      this.#list.querySelector('[aria-selected="true"]')?.id ?? null;
 
     this.#list.textContent = "";
     let lastGroup = null;
@@ -313,8 +416,19 @@ export class FOSCommandBar {
       detail.className = "fos-commandbar-detail";
       detail.textContent = row.detail ?? "";
 
+      if (row.kind === R_PAGE && row.mark) {
+        // The letter this page already answers to, shown where the user is
+        // about to go to it. The spoken word is not repeated here — the
+        // candidate list a verb opens is where the vocabulary is taught, and
+        // eight rows each carrying a word would drown the titles.
+        const badge = doc.createElementNS(HTML_NS, "span");
+        badge.className = "fos-commandbar-mark";
+        badge.textContent = row.mark;
+        item.append(badge);
+      }
+
       item.append(label);
-      if (row.spoken) {
+      if (row.kind !== R_PAGE && row.spoken) {
         const spoken = doc.createElementNS(HTML_NS, "span");
         spoken.className = "fos-commandbar-spoken";
         // The spoken form is shown beside every mark, always. A word the user
@@ -332,6 +446,11 @@ export class FOSCommandBar {
 
       this.#list.appendChild(item);
     });
+
+    if (anchor) {
+      const index = rows.findIndex(row => `fos-row-${row.id}` === anchor);
+      this.#selected = index;
+    }
 
     this.#applySelection();
   }
@@ -357,7 +476,7 @@ export class FOSCommandBar {
   }
 
   #move(delta) {
-    const count = this.#view?.rows.length ?? 0;
+    const count = this.#rows.length;
     if (!count) {
       return;
     }
@@ -374,16 +493,27 @@ export class FOSCommandBar {
   /**
    * Take a row into the input.
    *
-   * Accepting never executes. An action row becomes the verb and waits for its
-   * target; a mark row fills the pending slot. Both leave the caret where the
-   * next token goes, so the keyboard user is walked through the same slots the
-   * voice grammar would constrain — one path, two front ends.
+   * Accepting an *incomplete* row never executes. An action row becomes the
+   * verb and waits for its target; a mark row fills the pending slot. Both
+   * leave the caret where the next token goes, so the keyboard user is walked
+   * through the same slots the voice grammar would constrain — one path, two
+   * front ends.
+   *
+   * A page row is not incomplete. It is an address the user has picked off a
+   * list, so accepting it goes there, exactly as accepting a fully parsed
+   * command runs it. The rule is about completeness, not about executing being
+   * forbidden.
    *
    * @param {number} index Which row of the current view to take.
    */
   #accept(index) {
-    const row = this.#view?.rows[index];
+    const row = this.#rows[index];
     if (!row) {
+      return;
+    }
+    if (row.kind === R_PAGE) {
+      this.#activate?.(row);
+      this.close();
       return;
     }
     if (row.kind === R_ACTION) {
@@ -424,10 +554,13 @@ export class FOSCommandBar {
         const completions = completionsFor(this.#input.value);
         if (completions.length) {
           event.preventDefault();
+          // A highlighted row completes to itself, but only if it is an action
+          // word: Tab is the completion gesture and a page is not a completion
+          // of anything, so a selected page leaves Tab meaning what it always
+          // meant.
+          const selected = this.#rows[this.#selected];
           this.#input.value = `${
-            this.#selected >= 0
-              ? this.#view.rows[this.#selected].key
-              : completions[0]
+            selected?.kind === R_ACTION ? selected.key : completions[0]
           } `;
           this.#update();
         }

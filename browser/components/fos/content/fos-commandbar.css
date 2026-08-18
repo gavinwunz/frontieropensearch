@@ -123,6 +123,38 @@
   min-width: 4.5rem;
 }
 
+/* A page offered as a suggestion. Its label is a page title rather than a verb
+   or a letter, so it takes the room the fixed label column was protecting and
+   truncates instead — and the provenance line beside it is what the tier
+   heading above is claiming, so it must not be the part that disappears. */
+.fos-commandbar-row[data-kind="page"] .fos-commandbar-label {
+  min-width: 0;
+  flex: 1 1 auto;
+  font-weight: var(--font-weight);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fos-commandbar-row[data-kind="page"] .fos-commandbar-detail {
+  flex: none;
+}
+
+/* The letter a suggested page already answers to, in the treatment the rail
+   and the sidebar give a mark. */
+.fos-commandbar-mark {
+  /* One character, fixed width, so titles line up whether or not the page
+     holds a letter. */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  width: 1em;
+  flex: none;
+  text-align: center;
+  font-family: monospace;
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-accent-primary);
+}
+
 .fos-commandbar-spoken {
   color: var(--text-color-deemphasized);
   font-variant: small-caps;

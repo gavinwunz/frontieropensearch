@@ -250,6 +250,87 @@ export class FOSContextStore {
   }
 
   /**
+   * Every page on one trail, most recently visited first.
+   *
+   * The command bar's third tier. It reads the trail from the database rather
+   * than from the window's tree, which looks redundant — the active trail is
+   * in memory by definition — and is not: close to 60% of complex
+   * information-gathering tasks continue across sessions, so the trail the
+   * user is on is very often a trail that was *restored*, and one read path
+   * for every tier is what stops a restored trail and a live one being ranked
+   * by different rules.
+   *
+   * @param {number} trailId A database trail id.
+   * @param {object} [options]
+   * @param {number} [options.limit]
+   * @returns {Promise<object[]>} `{id, url, title, last_visited_at}`.
+   */
+  async trailPages(trailId, { limit = 200 } = {}) {
+    const rows = await this.#connection.execute(
+      `SELECT id, url, title, created_at, last_visited_at
+       FROM trail_node
+       WHERE trail_id = :trailId
+       ORDER BY COALESCE(last_visited_at, created_at) DESC
+       LIMIT :limit`,
+      { trailId, limit }
+    );
+    return rows.map(row =>
+      plain(row, ["id", "url", "title", "created_at", "last_visited_at"])
+    );
+  }
+
+  /**
+   * Pages another trail reached, on a trail that also reached this context.
+   *
+   * The command bar's fourth tier, and the one tier no other browser could
+   * offer. A context holds a set of pages; some of those pages were also
+   * visited on trails belonging to other lines of enquiry; and the *rest* of
+   * what those trails found is material this context has never seen but which
+   * demonstrably neighbours it. That is Bush's associative trail used as a
+   * retrieval signal rather than as a picture — the connection was made by
+   * someone browsing, which here is always the same person, and never by a
+   * similarity threshold.
+   *
+   * Pages already in the context are excluded, since tier 2 has them, and so
+   * is the trail the user is on, since tier 3 has that.
+   *
+   * @param {number} contextId
+   * @param {object} [options]
+   * @param {?number} [options.excludeTrailId] Usually the active trail.
+   * @param {number} [options.limit]
+   * @returns {Promise<object[]>} `{id, url, title, trail_id, trail_name}`.
+   */
+  async contextCrossings(
+    contextId,
+    { excludeTrailId = null, limit = 200 } = {}
+  ) {
+    const rows = await this.#connection.execute(
+      `WITH shared AS (
+         SELECT DISTINCT other.trail_id AS trail_id
+         FROM context_member m
+         JOIN trail_node mine ON mine.id = m.trail_node_id
+         JOIN trail_node other ON other.url = mine.url
+         WHERE m.context_id = :contextId
+           AND (:excludeTrailId IS NULL OR other.trail_id <> :excludeTrailId)
+       )
+       SELECT n.id, n.url, n.title, n.trail_id, t.name AS trail_name,
+              COALESCE(n.last_visited_at, n.created_at) AS seen_at
+       FROM trail_node n
+       JOIN shared s ON s.trail_id = n.trail_id
+       JOIN trail t ON t.id = n.trail_id
+       WHERE n.id NOT IN (
+               SELECT trail_node_id FROM context_member
+               WHERE context_id = :contextId AND trail_node_id IS NOT NULL)
+       ORDER BY seen_at DESC
+       LIMIT :limit`,
+      { contextId, excludeTrailId, limit }
+    );
+    return rows.map(row =>
+      plain(row, ["id", "url", "title", "trail_id", "trail_name", "seen_at"])
+    );
+  }
+
+  /**
    * Every node in the database for a URL, whatever trail it is on.
    *
    * This is the memex's compounding effect made queryable. `trail_node` is a

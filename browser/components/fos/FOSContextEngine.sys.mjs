@@ -41,6 +41,18 @@ import {
 import { buildContextPack } from "./FOSContextPack.sys.mjs";
 import { summariseContents } from "./FOSContextSidebarView.sys.mjs";
 import { FOSContextStore } from "./FOSContextStore.sys.mjs";
+import { suggestionsFor } from "./FOSSuggest.sys.mjs";
+import { resolveMarkToken } from "./FOSMarks.sys.mjs";
+import { nodeKey, nodeIdFromKey } from "./FOSTrailSession.sys.mjs";
+
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  // The floor tier only. Loaded on the first keystroke into the command bar
+  // rather than with the engine, which is imported on the navigation path and
+  // has no business pulling Places in behind it.
+  frecencyMatches: "resource:///modules/FOSPlacesFloor.sys.mjs",
+});
 
 /** One database per profile, shared by every window. */
 let storePromise = null;
@@ -676,6 +688,158 @@ export class FOSContextEngine {
     return null;
   }
 
+  // ---- what the command bar offers ----------------------------------------
+
+  /**
+   * Rank what is on offer for a query.
+   *
+   * The ordering itself is in `FOSSuggest`, which is pure. This is the half
+   * that cannot be: it reads the five sources, and four of the five come from
+   * the **store** rather than from this window's tree. That is the whole
+   * design decision restated as code — a bar that could only offer what this
+   * session has already loaded would work exactly when the user did not need
+   * it, and around 60% of complex information-gathering tasks continue across
+   * sessions.
+   *
+   * @param {string} query What the user has typed.
+   * @param {object} [options]
+   * @param {number} [options.limit]
+   * @returns {Promise<object[]>} Rows for the bar, or empty.
+   */
+  async suggest(query, { limit } = {}) {
+    const text = String(query ?? "").trim();
+    if (!text || !this.#store) {
+      return [];
+    }
+
+    const contextId = this.activeContextId;
+    const trailId = this.activeTrailRowId;
+
+    // The floor is read in parallel with the tiers above it and from a
+    // different database, so a slow Places must not hold up the four tiers
+    // this component owns; `Promise.all` waits for both, and the floor's own
+    // failure path returns empty rather than throwing.
+    const [contents, trail, crossings, history] = await Promise.all([
+      contextId === null ? null : this.contents(),
+      trailId === null ? [] : this.#store.trailPages(trailId),
+      contextId === null
+        ? []
+        : this.#store.contextCrossings(contextId, { excludeTrailId: trailId }),
+      lazy.frecencyMatches(text, { limit: 20 }).catch(error => {
+        console.error(error);
+        return [];
+      }),
+    ]);
+
+    return suggestionsFor(
+      text,
+      {
+        marked: this.#markedFor(text),
+        context: contents?.pages ?? [],
+        trail: this.#withMarks(trail),
+        crossings: this.#withMarks(crossings),
+        history,
+      },
+      { limit }
+    );
+  }
+
+  /**
+   * The page a whole line addresses, when the line is nothing but a mark.
+   *
+   * Both forms resolve: `g` as typed and `gust` as spoken, through the one
+   * `resolveMarkToken` every other surface uses. So the letter a user learned
+   * from the rail works in the bar without a verb in front of it, and the word
+   * a hands-free path would say works in the typed bar too — which is what
+   * `GRAMMAR.md` §5 means by one path rather than a mode.
+   *
+   * The row is *offered*, never triggered: Enter on an untouched line still
+   * searches, because `g` is also a perfectly good thing to search for.
+   *
+   * @param {string} text The whole trimmed input.
+   * @returns {object[]} One page, or none.
+   */
+  #markedFor(text) {
+    if (/\s/.test(text)) {
+      return [];
+    }
+    const letter = resolveMarkToken(text);
+    if (!letter) {
+      return [];
+    }
+    const memId = nodeIdFromKey(this.#marks?.objectAt(letter));
+    const node = memId === null ? null : this.#session?.store.getNode(memId);
+    if (!node?.url) {
+      return [];
+    }
+    return [
+      {
+        id: this.nodeRowId(memId),
+        url: node.url,
+        title: node.title,
+        mark: letter,
+      },
+    ];
+  }
+
+  /**
+   * Attach each row's mark, where the page it names is live in this window.
+   *
+   * A page that already carries a letter should show it here: the bar is the
+   * only surface that teaches the vocabulary, and a mark learned while going
+   * to a page is a mark learned at the moment it is useful.
+   *
+   * @param {object[]} rows Store rows carrying a node id.
+   * @returns {object[]} The same rows, with `mark` set where there is one.
+   */
+  #withMarks(rows) {
+    return rows.map(row => {
+      const memId = this.nodeIdForRow(row.id);
+      return {
+        ...row,
+        mark:
+          memId === null ? null : (this.#marks?.markOf(nodeKey(memId)) ?? null),
+      };
+    });
+  }
+
+  /**
+   * Go to a page the bar offered.
+   *
+   * Two cases, and the difference matters. A page still on a live trail is
+   * **re-entered**, which is pillar B's restore and brings back scroll
+   * position and form state; a page that is only a row in the database — an
+   * older trail this session did not restore, or a Places row that was never
+   * on a trail at all — is loaded fresh. The bar does not know which it is
+   * holding, and must not: deciding what a page *is* belongs to the pillar
+   * that records them.
+   *
+   * @param {object} row A row from `suggest`.
+   * @returns {boolean} Whether a live node was re-entered.
+   */
+  activate(row) {
+    // A mark is an address, so a row carrying one resolves through it rather
+    // than through the database. This also covers the page the engine has not
+    // written yet: recording is fire-and-forget, so the node under the cursor
+    // may legitimately have no row id for another moment.
+    const marked = row?.mark
+      ? nodeIdFromKey(this.#marks?.objectAt(row.mark))
+      : null;
+    const memId = marked ?? this.nodeIdForRow(row?.nodeId ?? null);
+    if (memId !== null && this.#session) {
+      this.#session.enter(memId);
+      return true;
+    }
+    if (row?.url) {
+      // Loaded as the URL it is, not put back through query resolution: the
+      // user picked a page off a list rather than typing a line, and recording
+      // this as a query would write a URL into the query log as though it had
+      // been one.
+      this.#bar?.actions.openURL(row.url);
+    }
+    return false;
+  }
+
   /**
    * Every context the user could switch to, with its mark.
    *
@@ -705,6 +869,15 @@ export class FOSContextEngine {
     // and every answer is computed and then dropped on the floor.
     this.#bar = bar;
     this.#unsubscribe.push(bar.actions.onQuery(text => this.recordQuery(text)));
+
+    // The third of pillar C's three surfaces. It binds no verb — `context
+    // <mark>` already promises to "re-rank suggestions" and this is what makes
+    // that promise true — so the alphabet and the action table are both
+    // untouched by it.
+    bar.setSuggestions({
+      suggest: query => this.suggest(query),
+      activate: row => this.activate(row),
+    });
 
     // `context <mark>` is the one place the user overrides provenance. Once
     // set it stays set, because a context you switched into deliberately must

@@ -24,6 +24,8 @@ EXTRA_JS_MODULES += [
     "FOSFieldView.sys.mjs",
     "FOSGrammar.sys.mjs",
     "FOSMarks.sys.mjs",
+    "FOSPlacesFloor.sys.mjs",
+    "FOSSuggest.sys.mjs",
     "FOSTrailRail.sys.mjs",
     "FOSTrailRailView.sys.mjs",
     "FOSTrailSession.sys.mjs",

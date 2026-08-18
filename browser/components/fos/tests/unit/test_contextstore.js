@@ -453,3 +453,174 @@ add_task(async function test_a_restored_trail_finds_its_context_again() {
   Assert.equal((await store.contextsForTrails([])).size, 0);
   await store.close();
 });
+
+add_task(async function test_trail_pages_are_most_recently_visited_first() {
+  // Tier 3 of the command bar's ranking. Read from the database rather than
+  // from the window's tree, because a restored trail and a live one have to be
+  // ranked by one rule.
+  const store = await freshStore();
+  const trailId = await store.addTrail({ name: "memex" });
+  const other = await store.addTrail({ name: "elsewhere" });
+
+  const first = await store.addNode({
+    trailId,
+    url: "https://example.org/one",
+    title: "One",
+    now: 1000,
+  });
+  const second = await store.addNode({
+    trailId,
+    url: "https://example.org/two",
+    title: "Two",
+    now: 2000,
+  });
+  await store.addNode({
+    trailId: other,
+    url: "https://example.org/three",
+    title: "Three",
+    now: 3000,
+  });
+  // Visiting the older page again makes it the most recent thing on the trail.
+  await store.updateNode(first, { lastVisitedAt: 4000 });
+
+  const pages = await store.trailPages(trailId);
+  Assert.deepEqual(
+    pages.map(p => p.url),
+    ["https://example.org/one", "https://example.org/two"],
+    "only this trail's pages, most recently visited first"
+  );
+  Assert.equal(pages[0].id, first, "carrying the row id re-entry needs");
+  Assert.equal(pages[1].id, second, "and so does the older one");
+
+  Assert.equal(
+    (await store.trailPages(trailId, { limit: 1 })).length,
+    1,
+    "the limit is honoured"
+  );
+  await store.close();
+});
+
+add_task(async function test_a_crossing_offers_what_the_other_trail_found() {
+  // Tier 4, and the one tier no other browser could offer: another line of
+  // enquiry reached a page this context reached, so the *rest* of what that
+  // line found is material this context has never seen but demonstrably
+  // neighbours. The connection was made by browsing, not by a threshold.
+  const store = await freshStore();
+  const mine = await store.addTrail({ name: "memex" });
+  const theirs = await store.addTrail({ name: "hypertext" });
+
+  const contextId = await store.addContext({ label: "memex" });
+  const shared = await store.addNode({
+    trailId: mine,
+    url: "https://example.org/bush",
+    title: "As We May Think",
+  });
+  await store.addMember(contextId, { nodeId: shared, source: "provenance" });
+
+  // The other trail reached the same page...
+  await store.addNode({
+    trailId: theirs,
+    url: "https://example.org/bush",
+    title: "As We May Think",
+    now: 1000,
+  });
+  // ...and went on to something this context has never seen.
+  await store.addNode({
+    trailId: theirs,
+    url: "https://example.org/xanadu",
+    title: "Project Xanadu",
+    now: 2000,
+  });
+
+  // A third trail that touched nothing in common must not appear.
+  const unrelated = await store.addTrail({ name: "unrelated" });
+  await store.addNode({
+    trailId: unrelated,
+    url: "https://example.org/weather",
+    title: "Weather",
+  });
+
+  const rows = await store.contextCrossings(contextId, {
+    excludeTrailId: mine,
+  });
+  Assert.deepEqual(
+    rows.map(r => r.url),
+    ["https://example.org/xanadu", "https://example.org/bush"],
+    "what the crossing trail found, most recent first, and nothing unrelated"
+  );
+  Assert.equal(
+    rows[0].trail_name,
+    "hypertext",
+    "named, so the row can say why"
+  );
+
+  // A page on the user's own trail that the context has not claimed. With the
+  // active trail excluded it belongs to tier 3 and must not appear here;
+  // without an exclusion this read has no opinion about whose trail is whose.
+  await store.addNode({
+    trailId: mine,
+    url: "https://example.org/aside",
+    now: 5000,
+  });
+  const excluded = await store.contextCrossings(contextId, {
+    excludeTrailId: mine,
+  });
+  Assert.ok(
+    !excluded.some(r => r.trail_id === mine),
+    "the excluded trail contributes nothing, whatever it holds"
+  );
+  const withMine = await store.contextCrossings(contextId);
+  Assert.ok(
+    withMine.some(r => r.url === "https://example.org/aside"),
+    "and without the exclusion it is a crossing like any other"
+  );
+  await store.close();
+});
+
+add_task(async function test_a_crossing_never_repeats_the_context() {
+  // Tier 2 already holds the context's own pages, so tier 4 must not offer
+  // them again — the tiers are only explainable if a page appears once.
+  const store = await freshStore();
+  const mine = await store.addTrail({ name: "memex" });
+  const theirs = await store.addTrail({ name: "hypertext" });
+  const contextId = await store.addContext({ label: "memex" });
+
+  const shared = await store.addNode({
+    trailId: mine,
+    url: "https://example.org/bush",
+  });
+  const alsoMine = await store.addNode({
+    trailId: theirs,
+    url: "https://example.org/nelson",
+  });
+  await store.addMember(contextId, { nodeId: shared, source: "provenance" });
+  await store.addMember(contextId, { nodeId: alsoMine, source: "provenance" });
+  await store.addNode({ trailId: theirs, url: "https://example.org/bush" });
+
+  const rows = await store.contextCrossings(contextId, {
+    excludeTrailId: mine,
+  });
+  Assert.ok(
+    !rows.some(r => r.id === alsoMine),
+    "a page the context already claims is not offered as a crossing"
+  );
+  await store.close();
+});
+
+add_task(async function test_a_context_with_no_crossings_offers_none() {
+  const store = await freshStore();
+  const trailId = await store.addTrail({ name: "alone" });
+  const contextId = await store.addContext({ label: "alone" });
+  const node = await store.addNode({
+    trailId,
+    url: "https://example.org/only",
+  });
+  await store.addMember(contextId, { nodeId: node, source: "provenance" });
+
+  Assert.deepEqual(
+    await store.contextCrossings(contextId, { excludeTrailId: trailId }),
+    [],
+    "no other trail has been anywhere this one has"
+  );
+  await store.close();
+});

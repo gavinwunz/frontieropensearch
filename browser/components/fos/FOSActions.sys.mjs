@@ -227,13 +227,7 @@ export class FOSActionDispatcher {
       return null;
     }
 
-    // The system principal is what the address bar uses for a URL the user
-    // typed, and for the same reason: the load has no web-content initiator, so
-    // there is no other principal that honestly describes who asked for it.
-    this.#window.gBrowser.selectedBrowser.loadURI(resolved.uri, {
-      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
-      postData: resolved.postData,
-    });
+    this.#load(resolved.uri, resolved.postData);
 
     for (const listener of this.#queryListeners) {
       try {
@@ -245,5 +239,49 @@ export class FOSActionDispatcher {
     }
 
     return resolved;
+  }
+
+  /**
+   * Open a page that is already known to be a page.
+   *
+   * Separate from `openQuery` because the two are different statements about
+   * what the user did. A query is prose that had to be *resolved* into a URL
+   * or a search, and every one of them is recorded as a query. This is a page
+   * picked off a list — a suggestion, a row, a card — where the URL was never
+   * in question and nobody typed it. Putting one through the other would write
+   * URLs into the query log as though they had been searched for.
+   *
+   * @param {string|nsIURI} url The page to open.
+   * @returns {boolean} Whether the load was asked for.
+   */
+  openURL(url) {
+    let uri = url;
+    if (typeof uri === "string") {
+      try {
+        uri = Services.io.newURI(uri);
+      } catch (e) {
+        console.error(e);
+        return false;
+      }
+    }
+    this.#load(uri, null);
+    return true;
+  }
+
+  /**
+   * The one place a load is actually asked for.
+   *
+   * The system principal is what the address bar uses for a URL the user
+   * typed, and for the same reason: the load has no web-content initiator, so
+   * there is no other principal that honestly describes who asked for it.
+   *
+   * @param {nsIURI} uri
+   * @param {?nsIInputStream} postData
+   */
+  #load(uri, postData) {
+    this.#window.gBrowser.selectedBrowser.loadURI(uri, {
+      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+      postData,
+    });
   }
 }
