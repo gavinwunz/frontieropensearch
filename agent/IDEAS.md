@@ -1522,3 +1522,70 @@ proxy for the selection but the same fact, already written there for assistive
 technology, and free to match. Worth remembering as a general move: **the ARIA
 attribute a surface already maintains is usually the state a `:has()` was
 about to go looking for.**
+
+---
+
+## Run 20 — the search-mode switcher, and what a dead selector hides
+
+The standing list's top item, and the only known contradiction of a claim the
+README makes: "one entry surface". `STATE.md` recorded the sighting — a Google
+logo and a chevron at the left of the address bar — and explicitly deferred the
+verdict: *check what pressing it actually does before deciding.* That was the
+right instruction, because four probes in a driven browser produced four facts,
+and three of them contradicted the note that raised the issue.
+
+**It is upstream's unified search button**, `moz-button.searchmode-switcher`.
+It hides itself with an `offscreen` attribute — `position: fixed; top: -999px`
+— and `setUnifiedSearchButtonAvailability` puts it on-screen whenever
+`pageproxystate` is `invalid`. That is every blank tab, so it is not a corner:
+it is the state a fresh window opens on. `BrowserTestUtils.isHidden` says false
+either way, which is how it stayed unnoticed; the tell is a bounding rect at
+`y = -994`.
+
+**The passthrough entry naming it matched nothing.** The list said
+`#urlbar-searchmode-switcher`; the element has no id at all. So the mouse press
+had been reaching the command bar all along, and the single-entry-surface claim
+was already true of the mouse — *by accident, through a bug*. The natural fix,
+correcting the selector to `.searchmode-switcher`, would have read like tidying
+and would have built the second entry surface the module exists to prevent.
+`.urlbar-go-button` was dead the same way. The cause is one upstream change:
+the address bar became a custom element shared with the search bar, so what
+were ids on a singleton became classes on a reusable one.
+
+**The keyboard went straight past the mouse handler.** The button sets its own
+`tabIndex` to 0 on `focusin` and opens its panel on ArrowDown, and the panel
+listed twelve destinations — Google, Amazon, Bing, DuckDuckGo, eBay, Perplexity,
+Wikipedia, Bookmarks, Tabs, History, Actions, Settings. A `mousedown` handler
+is not a policy about entry; it is a policy about mice.
+
+**And the control was dead anyway.** Picking Google set the search mode, painted
+"Google" as a chiclet and focused the input — which is read-only, so the next
+keystroke left the value empty. The hypothesis in `STATE.md` was that it is
+"likely a control that does nothing a user can act on". Confirmed, by doing it.
+
+**Adopt: hide it, with `display: none`, scoped to the attribute.** The three
+alternatives all fail. Passing the press through restores a second entry
+surface. Copying the `offscreen` technique moves a third party's logo out of
+sight and leaves the whole engine list one Tab away — hiding that is designed to
+stay focusable is the opposite of what is wanted. Deleting the element is the
+mistake this module was written to avoid making twice. Only leaving the box tree
+takes it out of the tab order and the accessibility tree at once, and scoping to
+`[fos-location-display]` means the pref that gives the address bar back gives
+the engine picker back in the same breath.
+
+What is genuinely lost is engine choice, and it is worth naming rather than
+glossing: the command bar searches with the default engine, because §5 of
+`GRAMMAR.md` deliberately refused keyword prefixes on Chrome's evidence. But it
+was lost before this change — an engine you cannot type to is not a choice, it
+is a chiclet. The honest statement is that this fork does not offer per-query
+engine selection yet, not that it just stopped.
+
+**The method worth keeping: a selector list is a claim about a document, and
+claims about documents are checked against documents.** Two of seven entries
+were dead and both failed in the direction that looks like success — the control
+silently loses its press, which is indistinguishable from working until someone
+presses that control. Nothing in reading the list could have found it; one
+`querySelector` loop in a real window finds all of it, and now does, every run.
+This is the same lesson as the UA-stylesheet ring in run 19 and
+`--font-size-small` before it, arriving a third time from a third direction:
+**the tree does not tell you what it does, and the running browser does.**

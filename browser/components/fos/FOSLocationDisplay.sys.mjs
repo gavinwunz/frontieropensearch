@@ -72,15 +72,32 @@ const PLACEHOLDER = "Press to search or run a command";
  * exists to preserve, and the page actions are the bookmark star and its
  * neighbours. Handing their clicks to the command bar would preserve the
  * display and then make it unusable.
+ *
+ * The search-mode switcher is deliberately **not** here, and the entry that
+ * used to claim it was is worth a warning. It read
+ * `"#urlbar-searchmode-switcher"`, and that id does not exist: the element is
+ * `moz-button.searchmode-switcher`, with no id at all. So the list said the
+ * switcher kept its own press and it never did — every press already reached
+ * the command bar, and the single-entry-surface claim was true of the mouse by
+ * accident. Correcting the selector rather than deleting the line would have
+ * been the natural-looking change and would have built the second entry
+ * surface this module exists to remove. The switcher is hidden outright now;
+ * `fos-locationdisplay.css` carries the reasoning.
+ *
+ * `.urlbar-go-button` was dead the same way and for the same reason: the
+ * address bar became a custom element shared with the search bar, so what were
+ * ids on a singleton are classes on a reusable one. A selector here that
+ * matches nothing fails silently and in the safe-looking direction — the
+ * control simply loses its press — so the list is checked against a real
+ * window by `browser_locationdisplay.js` rather than trusted by reading.
  */
-const PASSTHROUGH = [
+export const PASSTHROUGH = [
   "#identity-box",
   "#trust-icon-container",
   "#tracking-protection-icon-container",
   "#page-action-buttons",
-  "#urlbar-go-button",
+  ".urlbar-go-button",
   "#urlbar-revert-button-container",
-  "#urlbar-searchmode-switcher",
   "#remote-control-box",
 ];
 

@@ -20,7 +20,7 @@
 const { FOSCommandBar } = ChromeUtils.importESModule(
   "resource:///modules/FOSCommandBar.sys.mjs"
 );
-const { FOSLocationDisplay } = ChromeUtils.importESModule(
+const { FOSLocationDisplay, PASSTHROUGH } = ChromeUtils.importESModule(
   "resource:///modules/FOSLocationDisplay.sys.mjs"
 );
 const { FOSFieldSurface } = ChromeUtils.importESModule(
@@ -193,6 +193,122 @@ add_task(async function the_placeholder_describes_a_press() {
   );
 });
 
+/**
+ * Every selector that keeps its own press names an element that exists.
+ *
+ * This is the test the list needed and did not have. Two of its seven entries
+ * were dead — `#urlbar-searchmode-switcher` and `#urlbar-go-button` — because
+ * the address bar became a custom element shared with the search bar and what
+ * were ids on a singleton became classes on a reusable one. A selector that
+ * matches nothing fails silently, and in the direction that looks safe: the
+ * control quietly loses its press to the command bar, which is indistinguishable
+ * from working until someone tries that control. Reading the list cannot catch
+ * it; only asking a real window can.
+ */
+add_task(async function every_passthrough_selector_names_a_real_element() {
+  await BrowserTestUtils.withNewTab(PAGE, async () => {
+    for (const selector of PASSTHROUGH) {
+      Assert.ok(
+        gURLBar.querySelector(selector),
+        `${selector} names an element inside the address bar`
+      );
+    }
+  });
+});
+
+/**
+ * The search-mode switcher is gone, and with it the second entry surface.
+ *
+ * It is upstream's unified search button: it wears the default engine's own
+ * icon — Google's, in an ordinary profile — and opens a list of twelve places
+ * to search. It is on-screen whenever `pageproxystate` is `invalid`, which is
+ * every blank tab, so it is the state a fresh window opens on rather than a
+ * corner.
+ *
+ * Everything it offers is unreachable here, which was checked before it was
+ * removed rather than assumed: picking an engine set the search mode, painted
+ * the engine's name as a chiclet and focused the input, and the input is
+ * read-only, so the next keystroke went nowhere and the value stayed empty.
+ * A control depicting a third party's brand that can accomplish none of what it
+ * depicts is worse than no control.
+ */
+add_task(async function the_search_mode_switcher_is_gone() {
+  // about:blank, because that is the `pageproxystate="invalid"` state the
+  // button is shown in. Asserting its absence over a loaded page would pass
+  // against a button that upstream had merely parked off-screen.
+  await BrowserTestUtils.withNewTab("about:blank", async () => {
+    Assert.equal(
+      gURLBar.getAttribute("pageproxystate"),
+      "invalid",
+      "this is the state the unified search button shows itself in"
+    );
+    const switcher = gURLBar.querySelector(".searchmode-switcher");
+    Assert.ok(
+      switcher,
+      "the element is still there — it is upstream's, not ours"
+    );
+    Assert.equal(
+      window.getComputedStyle(switcher).display,
+      "none",
+      "and it is out of the box tree, not merely invisible or parked off-screen"
+    );
+    Assert.equal(
+      switcher.getBoundingClientRect().width,
+      0,
+      "so it takes no space at the leading edge of the bar"
+    );
+  });
+});
+
+/**
+ * And it is gone for the keyboard too, which is the half that hiding usually
+ * misses.
+ *
+ * The button hides itself with an `offscreen` attribute — `position: fixed;
+ * top: -999px` — precisely so that it stays focusable while invisible, and it
+ * puts itself back in the tab order on `focusin` and opens its panel on
+ * ArrowDown. Copying that technique would have moved a Google logo out of
+ * sight and left the whole engine list one Tab away. `display: none` is what
+ * takes it out of the tab order and the accessibility tree at the same time.
+ */
+add_task(async function the_switcher_cannot_be_reached_by_keyboard() {
+  await BrowserTestUtils.withNewTab("about:blank", async () => {
+    const switcher = gURLBar.querySelector(".searchmode-switcher");
+    const panelList = gURLBar.querySelector(".searchmode-switcher-panel-list");
+    const xulPanel = gURLBar.querySelector(".searchmode-switcher-panel");
+
+    switcher.focus();
+    Assert.notEqual(
+      document.activeElement,
+      switcher,
+      "it refuses focus, so nothing can Tab onto it"
+    );
+
+    // The three gestures that open the engine list upstream. Each is checked
+    // rather than reasoned about: the panel anchors on the button, and a panel
+    // anchored to a hidden element is not obviously a panel that stays shut.
+    const gestures = [
+      ["KEY_ArrowDown", {}, "ArrowDown"],
+      ["KEY_ArrowDown", { altKey: true }, "Alt+Down"],
+      ["KEY_ArrowDown", { accelKey: true }, "Accel+Down"],
+    ];
+    for (const [key, modifiers, name] of gestures) {
+      gURLBar.focus();
+      EventUtils.synthesizeKey(key, modifiers, window);
+      await TestUtils.waitForTick();
+      Assert.ok(!panelList?.open, `${name} opened no engine list`);
+      Assert.notEqual(xulPanel?.state, "open", `${name} opened no panel`);
+      Assert.equal(
+        gURLBar.searchMode,
+        null,
+        `${name} set no search mode on a bar that cannot be typed into`
+      );
+    }
+    gURLBar.blur();
+    bar().close();
+  });
+});
+
 add_task(async function unwiring_gives_the_address_bar_back() {
   display().unwire();
   Assert.ok(!display().isWired, "unwired");
@@ -201,6 +317,16 @@ add_task(async function unwiring_gives_the_address_bar_back() {
     gURLBar.inputField.getAttribute("data-l10n-id"),
     "urlbar-placeholder",
     "and Fluent owns the placeholder again"
+  );
+  // The switcher is hidden by a rule scoped to the attribute, so the pref that
+  // gives the address bar back has to give the engine picker back with it —
+  // a typable bar with no way to choose what it searches would be a worse
+  // browser than either of the two this pref chooses between.
+  Assert.notEqual(
+    window.getComputedStyle(gURLBar.querySelector(".searchmode-switcher"))
+      .display,
+    "none",
+    "and the search-mode switcher came back with the input it belongs to"
   );
 
   bar().close();

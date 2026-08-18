@@ -23,3 +23,30 @@
 #urlbar[fos-location-display="true"] .urlbar-input-container {
   cursor: pointer;
 }
+
+/* The search-mode switcher, removed along with the entry it belonged to.
+ *
+ * Upstream's unified search button sits at the leading edge of the address bar
+ * and answers one question: what should the text you are about to type be
+ * searched with. It is on-screen whenever `pageproxystate` is `invalid` — which
+ * is every blank tab, so it is the state a fresh window opens on — and it wears
+ * the default engine's own icon, which in an ordinary profile is Google's.
+ *
+ * There is no text about to be typed. The input beneath it is read-only, and
+ * picking an engine was verified to set the search mode, paint the engine's
+ * name as a chiclet and focus a field that then refuses every keystroke. A
+ * control that depicts a third party's brand, opens a list of twelve
+ * destinations, and can accomplish none of them is worse than no control: it is
+ * the second entry surface this fork says it does not have, and it is a dead
+ * one.
+ *
+ * `display: none` rather than `visibility` or the `offscreen` attribute the
+ * button already uses for its own hiding, because the button puts itself back
+ * in the tab order on `focusin` and opens its panel on ArrowDown. Only taking
+ * it out of the box tree takes it out of the tab order and the accessibility
+ * tree with it. Scoped to the attribute, so the pref that gives the address bar
+ * back gives this back in the same breath. */
+
+#urlbar[fos-location-display="true"] .searchmode-switcher {
+  display: none;
+}
