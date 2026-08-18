@@ -35,6 +35,7 @@ import {
   LISTENING,
   LISTENING_DEADLINE_MS,
   NOTICE_NOTHING_HEARD,
+  NOTICE_TOO_QUIET,
   NOTICE_TOO_SHORT,
   NOTICE_UNAVAILABLE,
   TRANSCRIBING,
@@ -531,4 +532,39 @@ test("every way out of every stage closes the microphone and lands on idle", () 
       );
     }
   }
+});
+
+test("audio the gate refused ends the turn with the reason it was refused for", () => {
+  // The gate runs in the shell, because only the shell has the samples, but
+  // its verdict is a turn-ending event like any other and the words the user
+  // gets are the session's to choose. Too quiet and too short are told apart
+  // on purpose: a user who really did speak, quietly, must not be taught that
+  // the microphone heard nothing.
+  for (const [reason, notice] of [
+    [TOO_QUIET, NOTICE_TOO_QUIET],
+    [TOO_SHORT, NOTICE_TOO_SHORT],
+  ]) {
+    const session = new VoiceSession();
+    session.press({ text: "half typed" });
+    session.armed();
+    session.release();
+
+    const effect = session.refused(reason);
+    assert.equal(effect.state, IDLE, "the turn is over");
+    assert.equal(effect.notice, notice, "with the reason it was refused for");
+    assert.equal(effect.run, null, "and nothing runs");
+    assert.equal(effect.input, "half typed", "the line comes back");
+  }
+});
+
+test("a refusal outside transcribing is ignored, like every other stale event", () => {
+  const session = new VoiceSession();
+  assert.equal(session.refused(TOO_QUIET).state, IDLE);
+  assert.equal(session.notice, null, "an idle session says nothing");
+
+  session.press({ text: "" });
+  const midArming = session.refused(TOO_QUIET);
+  assert.equal(midArming.state, ARMING, "arming is untouched by a verdict");
+  assert.equal(midArming.notice, null, "and no notice is raised");
+  assert.equal(midArming.capture, null, "and the microphone is left alone");
 });

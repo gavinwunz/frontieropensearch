@@ -31,6 +31,7 @@ EXTRA_JS_MODULES += [
     "FOSTrailRailView.sys.mjs",
     "FOSTrailSession.sys.mjs",
     "FOSTrailTree.sys.mjs",
+    "FOSVoiceInput.sys.mjs",
     "FOSVoiceSession.sys.mjs",
     "FOSVoiceTranscript.sys.mjs",
 ]

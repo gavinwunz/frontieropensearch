@@ -1,0 +1,91 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* The voice indicator.
+ *
+ * This is the one surface in the fork that exists because the platform will not
+ * draw it. A chrome window's microphone opens with no prompt, no sharing
+ * indicator and no row in the permissions UI (GRAMMAR.md §8), so this element
+ * carries the whole of "you are being recorded" as well as the stage — and the
+ * stage is what the user is actually asking about, since "is it listening yet"
+ * comes before "did it understand".
+ *
+ * It sits above the command bar rather than inside it. The bar's contents
+ * change on every keystroke and are where the words land; a signal about the
+ * device has to hold still while they do. */
+
+@layer fos-voice {
+  .fos-voice-indicator {
+    position: fixed;
+    inset-block-start: var(--space-large);
+    inset-inline: 0;
+    margin-inline: auto;
+    width: fit-content;
+    z-index: var(--fos-layer-command);
+    display: flex;
+    align-items: center;
+    gap: var(--space-small);
+    padding-block: var(--space-xsmall);
+    padding-inline: var(--space-medium);
+    border-radius: var(--border-radius-medium);
+    border: var(--border-width) solid var(--border-color);
+    background: var(--background-color-box);
+    color: var(--text-color);
+    box-shadow: var(--box-shadow-level-3);
+    font-size: var(--fos-font-size-small);
+  }
+
+  .fos-voice-indicator[hidden] {
+    display: none;
+  }
+
+  /* The dot is the recording light. It is the accent colour at the size the
+     token set already uses for "something is live here", so it reads as the
+     same kind of statement as the Field's unseen mark rather than as a new
+     vocabulary. */
+  .fos-voice-dot {
+    inline-size: var(--fos-signal-size);
+    block-size: var(--fos-signal-size);
+    border-radius: 50%;
+    background: var(--fos-signal-color);
+    flex: none;
+  }
+
+  /* Only while the device is actually open. Arming and transcribing are the
+     browser working; listening is the microphone hearing the room, and it is
+     the only one of the three that has to be impossible to miss. */
+  .fos-voice-indicator[data-stage="listening"] .fos-voice-dot {
+    animation: fos-voice-pulse 1.4s ease-in-out infinite;
+  }
+
+  /* Not open yet, and no longer open. Quieting the dot rather than hiding it
+     keeps the indicator the same size across the whole turn, so it does not
+     jump under the user's eye at the moment they are reading it. */
+  .fos-voice-indicator:not([data-stage="listening"]) .fos-voice-dot {
+    background: var(--fos-text-color-quiet);
+  }
+
+  .fos-voice-stage {
+    font-weight: var(--fos-font-weight-emphasis);
+  }
+
+  @keyframes fos-voice-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+
+    50% {
+      opacity: 0.35;
+    }
+  }
+
+  /* A pulse is a nice-to-have; being able to tell the microphone is open is
+     not. Under reduced motion the dot simply stays lit. */
+  @media (prefers-reduced-motion: reduce) {
+    .fos-voice-indicator[data-stage="listening"] .fos-voice-dot {
+      animation: none;
+    }
+  }
+}

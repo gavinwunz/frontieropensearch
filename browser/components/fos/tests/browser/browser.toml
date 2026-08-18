@@ -24,6 +24,8 @@ support-files = [
 
 ["browser_trailrail.js"]
 
+["browser_voice.js"]
+
 ["browser_zdemoflow.js"]
 
 ["browser_zzfieldperf.js"]

@@ -55,7 +55,11 @@
  *   given it rather than choosing it. See `GRAMMAR.md` §8.
  */
 
-import { SPEECH, normaliseTranscript } from "./FOSVoiceTranscript.sys.mjs";
+import {
+  SPEECH,
+  TOO_QUIET,
+  normaliseTranscript,
+} from "./FOSVoiceTranscript.sys.mjs";
 
 /** States. */
 export const IDLE = "idle";
@@ -71,6 +75,7 @@ export const TRANSCRIBING = "transcribing";
  * same reason `FOSCommandParser` reports error codes.
  */
 export const NOTICE_TOO_SHORT = "too-short";
+export const NOTICE_TOO_QUIET = "too-quiet";
 export const NOTICE_NOTHING_HEARD = "nothing-heard";
 export const NOTICE_UNAVAILABLE = "unavailable";
 
@@ -309,6 +314,32 @@ export class VoiceSession {
     }
     this.#notice = null;
     return this.#effect({ input: result.text, run: result.text });
+  }
+
+  /**
+   * The audio gate refused the recording before the model ever saw it.
+   *
+   * `FOSVoiceTranscript.audioIsSpeech` is the gate, and it runs in the shell
+   * because it needs the samples. Its verdict is nonetheless a turn-ending
+   * event like any other, so it comes back here rather than being reported by
+   * the shell directly: the notice, and the decision to put the bar back the
+   * way the user left it, are this object's to make.
+   *
+   * The two refusals get different words on purpose. Too short is the same
+   * mistake as a key that came up before the microphone opened and is told the
+   * same way. Too quiet is not a mistake at all — it is a real utterance the
+   * gate could not tell from a room — and a user who is told "nothing heard"
+   * when they did speak learns the wrong lesson about the microphone.
+   *
+   * @param {string} reason A verdict from `audioIsSpeech`.
+   */
+  refused(reason) {
+    if (this.#state !== TRANSCRIBING) {
+      return this.#effect();
+    }
+    this.#reset();
+    this.#notice = reason === TOO_QUIET ? NOTICE_TOO_QUIET : NOTICE_TOO_SHORT;
+    return this.#effect({ input: this.#restore, notice: this.#notice });
   }
 
   /** Escape. Abandons the turn from any state without executing. */

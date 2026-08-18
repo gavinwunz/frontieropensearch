@@ -338,6 +338,17 @@ var gBrowserInit = {
       .attach({ session: FOSTrailSession.forWindow(window) })
       .catch(console.error);
 
+    // The voice front end. It binds the talk key and nothing else: no verb, no
+    // DOM, no engine and no device until the key is first held, so a window
+    // whose user never speaks pays for two key listeners. It goes in last
+    // because what it produces is a line of text for the command bar, which is
+    // the same thing the keyboard produces — every pillar it can reach was
+    // already reachable before it was wired.
+    const { FOSVoiceInput } = ChromeUtils.importESModule(
+      "resource:///modules/FOSVoiceInput.sys.mjs"
+    );
+    FOSVoiceInput.forWindow(window).wire(bar);
+
     // The sidebar is pillar C's second surface and binds no verb of its own —
     // wiring it only tells the engine that `what` now has somewhere to show its
     // answer as well as somewhere to say it. It builds no DOM until first

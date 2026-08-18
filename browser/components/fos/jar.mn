@@ -9,6 +9,7 @@ browser.jar:
     content/browser/fos/fos-locationdisplay.css (content/fos-locationdisplay.css)
     content/browser/fos/fos-contextsidebar.css (content/fos-contextsidebar.css)
     content/browser/fos/fos-trailrail.css (content/fos-trailrail.css)
+    content/browser/fos/fos-voice.css (content/fos-voice.css)
 
     # The Context Engine's migrations are packaged so the store can read them at
     # runtime. They stay .sql files rather than strings in a module because
