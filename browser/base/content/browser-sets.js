@@ -14,6 +14,7 @@ document.addEventListener(
         "chrome://browser/content/usercontext/ContainerCreationPanel.mjs",
       Referrals: "resource:///modules/referrals/Referrals.sys.mjs",
       FOSCommandBar: "resource:///modules/FOSCommandBar.sys.mjs",
+      FOSTrailRail: "resource:///modules/FOSTrailRail.sys.mjs",
     });
 
     // <commandset id="mainCommandSet"> defined in browser-sets.inc.xhtml
@@ -247,6 +248,12 @@ document.addEventListener(
           // second one gets built by accident.
           case "FOS:CommandBar":
             lazy.FOSCommandBar.forWindow(window).toggle();
+            break;
+          // Pillar B replaces linear history, so it takes the key that
+          // used to open the history sidebar rather than adding a second
+          // gesture beside it.
+          case "FOS:TrailRail":
+            lazy.FOSTrailRail.forWindow(window).toggle();
             break;
           case "Browser:RestoreLastSession":
             SessionStore.restoreLastSession();

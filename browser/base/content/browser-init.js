@@ -302,6 +302,19 @@ var gBrowserInit = {
     gBrowser.addProgressListener(window.XULBrowserWindow);
     gBrowser.addTabsProgressListener(window.TabsProgressListener);
 
+    // Frontier OpenSearch, pillar B. Capture has to be listening before
+    // the first navigation, so the trail session attaches at window init
+    // rather than lazily when the rail is first opened — a tree missing
+    // its own root is worse than no tree. Wiring it also registers
+    // pillar B's verbs and marks on the command bar.
+    const { FOSTrailSession } = ChromeUtils.importESModule(
+      "resource:///modules/FOSTrailSession.sys.mjs"
+    );
+    const { FOSCommandBar } = ChromeUtils.importESModule(
+      "resource:///modules/FOSCommandBar.sys.mjs"
+    );
+    FOSTrailSession.forWindow(window).wire(FOSCommandBar.forWindow(window));
+
     // TODO bug 2038578: audit these consumers and move any that don't need
     // to run before SessionStore's per-window init to 'browser-window-load'.
     BrowserUtils.callModulesFromCategory(

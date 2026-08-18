@@ -4,3 +4,4 @@
 
 browser.jar:
     content/browser/fos/fos-commandbar.css (content/fos-commandbar.css)
+    content/browser/fos/fos-trailrail.css (content/fos-trailrail.css)

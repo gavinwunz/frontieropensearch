@@ -1,0 +1,166 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* The trail rail.
+ *
+ * On the platform design tokens for the same reasons as the command bar: dark
+ * mode, high contrast and forced colours come in already mapped, and Phase 3's
+ * design system becomes a question of what the tokens resolve to rather than a
+ * hunt for literals. */
+
+.fos-rail {
+  position: fixed;
+  inset-block: 0;
+  inset-inline-start: 0;
+  /* Above the toolbox, which carries z-index: 0 and so paints over anything
+     lower however far up the document this is appended. */
+  z-index: 2147483646;
+  /* A measure, not a component size: wide enough for a title at the indents a
+     real trail reaches, narrow enough to leave the page usable beside it. No
+     size token expresses that pair. */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  width: min(22rem, 33vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--background-color-box);
+  color: var(--text-color);
+  border-inline-end: var(--border-width) solid var(--border-color);
+  box-shadow: var(--box-shadow-level-3);
+}
+
+.fos-rail[hidden] {
+  display: none;
+}
+
+.fos-rail-crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-xsmall);
+  padding: var(--space-small) var(--space-medium);
+  border-block-end: var(--border-width) solid var(--border-color);
+}
+
+.fos-rail-crumb {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  font-size: var(--font-size-small);
+  cursor: default;
+}
+
+/* The separator is generated rather than an element, so the breadcrumb's DOM
+   stays exactly the list of places you can go back out to. */
+.fos-rail-crumb + .fos-rail-crumb::before {
+  content: "›";
+  padding-inline-end: var(--space-xsmall);
+  opacity: var(--opacity-deemphasized-strong);
+}
+
+.fos-rail-crumb:last-child {
+  font-weight: var(--font-weight-semibold);
+}
+
+.fos-rail-list {
+  margin: 0;
+  padding: var(--space-xsmall) 0;
+  list-style: none;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.fos-rail-list:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-inset);
+}
+
+.fos-rail-row {
+  display: flex;
+  gap: var(--space-xsmall);
+  align-items: baseline;
+  /* The indent is the tree. Hoisting bounds how deep it can get, so this can
+     stay a real indent rather than collapsing to a guide line. */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  padding-inline: calc(var(--space-small) + var(--fos-rail-depth, 0) * 0.75rem)
+    var(--space-medium);
+  padding-block: var(--space-xxsmall);
+  cursor: default;
+}
+
+.fos-rail-row[aria-selected="true"] {
+  background: var(--background-color-list-item-hover);
+  color: var(--text-color-list-item-hover);
+}
+
+/* Where you are, and how you got there. The spine is the path from the root to
+   the current node, and shading it is what turns a list of rows back into a
+   route — without it a branching tree gives no answer to "which of these am I
+   on the far end of". */
+.fos-rail-row[data-spine] .fos-rail-label {
+  font-weight: var(--font-weight-semibold);
+}
+
+.fos-rail-row[data-current] {
+  box-shadow: inset 2px 0 0 0 var(--color-accent-primary);
+}
+
+/* Dismissed is not deleted. It reads as quieter, never as absent, because the
+   page is still on the trail and Enter still restores it. */
+.fos-rail-row[data-dismissed] {
+  opacity: var(--opacity-deemphasized-strong);
+}
+
+.fos-rail-twisty {
+  /* Reserves the column whether or not a row has children, so the labels of
+     siblings line up regardless of which of them branched. */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  width: 1em;
+  flex: none;
+  font-size: var(--font-size-small);
+}
+
+.fos-rail-mark {
+  /* One character, fixed width, so the label column does not shift between a
+     marked row and an unmarked one past the 26th node. */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  width: 1em;
+  flex: none;
+  text-align: center;
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-accent-primary);
+}
+
+.fos-rail-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-small);
+}
+
+.fos-rail-count {
+  margin-inline-start: auto;
+  flex: none;
+  font-size: var(--font-size-small);
+  color: var(--text-color-deemphasized);
+}
+
+.fos-rail-empty {
+  padding: var(--space-medium);
+  margin: 0;
+  font-size: var(--font-size-small);
+  color: var(--text-color-deemphasized);
+}
+
+.fos-rail-empty[hidden] {
+  display: none;
+}
+
+@media (prefers-contrast) {
+  .fos-rail {
+    border-inline-end-width: calc(var(--border-width) * 2);
+  }
+}

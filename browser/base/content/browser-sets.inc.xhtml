@@ -61,6 +61,9 @@
     <!-- work-around bug 392512 -->
     <!-- Frontier OpenSearch: the one entry surface. See design/GRAMMAR.md. -->
     <command id="FOS:CommandBar" />
+    <!-- Frontier OpenSearch: the trail rail, which is what this fork has
+         instead of a linear history sidebar. See design/FIELD.md. -->
+    <command id="FOS:TrailRail" />
 
     <command id="Browser:AddBookmarkAs" />
     <command id="Browser:SearchBookmarks" />
@@ -330,6 +333,7 @@
         />
     <key id="key_gotoHistory"
          data-l10n-id="history-sidebar-shortcut"
+         command="FOS:TrailRail"
 #ifdef XP_MACOSX
          modifiers="accel,shift"
 #else
