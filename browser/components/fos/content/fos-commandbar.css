@@ -4,21 +4,32 @@
 
 /* The command bar.
  *
- * Phase 3 owns the design system; this is the working skin until then, built
- * on the platform's own colour tokens so that dark mode, high contrast and
- * forced colours are correct by default rather than by a later pass. */
+ * Built on the platform's design tokens rather than on literal values. Phase 3
+ * owns the fork's design system, and starting from the token set means that
+ * work is a matter of changing what the tokens resolve to rather than hunting
+ * literals through the stylesheet. It also gets dark mode, high contrast and
+ * forced colours right now instead of in a later pass — the tokens already
+ * carry those mappings, including collapsing the deemphasis opacities to 1
+ * under forced colours. */
 
 .fos-commandbar-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 10;
+  /* Above the toolbox, which is a flex item carrying z-index: 0 and so paints
+     over anything lower however far up the document the backdrop is appended.
+     At z-index 10 the dim covered the content area only, leaving the chrome
+     looking live while the bar had taken the keyboard. */
+  z-index: 2147483647;
   display: flex;
   justify-content: center;
   /* Not centred vertically: the bar sits high so that what it is about to do
-     to the page below stays visible while the user types. */
-  align-items: start;
+     to the page below stays visible while the user types. There is no space
+     token for a proportion of the viewport, and one would be wrong here —
+     this tracks window height, not the spacing scale. */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   padding-block-start: 12vh;
-  background: color-mix(in srgb, black 28%, transparent);
+  align-items: start;
+  background: var(--background-color-overlay);
 }
 
 .fos-commandbar-backdrop[hidden] {
@@ -26,15 +37,20 @@
 }
 
 .fos-commandbar {
+  /* A measure, not a component size: capped so long page titles stay readable
+     and fluid so the bar survives a narrow window. No size token expresses
+     that pair. */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   width: min(44rem, 92vw);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   max-height: 70vh;
   display: flex;
   flex-direction: column;
-  border-radius: 12px;
-  border: 1px solid var(--border-color, ThreeDShadow);
-  background: var(--background-color-box, Field);
-  color: var(--text-color, FieldText);
-  box-shadow: 0 12px 40px color-mix(in srgb, black 35%, transparent);
+  border-radius: var(--border-radius-medium);
+  border: var(--border-width) solid var(--border-color);
+  background: var(--background-color-box);
+  color: var(--text-color);
+  box-shadow: var(--box-shadow-level-3);
   overflow: hidden;
 }
 
@@ -43,9 +59,8 @@
   border: none;
   background: transparent;
   color: inherit;
-  font-size: 1.25rem;
-  line-height: 1.4;
-  padding: 0.75rem 1rem;
+  font-size: var(--font-size-large);
+  padding: var(--space-medium) var(--space-large);
 }
 
 .fos-commandbar-input:focus-visible {
@@ -53,10 +68,10 @@
 }
 
 .fos-commandbar-status {
-  padding: 0.25rem 1rem 0.5rem;
-  font-size: 0.85rem;
-  opacity: 0.8;
-  border-block-end: 1px solid var(--border-color, ThreeDLightShadow);
+  padding: var(--space-xsmall) var(--space-large) var(--space-small);
+  font-size: var(--font-size-small);
+  color: var(--text-color-deemphasized);
+  border-block-end: var(--border-width) solid var(--border-color);
 }
 
 .fos-commandbar-status:empty {
@@ -64,57 +79,57 @@
 }
 
 .fos-commandbar-status[data-kind="error"] {
-  color: var(--text-color-error, #c50042);
-  opacity: 1;
+  color: var(--text-color-error);
 }
 
+/* "Go to" and "Search for" are the two things Enter can do to a line of prose,
+   and telling them apart at a glance is the whole job of this line. */
 .fos-commandbar-status[data-kind="url"] {
-  color: var(--text-color-success, #017a40);
-  opacity: 1;
+  color: var(--color-accent-primary);
 }
 
 .fos-commandbar-list {
   margin: 0;
-  padding: 0.25rem 0;
+  padding: var(--space-xsmall) 0;
   list-style: none;
   overflow-y: auto;
 }
 
 .fos-commandbar-group {
-  padding: 0.5rem 1rem 0.25rem;
-  font-size: 0.7rem;
+  padding: var(--space-small) var(--space-large) var(--space-xsmall);
+  font-size: var(--font-size-small);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  opacity: 0.6;
+  opacity: var(--opacity-deemphasized-strong);
 }
 
 .fos-commandbar-row {
   display: flex;
-  gap: 0.6rem;
+  gap: var(--space-small);
   align-items: baseline;
-  padding: 0.35rem 1rem;
+  padding: var(--space-xsmall) var(--space-large);
   cursor: default;
 }
 
 .fos-commandbar-row[aria-selected="true"] {
-  background: var(--background-color-box-hover, SelectedItem);
-  color: var(--text-color-selected, SelectedItemText);
+  background: var(--background-color-list-item-hover);
+  color: var(--text-color-list-item-hover);
 }
 
 .fos-commandbar-label {
-  font-weight: 600;
-  /* Marks are one character; without a floor they jitter the column as the
-     candidate list narrows. */
+  font-weight: var(--font-weight-semibold);
+  /* Marks are one character and action words are up to seven, so without a
+     floor the detail column jitters as the list narrows under each keystroke. */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   min-width: 4.5rem;
 }
 
 .fos-commandbar-spoken {
-  opacity: 0.75;
+  color: var(--text-color-deemphasized);
   font-variant: small-caps;
 }
 
 .fos-commandbar-detail {
-  opacity: 0.7;
+  color: var(--text-color-deemphasized);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -122,13 +137,6 @@
 
 @media (prefers-contrast) {
   .fos-commandbar {
-    border-width: 2px;
-  }
-
-  .fos-commandbar-status,
-  .fos-commandbar-detail,
-  .fos-commandbar-group,
-  .fos-commandbar-spoken {
-    opacity: 1;
+    border-width: calc(var(--border-width) * 2);
   }
 }
