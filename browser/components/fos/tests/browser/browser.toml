@@ -2,14 +2,16 @@
 
 ["browser_commandbar.js"]
 
-["browser_field.js"]
-
-["browser_locationdisplay.js"]
-
-["browser_trailrail.js"]
-
 ["browser_contextengine.js"]
 
 ["browser_contextsidebar.js"]
 
+["browser_field.js"]
+
+["browser_locationdisplay.js"]
+
 ["browser_suggest.js"]
+
+["browser_trailrail.js"]
+
+["browser_zdemoflow.js"]
