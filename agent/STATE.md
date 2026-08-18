@@ -7,7 +7,8 @@ Keep it short — this is state, not a log. History belongs in `JOURNAL.md`.
 
 ## Phase
 
-**Phase 0 — Bootstrap** (in progress; first full build running)
+**Phase 0 — Bootstrap** (first full build running). Phase 2's pure-logic
+layer is being built ahead of it, since it needs no build to test.
 
 ## Done
 
@@ -28,6 +29,13 @@ Keep it short — this is state, not a log. History belongs in `JOURNAL.md`.
 - `browser/branding/frontieropensearch/` created from `unofficial`: brand
   strings, prefs with update/telemetry off, and `generate-mark.py`, which is the
   single source of truth for the mark — it emits the SVG and every PNG size.
+- **First Phase 2 code.** `browser/components/fos/` holds marks
+  (`FOSMarks.sys.mjs`), the action table (`FOSGrammar.sys.mjs`), the parser
+  (`FOSCommandParser.sys.mjs`) and the trail tree (`FOSTrailTree.sys.mjs`), with
+  34 unit tests green. None of it touches a Gecko API, so it runs under `node
+  --test` in about a second — `browser/components/fos/tests/node/run.sh`. The
+  directory has a `moz.build` but is **not** yet in `browser/components/moz.build`,
+  which is what keeps it clear of the running build.
 - `./mach configure` passes. Verified in `config.status`:
   `MOZ_APP_DISPLAYNAME='Frontier OpenSearch'`, `MOZ_APP_NAME='frontieropensearch'`,
   `MOZ_APP_BASENAME='FrontierOpenSearch'`, `MOZ_APP_VENDOR='Frontier'`,
@@ -40,7 +48,7 @@ Keep it short — this is state, not a log. History belongs in `JOURNAL.md`.
   third attempt; the two before it were killed by the cgroup bug below, not by
   any build fault, and the objdir plus sccache carry over so nothing restarts
   from zero.
-- Chunked push of history to `origin/agent/dev`, resumed at 476k of 990k.
+- Chunked push of history to `origin/agent/dev`, at 877k of 990k.
 
 ## Next task
 
@@ -48,18 +56,26 @@ Keep it short — this is state, not a log. History belongs in `JOURNAL.md`.
    with a code, still running, or killed without a marker.
 2. If the build succeeded, run `./mach run` and confirm Phase 0's acceptance
    criterion — a browser launches. That closes Phase 0.
-3. Then Phase 1: the remaining user-visible "Firefox" strings. The branding
+3. Then wire `browser/components/fos/` in: one line adding `fos` to `DIRS` in
+   `browser/components/moz.build`, then `./mach build faster`. The modules are
+   written and tested; only the wiring is outstanding, and it was deliberately
+   left undone so the full build's inputs stayed frozen.
+4. Then Phase 1: the remaining user-visible "Firefox" strings. The branding
    directory and app constants are already done, so what is left is the l10n
    override path and the about dialog. Do not mass-sed the tree.
-4. Do not edit anything under `browser/` or `toolkit/` while a full build is in
-   flight — research and the `agent/`, `context-engine/` and `design/` docs are
-   the safe work. Build inputs have not been touched since the build started.
-5. When Phase 2 opens, build in this order: marks and the parser
-   (`design/GRAMMAR.md`) first, since they are pure frontend logic testable by
-   keyboard alone and every pillar's verbs route through them; then the Field's
-   card and region model (`design/FIELD.md`), reusing `PageThumbs` for capture.
-   The four acceptance properties in FIELD.md §9 are written to be testable and
-   should become browser-chrome tests as the code lands, not after.
+5. Phase 2 order from here: the Field's card and region model
+   (`design/FIELD.md`), which is the last pure-logic piece — a region is a
+   trail, so it builds on `FOSTrailTree`. Then the surfaces that need Gecko:
+   `PageThumbs` capture for cards, `nsISHEntry` for restoring a node's scroll
+   and form state, and the command bar UI over the parser. The four acceptance
+   properties in FIELD.md §9 and the first test in `test_trailtree.mjs` are
+   written to be testable and should become browser-chrome tests as the code
+   lands, not after.
+
+Rule that held well this run and should keep holding: while a full build is in
+flight, do not touch anything the build reads. New, unreferenced files under
+`browser/` are safe — an unreferenced `moz.build` is inert — but editing an
+existing `moz.build` or any build input is not.
 
 ## Background jobs
 
@@ -72,12 +88,13 @@ restart cannot reach them. `agent/logs/<name>.current` symlinks the live log.
   `fos-job-build.service` — started 2026-08-18T11:22Z. Expect 1–2 hours on 8
   cores. The build detects an agent and limits output to warnings and errors,
   so a quiet log is the healthy case — judge it by the `=== EXIT n ===` marker,
-  not by the tail. Alive and compiling `gfx/` at 13 minutes as of 11:35Z — the
-  cgroup fix holds, and this is the first build to survive a run boundary.
+  not by the tail. Alive and compiling `xpcom/` at 25 minutes as of 11:47Z,
+  having come through `js/src`, `libwebrtc` and `gfx/`. The cgroup fix has now
+  held across two run boundaries.
 - `./agent/push-chunked.sh` — log `agent/logs/push-1787052149.log`, unit
   `fos-job-push.service`. Pushes 40k commits at a time because a single 5G push
   exceeds GitHub's limit. Resumable: it reads where origin is and continues.
-  Ends with `PUSH COMPLETE`. At 597k of 990k commits as of 11:35Z.
+  Ends with `PUSH COMPLETE`. At 877k of 990k commits as of 11:47Z.
 
 ## Blockers
 
@@ -168,6 +185,30 @@ fos-job-build` for what killed it before changing anything.
   `PageThumbs.captureToCanvas`, as `tab-hover-preview.mjs` already does. Data
   Mountain beat a bookmark list using static 64×64 thumbnails, so nothing that
   matters is lost.
+- 2026-08-18 — Free-text arguments are **terminal**: an action taking free text
+  consumes the rest of the utterance and cannot be chained after. Talon segments
+  dictation with a 0.3s silence timeout, which misfires when users pause, but
+  the fatal objection is that silence means nothing to a keyboard — a timeout
+  would give the two modalities two different grammars, which is the separate
+  accessibility mode the brief forbids arriving by the back door. `name` and
+  `search` are the only free-text verbs and both are naturally last.
+- 2026-08-18 — The escape for a query that begins with an action word is the
+  ordinary verb `search <text>`, with `?` as typed sugar for the identical
+  command. A punctuation-only prefix in VS Code's style has no spoken form, so
+  it would be an action reachable from one modality only.
+- 2026-08-18 — In a slot that may hold either a mark or free text, **a valid
+  mark token fills the slot and anything else begins the text**. This is what
+  makes GRAMMAR.md's own chaining example parse as written. Cost: naming
+  something literally "cap" takes `name cap cap`.
+- 2026-08-18 — Mark allocation prefers a letter from the object's own label,
+  after Cursorless putting a hat on a character of the token. Stickiness makes a
+  mark learnable but does nothing for the first use; deriving it from the label
+  makes it guessable before it is learned. Preference only ever picks among free
+  letters, so it cannot conflict with stickiness.
+- 2026-08-18 — `promote()` **copies** nodes into a new named trail rather than
+  moving them. The captured tree is the record of what happened; a Trail is an
+  artefact the user made. If promotion moved nodes, curating a trail would edit
+  history.
 - 2026-08-18 — A **region in the Field is a trail**, not a second organising
   structure. This is what keeps the Field from decaying the way canvas tools in
   the wild are criticised for: named regions are searchable, unnamed space is not,
