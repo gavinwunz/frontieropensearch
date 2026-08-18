@@ -8,11 +8,11 @@ support-files = [
 
 ["browser_commandbar.js"]
 
-["browser_designsystem.js"]
-
 ["browser_contextengine.js"]
 
 ["browser_contextsidebar.js"]
+
+["browser_designsystem.js"]
 
 ["browser_field.js"]
 

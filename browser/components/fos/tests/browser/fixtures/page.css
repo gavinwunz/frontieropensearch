@@ -19,7 +19,9 @@ body {
   margin: 0 auto;
   padding: 3rem 2rem;
   max-width: 42rem;
-  font: 16px/1.65 system-ui, sans-serif;
+  font:
+    16px/1.65 system-ui,
+    sans-serif;
   color: #1c1b22;
   background: #fff;
 }
