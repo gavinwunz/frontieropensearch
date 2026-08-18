@@ -176,21 +176,41 @@ execution, not invention: all three pillars have a written design.
   take a letter back from an *older page of its own trail* once no retained
   letter is left, never from a page more recent than itself.
 
+- **One entry surface, and it is now true of the mouse.** Two surfaces went.
+  The tab strip: `TabBarVisibility` already hides it when "tabs are displayed
+  elsewhere" — that is the clause vertical tabs stands on — so this is one more
+  condition on the same rule and not a second way to collapse a toolbar. The
+  tabs themselves are untouched, and `browser.fos.field.replacesTabStrip=false`
+  brings the strip back. The address bar: `FOSLocationDisplay.sys.mjs` sets
+  `readOnly` and hands its click to the command bar. It is deliberately *not*
+  deleted — origin display is a security boundary, Zen shipped an
+  origin-spoofing advisory for hiding it, and the eTLD+1 emphasis, punycode
+  handling, certificate state and granted permissions all live in that element.
+  Entry moves, display stays. `readOnly` is the supported path: popups and
+  taskbar tabs have shipped exactly this for years, so every anchor and panel
+  keeps working. With the strip gone the nav-bar takes the titlebar, which
+  upstream already handles. Verified end to end: a mouse presses the address
+  bar, gets the grammar, runs `field`, and the Field opens. 298 browser-chrome
+  checks. Screenshots in `agent/reports/no-tab-strip.png` and
+  `one-surface-{rest,rest-dark,open}.png`.
+
 ## In progress
 
-Nothing running. `agent/dev` pushed through the suggestion-ranking commits;
-`main` and both tags unchanged on origin.
+`tabtests5` is running the 193 remaining upstream tab tests — see Background
+jobs. `agent/dev` pushed through the single-surface commits; `main` and both
+tags unchanged on origin.
 
 ## Next task
 
-All three of pillar C's surfaces now exist. In rough order of value.
+The single-surface gap is closed. In rough order of value.
 
-1. **The tab strip still exists.** Now the widest gap between what the phase
-   plan claims and what the build does: the Field replaces it, the Field is
-   built, and the keyboard has been unified onto the command bar for four runs.
-   Until the toolbar goes, "one entry surface" is true of the keyboard and not
-   of the mouse. Widest blast radius in the phase — upstream browser-chrome
-   tests drive the tab strip — so it wants its own run.
+1. **A background tab arrives with no signal at all.** Surfaced by removing the
+   strip and the first thing a real session would notice: a `target=_blank`
+   load, or anything opened behind the page in front, is now invisible until
+   the Field is opened. The strip was doing that job incidentally. This is not
+   an argument for the strip — it is that the Field needs an ambient way to say
+   "something arrived", and the card model already knows which card is new.
+   Cheapest honest answer first; do not build a notification system.
 2. **The embedding pass**, on `EmbeddingsGenerator` and `ClusterAlgos`. Target
    unchanged: query understanding, because the shallow extractor gets nothing
    from a lower-case query. Merge contexts across trails with
@@ -240,7 +260,11 @@ Each runs as its own transient systemd unit `fos-job-<name>.service`, in
 `app.slice` beside `fos.service` rather than inside it, which is what makes it
 survive a restart. `agent/logs/<name>.current` symlinks the live log.
 
-None.
+`tabtests5` — the 193 upstream tab tests after `browser_addAdjacentNewTab.js`,
+which is excluded because a timeout aborts the whole run and that file's
+timeout is pre-existing (see Known staged state). Started 2026-08-18T18:09Z.
+Read the tail for `Unexpected results`; anything there is fallout from the
+strip going and wants the manifest pref, not a code change.
 
 ## Blockers
 
@@ -264,15 +288,33 @@ checking: if the command bar broke a shipped surface, that is a real
 regression rather than an accepted staged state.
 
 
-The address bar and tab strip are **still visible and still work if clicked**.
-Only the keyboard gestures have been unified onto the command bar; removing the
-toolbar itself belongs with the Field, which replaces the tab strip. Until then
-the "one entry surface" claim is true of the keyboard and not yet of the mouse,
-and `agent/reports/cmdbar-*.png` shows exactly that. Do not describe Phase 2 as
-meeting the single-surface criterion before the toolbar goes. **The Field now
-exists, so this is unblocked** — it is the next honest step for pillar A, and it
-is a wide blast radius (upstream browser-chrome tests drive the tab strip), so
-it wants its own run rather than being tacked onto one.
+**The nav-bar is still there, and that is the claim's real boundary.** What
+went is the tab strip and the address bar's *input*. Back, forward, reload, the
+extensions button and the app menu are all still in the toolbar, and the app
+menu is still the only route to settings, downloads and add-ons. So "one entry
+surface" is a claim about **entry** — there is exactly one place text is typed
+and one grammar that reaches every verb — and not a claim that the chrome is
+gone. Do not describe it as the latter. Hiding the toolbar outright is a much
+bigger change than it looks: permission prompts, download notifications and the
+identity panels all anchor on elements inside it, and a hidden anchor is a
+prompt that appears at the corner of the window or not at all. That wants its
+own run and an answer for the app menu first.
+
+**`browser_addAdjacentNewTab.js` times out, and did so before this run** —
+verified by checking out the pre-run tree, rebuilding and re-running, which
+failed identically at the same subtest. It right-clicks a tab to open the tab
+context menu, and this manifest already skips several files for
+`os_version == '24.04' && display == 'x11'`, which is this box. Treat it as the
+same family. It matters operationally because a timeout **aborts the whole
+directory**, so a run of `browser/components/tabbrowser/test/browser/tabs/`
+stops there and reports almost nothing; pass the file list without it.
+
+**A surface this fork replaces needs its upstream tests pinned, not deleted.**
+`browser.fos.field.replacesTabStrip=false` is set in the `tabs/` and `dragdrop/`
+manifests. Those files are the coverage that keeps the strip working for the
+pref that restores it, and the strip-less window has its own tests. Reach for
+the same pattern for the next replaced surface rather than annotating files one
+at a time.
 
 **A region is mostly empty until a trail is large.** A region seats 56 cards and
 a three-page trail therefore renders as a short column in the middle of a lot of
