@@ -9,11 +9,28 @@
  * `IDEAS.md` (run 23) settled what the voice path's numbers have to beat — a
  * turn feels natural inside ~1s of the end of the utterance and tolerable to
  * 2s, given the live transcript echo the command bar already provides — and
- * settled that the knob deciding whether they can is the backend. The tree
- * ships both: `ort.webgpu.mjs` is packaged, `ONNXPipeline` takes
- * `config.device`, and `ensurePipelineIsReady` falls back to CPU on its own
- * when the GPU is unsupported. What was left was the part no amount of reading
- * settles, which is what this hardware actually does.
+ * settled that the knob deciding whether they can is the backend.
+ *
+ * **The backend is a two-axis knob, and run 26 only ever turned one axis.**
+ * This file used to pass `device` and no `backend`, which is why both arms
+ * failed identically with "Unable to get the ML engine from Remote Settings":
+ * `MLEngineChild` reads `opts.backend || BACKENDS.onnx`, so an unnamed backend
+ * is the *wasm* backend, and the wasm runtime is a Remote Settings attachment
+ * that the mochitest harness has no populated database for and no packaged
+ * dump to fall back on. The device axis never came into it.
+ *
+ * The tree has a second ONNX backend that is not wasm at all. `onnx-native`
+ * runs on `libonnxruntime.so`, which `./mach bootstrap` pulls as an ordinary
+ * build toolchain and which is already packaged into `dist/bin` — so it is a
+ * build dependency rather than a runtime download, `WASM_BACKENDS` excludes it,
+ * and `getWasmArrayBuffer` is never called for it. That is the arm this fork
+ * can actually ship offline, and it is measured first below. It is CPU-only:
+ * `ONNXPipeline` hands Transformers.js `supportedDevices: ["cpu"]` for it, so
+ * there is no native GPU arm to measure however the blocklist is set.
+ *
+ * The wasm arms are kept because they are the comparison that decides whether
+ * shipping the offline runtime costs anything. They need Remote Settings, so
+ * they report UNAVAILABLE in a harness rather than failing the run.
  *
  * **This measures latency, not accuracy.** The audio below is synthetic, so
  * the transcript is meaningless and is not checked. That is sound for the
@@ -101,16 +118,19 @@ function round(ms) {
  * press — arming the turn is exactly the moment for it — while every run is
  * paid inside the budget, after the key comes up.
  *
+ * @param {string} backend "onnx-native" (packaged, offline) or "onnx" (wasm).
  * @param {string} device "gpu" or "cpu".
  * @param {number[]} durations Utterance lengths in seconds to time.
  */
-async function measure(device, durations) {
+async function measure(backend, device, durations) {
+  const label = `${backend}/${device}`;
   const options = {
     taskName: "automatic-speech-recognition",
     modelId: "onnx-community/whisper-tiny",
     modelHubUrlTemplate: "{model}/{revision}",
     modelRevision: "main",
     dtype: "q8",
+    backend,
     device,
     timeoutMS: -1,
   };
@@ -122,11 +142,11 @@ async function measure(device, durations) {
   } catch (error) {
     // A backend this machine does not have is a result, not a failure: it is
     // the answer to "which default can this fork ship".
-    info(`##### ASR ${device} UNAVAILABLE ${error}`);
+    info(`##### ASR ${label} UNAVAILABLE ${error}`);
     return;
   }
   const loadMs = ChromeUtils.now() - loadStart;
-  info(`##### ASR ${device} load ${round(loadMs)}ms`);
+  info(`##### ASR ${label} load ${round(loadMs)}ms`);
 
   try {
     for (const seconds of durations) {
@@ -153,15 +173,12 @@ async function measure(device, durations) {
       }
 
       info(
-        `##### ASR ${device} ${seconds}s audio: ` +
+        `##### ASR ${label} ${seconds}s audio: ` +
           `median ${round(median(runs))}ms  ` +
           `min ${round(Math.min(...runs))}ms  ` +
           `max ${round(Math.max(...runs))}ms`
       );
-      ok(
-        true,
-        `${device} transcribed ${seconds}s of audio ${ITERATIONS} times`
-      );
+      ok(true, `${label} transcribed ${seconds}s of audio ${ITERATIONS} times`);
     }
   } finally {
     await engine.terminate();
@@ -190,6 +207,11 @@ add_task(async function measure_asr_latency() {
   // difference is decoding, which is the only part a shorter grammar helps.
   const durations = [1.5, 3];
 
-  await measure("gpu", durations);
-  await measure("cpu", durations);
+  // The offline arm first: this is the one the fork can ship, so if it clears
+  // the budget the wasm numbers are a curiosity rather than a decision.
+  await measure("onnx-native", "cpu", durations);
+
+  // The wasm arms, for comparison. Both need the runtime from Remote Settings.
+  await measure("onnx", "gpu", durations);
+  await measure("onnx", "cpu", durations);
 });
