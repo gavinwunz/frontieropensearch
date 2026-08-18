@@ -1059,3 +1059,88 @@ help facility. That is the surface this fork is replacing, quantified.
   clickable and arrow-navigable, and a row for a page that *does* hold a mark
   shows the letter it already has. Recorded so the "make it addressable"
   instinct does not spend the budget in three runs' time.
+
+### Frecency is a well-optimised answer to a question this fork is not asking
+
+- **Found:** looking for what the command bar should rank by before building
+  the first of `SCHEMA.md`'s three surfaces. Hartmann et al., *Federated
+  Learning for Ranking Browser History Suggestions*, and Mozilla's own write-up
+  of the shipped experiment. https://arxiv.org/abs/1911.11807 and
+  https://florian.github.io/federated-learning-firefox/
+- **What it is:** Mozilla replacing the awesomebar's handcrafted frecency
+  weights with weights learned on-device, across 723,581 users — 360,518
+  training, 306,200 in the evaluation.
+- **Verdict:** **adopt** as the motivation for context ranking; **reject** any
+  attempt to learn weights here.
+- **Phase:** 2C, the next task.
+
+Two numbers matter. First, Mozilla says plainly that "the weights in the
+algorithm were not decided on in a data-driven way. Essentially, they are
+similar to magic numbers in software engineering" — twenty-two of them, over
+time buckets and visit types, in the ranking every Firefox user has depended on
+for fifteen years. Second, optimising all twenty-two at that scale moved the
+characters typed before selection from 4.26 to 3.67. Just over half a
+character.
+
+That is the strongest possible argument for changing the *signal* rather than
+the weights. Half a character is what a decade of global frecency has left on
+the table; the gap this fork is aiming at is the suggestion list being about
+your whole life rather than about the thing you are doing, and no reweighting
+of a global counter closes it. It also sets the honest bar for judging the
+result: if ranking by active context is worth building, it must beat frecency
+by more than the entire remaining headroom of frecency itself, which means the
+test is "the page I want is offered at all", not "it moved up two places".
+
+The rejection is as important. This build has one profile, no telemetry, no
+cloud, and no population to learn from — federated learning needs 360,000
+users. A local model fitted to one person's clicks would be a magic-number
+generator with worse provenance than Mozilla's.
+
+### Cross-session resumption is the case the command bar exists for
+
+- **Found:** Kotov, Bennett, White, Dumais and Teevan, *Modeling and Analysis
+  of Cross-Session Search Tasks*, SIGIR 2011.
+  https://dl.acm.org/doi/10.1145/2009916.2009922
+- **What it is:** log analysis of search tasks that span more than one session,
+  with models for predicting whether a task will continue and whether a query
+  belongs to a task seen before.
+- **Verdict:** **adopt** the framing. Reported figure, taken from the paper's
+  abstract rather than from the full text (the PDF host refused three fetches):
+  close to **60% of complex information-gathering tasks continue across
+  sessions**.
+- **Phase:** 2C.
+
+This is the same finding as SearchBar's week-two effect from the other side —
+one measured on sixteen people's behaviour, one on a query log — and together
+they say the surface is judged on resumption. The consequence for the ranking
+is concrete and it is not a weighting: candidates must come from the **store**,
+across sessions and across trails, not from the window's in-memory tree. A bar
+that can only rank what this session has already loaded is a bar that works
+exactly when you did not need it.
+
+### Ranking is tiers of provenance, not a score
+
+- **Found:** falls out of the two entries above, plus this tree's existing rule
+  that the store's rows are provenance.
+- **Verdict:** **adopt** as the design for the command bar's ranking.
+- **Phase:** 2C, next run.
+
+One score mixing context membership, recency, outcome and frecency would be
+twenty-two magic numbers again, invented by one person in an afternoon instead
+of by Mozilla over fifteen years. Tiers instead, each one a fact rather than a
+coefficient, ordered by how strong a claim it makes that this is the thing you
+meant:
+
+1. a **mark** typed as a mark — an address, not a guess;
+2. pages **in the active context**, best outcome first — `contextContents`
+   already returns them in that order and the bar must not re-sort;
+3. pages on the **active trail** that the context has not claimed;
+4. **crossings** — pages this context reached from another trail;
+5. everything else, by **Places frecency**, which stays as the floor because a
+   browser that cannot find a page you visited once last year is worse than
+   Firefox and this fork's claim is not that history should be lost.
+
+A tier is explainable in one line to the user, which frecency has never been,
+and a tier boundary is falsifiable: either the page is in the context or it is
+not. Only the last tier holds a score, and it is one this project did not
+invent.
