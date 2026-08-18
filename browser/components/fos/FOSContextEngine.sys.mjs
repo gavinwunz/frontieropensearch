@@ -903,6 +903,15 @@ export class FOSContextEngine {
     // not be taken away by the next navigation — that would make the verb a
     // suggestion rather than a statement.
     bar.actions.register("context", cmd => {
+      // Bare `context` releases the pin and goes back to following the trail
+      // you are on. Without it a single deliberate switch outlives the enquiry
+      // that motivated it: every later tab, on every later topic, is still
+      // ranked and summarised against the context that was pinned, because
+      // nothing but another pin could ever displace it.
+      if (cmd.target === null) {
+        this.#pinnedContextId = null;
+        return this.activeContextId;
+      }
       const id = contextIdFromKey(this.#marks?.objectAt(cmd.target));
       if (id === null) {
         return false;

@@ -98,12 +98,19 @@ export const ACTIONS = Object.freeze({
   },
 
   // Pillar C — the context engine.
+  // Optional, not required, and the bare form is the release. A pinned context
+  // deliberately survives the next navigation — that is what makes the verb a
+  // statement rather than a suggestion — but without a way to say "follow me
+  // again" it survives *every* navigation, and the bar goes on ranking by an
+  // enquiry the user finished an hour and five tabs ago. `context` alone hands
+  // the decision back to provenance, exactly as `back` alone applies to where
+  // you already are.
   context: {
     pillar: "context",
-    target: "required",
+    target: "optional",
     accepts: ["context"],
     text: false,
-    summary: "Switch the active context and re-rank suggestions",
+    summary: "Switch the active context, or follow the current trail again",
   },
   pack: {
     pillar: "context",
