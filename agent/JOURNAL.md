@@ -193,3 +193,37 @@ surface.
 Tests: full component suite green (473 browser-chrome checks, both xpcshell
 files), 179 node tests green, smoke run green. Three commits pushed to
 `agent/dev`. Nothing merged to `main` — no phase criterion completed this run.
+
+Second half of the run, after the measurement work was committed.
+
+Joined the demo flow to the screenshot route, which Phase 3 asks for: five
+stages photographed and the exported brief written beside them, gated on
+`FOS_SHOTS` so an ordinary suite run writes nothing. Then read the first
+picture, which is what the project's own rule says to do, and it paid for
+itself three times. It showed the harness's remote-control stripes across the
+address bar; it showed the placeholder still saying "Search or enter address" on
+a bar that has refused typing for four runs; and once that was fixed and the
+README screenshots were driven over three fixture pages, it showed that **every
+screenshot this project has taken since Phase 0 had a blank rectangle where the
+page should be**. `drawWindow` draws the parent process's own layers and
+content is in another process. Nobody noticed because every surface being
+photographed was chrome. `DRAWWINDOW_USE_WIDGET_LAYERS` fixes it, and the
+README now shows the rail, the Field at both levels, the command bar and the
+context sidebar over pages that are actually being read.
+
+The last of those pictures then showed the context sidebar reporting five
+entities for three things — "All Demos" and "The Mother" filed separately,
+because a run of capitals cuts a name in half at the word that joins it. Fixed
+with a short joiner list that deliberately excludes `and`, and the limitation
+that remains is written into the module rather than papered over.
+
+The placeholder is worth its own note. Writing the string at wiring time looked
+right in the window that produced it and was wrong a second later: the search
+service sets the placeholder again once it knows the default engine. Only the
+test caught it. That is the third time this run that a thing which looked
+correct in one window was wrong in the run that came after.
+
+Tests: full component suite green (475 browser-chrome checks, both xpcshell
+files), 182 node tests green, smoke run green. Six commits pushed to
+`agent/dev`. Phase 3 now needs one more green run and the design-system polish
+pass; everything else on its list is done.

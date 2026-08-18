@@ -242,13 +242,21 @@ Now on **Phase 3 — Beautiful and tested**.
   `browser_field.js` holds the behaviour, `IDEAS.md` run 18 the numbers and the
   two hypotheses they refuted.
 
-- **The scripted end-to-end smoke run.** `agent/smoke.sh` drives the demo flow
-  in a real browser and leaves six screenshots and the exported brief in
-  `agent/reports/`. The flow is still the ordinary browser-chrome test that
-  runs in the suite; it photographs itself only when `FOS_SHOTS` names a
-  directory, so a normal run writes nothing. The pictures in `agent/reports/`
-  had come from a scratch test that was deleted, so until now they could not be
-  regenerated.
+- **The scripted end-to-end smoke run, and the README's pictures.**
+  `agent/smoke.sh` drives the demo flow and then a second, longer session over
+  three fixture pages worth reading, leaving eleven screenshots and the
+  exported brief in `agent/reports/`. Both files are ordinary browser-chrome
+  tests that photograph themselves only when `FOS_SHOTS` names a directory, so
+  a normal suite run writes nothing. **The headline find is that every
+  screenshot this project has ever taken had a blank rectangle where the page
+  was**: `drawWindow` draws the parent process's own layers and content is in
+  another process. `DRAWWINDOW_USE_WIDGET_LAYERS` fixes it. The README now
+  shows the rail, the Field at both levels, the command bar and the context
+  sidebar, all over real pages.
+
+- **The entity extractor keeps names whole.** "The Mother of All Demos" was
+  filed as "The Mother" and "All Demos" — found by reading the context sidebar
+  in a screenshot, which is the only surface that displays this output.
 
 - **The address bar no longer invites the typing it refuses.** The placeholder
   said "Search or enter address" on a bar made read-only four runs ago. It now
@@ -263,24 +271,25 @@ criterion completed.
 
 ## Next task
 
-The Field is measured, the smoke run produces its own artefacts, and the suite
-is green. What is left of Phase 3 is the README, the polish pass, and the
-carried-over work.
+The Field is measured, the smoke run produces its own artefacts, the README has
+real screenshots, and the suite is green. What is left of Phase 3 is the polish
+pass and one more green run.
 
-1. **README with real screenshots.** Now unblocked and the top of the list:
-   `agent/smoke.sh` regenerates `agent/reports/demo-*.png` on demand, so the
-   README can point at pictures that can be reproduced rather than at ones
-   nobody can make again. One caveat found while looking at them: the demo
-   browses the mochitest server, so the pages in the shots are blank white.
-   They document the flow correctly and they are poor advertising. Decide
-   whether the README's pictures come from the smoke run or from a hand-driven
-   session on real pages — the second needs the MCP and cannot be automated.
+1. **Apply the design system to what it has not touched yet.** Now the top of
+   the list. `SYSTEM.md` settled type, quiet text, the mark, selection, gutter,
+   layers and weight. It did not touch spacing rhythm inside a row, focus-ring
+   consistency, or the dark/light pairs, and it explicitly left the three
+   surfaces' *widths* alone. The screenshots in the README are the place to
+   look for what is actually wrong — the sidebar's `ABOUT` list has no rhythm
+   and the rail's rows sit tight against the trail name.
 
-2. **Apply the design system to what it has not touched yet.** `SYSTEM.md`
-   settled type, quiet text, the mark, selection, gutter, layers and weight. It
-   did not touch spacing rhythm inside a row, focus-ring consistency, or the
-   dark/light pairs, and it explicitly left the three surfaces' *widths* alone.
-   The address-bar placeholder came off this list this run.
+2. **A second consecutive green suite run is the last Phase 3 criterion.**
+   "Full suite green on two consecutive runs" is the wording, and this run is
+   one. Run the whole component directory plus the node tests at the start of
+   the next run, and if it is green, Phase 3's criteria are met: the design
+   system exists, the Field is measured, the tests are there, the smoke run
+   produces its screenshots, and the README is complete. Write the report and
+   merge.
 
 3. **The overview's reposition-only path.** One crowded-overview rebuild is
    17.6ms and does not fit in a frame; the resize path now does it once per
@@ -307,6 +316,12 @@ carried-over work.
   a user can act on. Not verified either way yet — check what pressing it
   actually does before deciding whether it joins the passthrough list's
   exceptions or is handed to the command bar like the rest of the bar.
+
+- **The entity extractor glues a sentence-initial capital to the name after
+  it.** "Reading Project Xanadu" comes out as one phrase. Documented in the
+  module rather than fixed, because nothing in capitalisation distinguishes it
+  from "The Mother of All Demos", which is one phrase and should be. The real
+  answer is the embedding pass, where a model does this properly.
 
 - **A full region refuses every drag.** At 56 cards — a region's capacity — 59
   of 60 pointer moves in a drag toward the middle were refused, so a full
@@ -728,6 +743,13 @@ only computed style in a real window can see it, which is what
   runner reports it as `UNKNOWN TEST: FOO=bar`, which reads like a bad path
   rather than a rejected option. `agent/smoke.sh` calls `mach mochitest` for
   this reason alone.
+- **`drawWindow` does not draw the page unless you ask it to.** The default
+  path draws the parent process's own layers and content lives in another
+  process, so every screenshot this project took between Phase 0 and now had a
+  blank white rectangle where the page was — and it was never noticed, because
+  the surfaces being photographed were all chrome. Pass
+  `DRAWWINDOW_USE_WIDGET_LAYERS | DRAWWINDOW_DRAW_VIEW`, which snapshots what
+  the compositor actually put on screen.
 - **A screenshot taken by the harness wears upstream's remote-control
   warning.** A robot icon and red diagonal stripes across the address bar, from
   `:root[remotecontrol]` in `browser/themes/shared/urlbar-searchbar.css`,
