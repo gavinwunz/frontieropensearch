@@ -227,72 +227,95 @@ Now on **Phase 3 — Beautiful and tested**.
   node tests, xpcshell green. Screenshots per stage in
   `agent/reports/demo-*.png`, the exported brief in `demo-pack.md`.
 
+- **The Field is measured, and the one real jank is gone.**
+  `tests/browser/browser_zzfieldperf.js` times a drag one move per animation
+  frame, splitting each move into script, the layout its writes then cost, and
+  the interval the refresh driver delivered. **The drag was never the problem**:
+  at 40 cards carrying thumbnails a move is 1.5ms of script and 0.01ms of
+  layout, and 60 consecutive frames arrived at the display's own 17.08ms
+  cadence with none dropped. The cost is `render`, which rebuilds the stage
+  from nothing, and the resize listener called it unthrottled — on the worst
+  case the design permits (twelve trails, 480 cards, 480 miniatures) one
+  rebuild is 17.6ms and ten resize events in one tick cost 53ms of them, taking
+  the frame interval during a window drag to a p95 of 65ms against 23ms with
+  the Field closed. Now coalesced to one render per frame: the burst is 7.6ms.
+  `browser_field.js` holds the behaviour, `IDEAS.md` run 18 the numbers and the
+  two hypotheses they refuted.
+
+- **The scripted end-to-end smoke run.** `agent/smoke.sh` drives the demo flow
+  in a real browser and leaves six screenshots and the exported brief in
+  `agent/reports/`. The flow is still the ordinary browser-chrome test that
+  runs in the suite; it photographs itself only when `FOS_SHOTS` names a
+  directory, so a normal run writes nothing. The pictures in `agent/reports/`
+  had come from a scratch test that was deleted, so until now they could not be
+  regenerated.
+
+- **The address bar no longer invites the typing it refuses.** The placeholder
+  said "Search or enter address" on a bar made read-only four runs ago. It now
+  says "Press to search or run a command", set by overriding `_setPlaceholder`
+  rather than by writing the attribute — see the gotcha below.
+
 ## In progress
 
-Nothing. `agent/dev` and `main` both carry the store fix; main was merged this
-run because the bug broke Phase 2's own tagged acceptance criterion there.
-Both branches pushed.
+Nothing. `agent/dev` carries this run's three changes and is pushed. `main` is
+one run behind and carries no defect — nothing merged this run because no phase
+criterion completed.
 
 ## Next task
 
-The flake is fixed and the suite is green five times running, so the flagship
-test is trustworthy again and the rest of Phase 3 is unblocked.
+The Field is measured, the smoke run produces its own artefacts, and the suite
+is green. What is left of Phase 3 is the README, the polish pass, and the
+carried-over work.
 
-1. **Measure the Field's pan and zoom before optimising it.** Unchanged from
-   two runs ago and now the top of the list. "60fps canvas pan and zoom, no
-   layout jank" is the criterion and there is no measurement yet. The Field is
-   DOM, not canvas, and `#applyPositions` writes transforms on every pointer
-   move. Profile with 40+ cards with the Gecko profiler, then decide.
-   `IDEAS.md` run 17 has the two candidates to check the profile against —
-   the transform writes and per-card CSS containment — and explicitly rejects
-   spraying `will-change`. Do not optimise from a guess.
+1. **README with real screenshots.** Now unblocked and the top of the list:
+   `agent/smoke.sh` regenerates `agent/reports/demo-*.png` on demand, so the
+   README can point at pictures that can be reproduced rather than at ones
+   nobody can make again. One caveat found while looking at them: the demo
+   browses the mochitest server, so the pages in the shots are blank white.
+   They document the flow correctly and they are poor advertising. Decide
+   whether the README's pictures come from the smoke run or from a hand-driven
+   session on real pages — the second needs the MCP and cannot be automated.
 
-2. **The scripted end-to-end smoke run.** The demo flow exists as a
-   browser-chrome test and the canvas screenshot route works; Phase 3 wants
-   the two joined, saving screenshots to `agent/reports/`. No longer blocked:
-   it was blocked in spirit by the flake and the flake is gone.
+2. **Apply the design system to what it has not touched yet.** `SYSTEM.md`
+   settled type, quiet text, the mark, selection, gutter, layers and weight. It
+   did not touch spacing rhythm inside a row, focus-ring consistency, or the
+   dark/light pairs, and it explicitly left the three surfaces' *widths* alone.
+   The address-bar placeholder came off this list this run.
 
-3. **README with real screenshots.** The architecture doc now exists
-   (`design/ARCHITECTURE.md`, linked from the README's new documentation
-   table) and the MPL and trademark notes were already there. What is left is
-   genuinely just the screenshots, which item 2 produces.
+3. **The overview's reposition-only path.** One crowded-overview rebuild is
+   17.6ms and does not fit in a frame; the resize path now does it once per
+   frame rather than several times, which was the whole of the jank, but the
+   remaining render is still a frame's budget. `IDEAS.md` run 18 has the
+   numbers and the shape of the fix. Not urgent — a level switch is one
+   keystroke and one dropped frame.
 
-4. **Apply the design system to what it has not touched yet.** `SYSTEM.md`
-   settled type, quiet text, the mark, selection, gutter, layers and weight.
-   It did not touch spacing rhythm inside a row, focus-ring consistency, or
-   the dark/light pairs, and it explicitly left the three surfaces' *widths*
-   alone. Also still open from Phase 2's list: the address bar placeholder
-   still says "Search or enter address" while refusing to be typed in.
-
-5. **A background tab still arrives with no signal at all.** Carried over,
+4. **A background tab still arrives with no signal at all.** Carried over,
    unchanged. Ambient-display research is in `IDEAS.md`.
 
-6. **The embedding pass, `prune`, and the voice path.** All carried over from
+5. **The embedding pass, `prune`, and the voice path.** All carried over from
    Phase 2, none blocking a Phase 3 criterion.
 
 ## Found this run, not yet chased
 
-- **RESOLVED — the full-suite flake was one bug, and it was in the product.**
-  `FOSContextStore.#insert` ran the INSERT and then a separate
-  `SELECT last_insert_rowid()`. One store is shared by every window in the
-  process and each window's engine serialises only *its own* writes, so the two
-  statements interleaved with another window's and the insert reported a row
-  from whatever table had most recently been written. Diagnosed by dumping
-  `context_member`, `trail_node` and `trail` at pack time in a failing run,
-  exactly as the last run's note said to: the dump showed four node membership
-  rows, two of them naming node ids that did not exist, and both surviving
-  nodes on `trail_id` 159 with no trail 159 anywhere. Nothing in this component
-  deletes rows, so those references were never going to resolve.
+- **The search-mode switcher is a second entry surface, and it is branded.**
+  Visible at the left of the address bar in a real window: a Google logo and a
+  chevron, `#urlbar-searchmode-switcher`, which `FOSLocationDisplay` explicitly
+  passes through so it keeps its own press. Two problems in one control. It is
+  a way to start a search that is not the command bar, which is the claim this
+  module exists to make true; and what it opens sets a search mode on an input
+  that cannot be typed into, so it is likely to be a control that does nothing
+  a user can act on. Not verified either way yet — check what pressing it
+  actually does before deciding whether it joins the passthrough list's
+  exceptions or is handed to the command bar like the rest of the bar.
 
-  The inner-join hypothesis from last run was the wrong half. The join *was*
-  dropping the pages, but because the ids it joined on were fabricated, not
-  because a trail row was late. Fixed with `RETURNING id`, which is one
-  statement and cannot interleave. Regression test:
-  `test_an_insert_returns_its_own_id_under_concurrency` in
-  `tests/unit/test_contextstore.js`, verified against the old implementation —
-  it reports **1 distinct id for 20 concurrent trail inserts**. Five
-  consecutive full-suite runs green, against three of three failing before,
-  with three different signatures between them.
+- **A full region refuses every drag.** At 56 cards — a region's capacity — 59
+  of 60 pointer moves in a drag toward the middle were refused, so a full
+  region cannot be rearranged at all. This is §6 working as specified: the push
+  chain has nowhere to go and refusing beats silently destroying a position the
+  user chose. But "you may not move anything" is a corner the design should
+  answer deliberately rather than arrive at, and the Field is the surface the
+  whole pillar rests on. Found by the perf harness, which had to count
+  committed moves to notice it was measuring refusals.
 
 - **The active card can have no thumbnail.** In the Field's region level the
   search result's card painted blank while its three children painted
@@ -691,6 +714,36 @@ only computed style in a real window can see it, which is what
   render the browser only.
 - A `&&` chain after a `md5sum` of a path that may not exist silently skips the
   rest. Cost a confusing minute when `generate-mark.py` appeared not to run.
+
+- **A performance number needs a control beside it or it is decoration.** The
+  first version of the Field harness reported a confident set of drag timings
+  for a drag that was refused on every move and never moved a card — the
+  numbers looked plausible and were about nothing. Counting committed moves
+  cost two lines and caught it. Same shape for the rest: the layout figure is
+  only believable because a second flush measured immediately after reads
+  0.00ms against the first's 0.01ms, and the resize figure only because the
+  same loop was run with the Field closed. **Every measurement in that file has
+  a control, and that is why it is trustworthy.**
+- **`mach test` does not take `--setenv`; `mach mochitest` does.** The generic
+  runner reports it as `UNKNOWN TEST: FOO=bar`, which reads like a bad path
+  rather than a rejected option. `agent/smoke.sh` calls `mach mochitest` for
+  this reason alone.
+- **A screenshot taken by the harness wears upstream's remote-control
+  warning.** A robot icon and red diagonal stripes across the address bar, from
+  `:root[remotecontrol]` in `browser/themes/shared/urlbar-searchbar.css`,
+  because Marionette is driving the window. It is correct behaviour and it
+  documents the test rig rather than the browser, so the capture drops the
+  attribute for its own duration and puts it straight back. Anything that
+  photographs chrome from a test needs the same two lines.
+- **The urlbar placeholder is set again after the window is built.** The search
+  service calls `_setPlaceholder` with the default engine's name once it knows
+  it, so an attribute written at wiring time survives about a second and then
+  becomes "Search with Google or enter address". Overriding the method is the
+  seam that holds. The general lesson is the one that keeps recurring: a value
+  written once into a surface somebody else also writes will be overwritten,
+  and only a test in a real window notices — this looked right in the window
+  that produced it.
+
 
 ## Failure counters
 

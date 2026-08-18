@@ -1397,3 +1397,63 @@ One correction to how it gets measured: the sources all reach for Chrome
 DevTools, and this tree has the Gecko profiler and a `profiler-analysis` path
 already available. Use those — a chrome-privileged canvas in a XUL window is not
 a page, and Chrome's numbers would not describe it even if they could be taken.
+
+## Run 18 — the Field measured, and what that did to run 17's two candidates
+
+**Not a search.** Run 17 ended by saying the measurement was the point and that
+its two candidates — the transform writes and per-card CSS containment — were
+hypotheses to check a profile against, not work to do. This is that check, and
+it is recorded here because a rejected hypothesis is worth as much as an
+adopted one and this is where the project keeps them.
+
+The harness is `browser/components/fos/tests/browser/browser_zzfieldperf.js`.
+It measures a drag one move per animation frame, which is the rate Gecko
+coalesces pointer input to anyway, and splits each move into three numbers:
+the script the handler runs, the style and layout that the handler's writes
+then cost, and the interval the refresh driver actually delivered.
+
+**Reject: the transform writes.** The premise was wrong twice over. The Field
+does not write transforms — `#applyPositions` writes `left` and `top` — and it
+does not matter that it does. At 40 cards carrying thumbnails a pointer move
+costs **1.5ms of script and 0.01ms of layout**, and 60 consecutive frames were
+delivered at 17.08ms, the display's own cadence, with none dropped. The reason
+the layout is free is worth keeping: the loop writes every card's position but
+only the dragged card's value actually changes, and a CSS declaration rewritten
+to the value it already had dirties nothing.
+
+**Reject: CSS containment.** It was proposed as a blast-radius bound rather
+than a speed-up — a guarantee that a change inside one card cannot cost a
+reflow proportional to how many cards are open. The measurement says the blast
+radius is already ~10µs at 56 cards, so the guarantee is one the engine is
+giving for free and the property would buy nothing. Adopting it anyway would be
+optimising from a guess with a number in front of us saying not to.
+
+**Adopt, and it is what the measurement was actually for: one render per
+frame.** The cost is not in the drag at all. It is in `render`, which rebuilds
+the stage from nothing, and in the fact that the resize listener called it
+unthrottled. On the worst case the design permits — twelve trails, 480 cards,
+480 miniatures, which is the overview past the nine-slot limit and into the
+nest — one rebuild is 17.6ms (9.9ms of script building elements, 7.7ms of
+layout) and ten resize events arriving in one tick cost 53ms of them. Frame
+intervals during a real window drag: p95 **65ms** with the Field open against
+**23ms** with it closed. Coalescing to one render per animation frame takes the
+burst to 7.6ms. Nothing about the rebuild got faster; it stopped happening
+several times for one frame.
+
+**Left standing, with a number on it.** One crowded-overview rebuild still does
+not fit in a frame, so a continuous resize now spends a whole frame's budget on
+one legitimate render instead of several redundant ones. The principled fix is
+a reposition-only path — the code's own comment already says a resize means
+"nothing moves, the same arrangement drawn at a different scale", and the
+region level already has `#applyPositions` for exactly this — but it is a
+structural change to the overview's render and it wants its own run. It is not
+urgent: a level switch is a keystroke, once, and 17.6ms is one dropped frame.
+
+**The method is the transferable part.** Every number here has a control beside
+it. The layout figure is believable only because a second flush measured
+immediately after reads 0.00ms against the first's 0.01ms, which is what proves
+the first one was measuring a real reflow rather than nothing. The resize
+figure is believable only because the same loop was run with the Field closed.
+The first version of this harness reported a confident set of numbers for a
+drag that was being refused on every move and never moved a card at all —
+caught by counting committed moves, which cost two lines.

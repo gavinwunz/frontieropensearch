@@ -145,3 +145,51 @@ acceptance criterion did not actually hold there.
 Tests: full suite green **five consecutive runs** (427 browser-chrome checks,
 both xpcshell files) against three of three failing before the fix; 179 node
 tests green.
+
+### Run 19 — 2026-08-18 — Phase 3
+
+Measured the Field before touching it, which is what the last two runs' notes
+kept asking for, and the measurement refuted both of the hypotheses it was
+written to test. The drag is not the problem: at 40 cards carrying thumbnails a
+pointer move costs 1.5ms of script and 0.01ms of layout, and 60 consecutive
+frames arrived at the display's own cadence with none dropped. `#applyPositions`
+does not write transforms as `STATE.md` claimed — it writes `left` and `top` —
+and it does not matter that it does, because the loop rewrites most cards to the
+value they already had and an unchanged declaration dirties nothing. CSS
+containment goes the same way: it was proposed as a bound on blast radius, and
+the blast radius is already 10µs at 56 cards.
+
+What the measurement did find is one real source of jank, in the place nobody
+had proposed. `render` rebuilds the stage from nothing, the resize listener
+called it unthrottled, and on the worst case the design permits — twelve trails,
+480 cards, 480 miniatures — one rebuild is 17.6ms and ten resize events in a
+single tick cost 53ms of them. Frame intervals during a real window drag: p95
+65ms with the Field open, 23ms with it closed. Coalesced to one render per
+animation frame, the burst is 7.6ms. The rebuild itself is untouched; it stopped
+happening several times for one frame.
+
+The harness stays as `browser_zzfieldperf.js`, with a control beside every
+number. That discipline earned itself immediately: the first version reported
+confident timings for a drag that was being refused on every move and had never
+moved a card at all.
+
+Then the second Phase 3 criterion: the demo flow now photographs itself. Six
+stage screenshots and the exported brief land in `agent/reports/` when
+`FOS_SHOTS` names a directory, and `agent/smoke.sh` is the run that sets it. The
+pictures there had come from a scratch test that was deleted afterwards, so
+until now they could not be regenerated. Looking at the first one is what found
+that a harness screenshot wears upstream's remote-control stripes, and reading
+the address bar in it is what led to the placeholder: the bar was made read-only
+four runs ago and still said "Search or enter address" while refusing every
+keystroke. Fixing it needed the `_setPlaceholder` override rather than an
+attribute, because the search service writes that string again after the window
+is built — which the test caught and the window it was written in did not.
+
+Two findings recorded and not chased: a full region refuses every drag, so at
+capacity nothing can be rearranged; and the Google-branded search-mode switcher
+is still a second way to start a search from a bar that claims to be one entry
+surface.
+
+Tests: full component suite green (473 browser-chrome checks, both xpcshell
+files), 179 node tests green, smoke run green. Three commits pushed to
+`agent/dev`. Nothing merged to `main` — no phase criterion completed this run.
