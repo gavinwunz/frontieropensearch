@@ -30,12 +30,15 @@ import {
 
 import {
   ARMING,
+  ARMING_DEADLINE_MS,
   IDLE,
   LISTENING,
+  LISTENING_DEADLINE_MS,
   NOTICE_NOTHING_HEARD,
   NOTICE_TOO_SHORT,
   NOTICE_UNAVAILABLE,
   TRANSCRIBING,
+  TRANSCRIBING_DEADLINE_MS,
   VoiceSession,
 } from "../../FOSVoiceSession.sys.mjs";
 
@@ -352,4 +355,180 @@ test("events out of order are ignored rather than half-applied", () => {
     "no transcript before a release"
   );
   assert.equal(session.state, ARMING);
+});
+
+/**
+ * Drive a session to `stage` and hand it back, so the deadline tests can say
+ * which stage they mean rather than replaying the turn each time.
+ *
+ * @param {string} stage
+ * @param {string} [text] What the bar held when the turn began.
+ */
+function at(stage, text = "kept") {
+  const session = new VoiceSession();
+  session.press({ text });
+  if (stage !== ARMING) {
+    session.armed();
+  }
+  if (stage === TRANSCRIBING) {
+    session.release();
+  }
+  assert.equal(session.state, stage);
+  return session;
+}
+
+test("every stage is entered with the deadline it is allowed to last", () => {
+  const session = new VoiceSession();
+  assert.equal(session.press({ text: "" }).deadline, ARMING_DEADLINE_MS);
+  assert.equal(session.armed().deadline, LISTENING_DEADLINE_MS);
+  assert.equal(session.release().deadline, TRANSCRIBING_DEADLINE_MS);
+  assert.equal(
+    session.final("enter cap").deadline,
+    null,
+    "the turn is over, and idle is what clears the timer"
+  );
+});
+
+test("an ignored event carries no deadline, so it cannot restart an open microphone", () => {
+  const session = at(LISTENING);
+  assert.equal(
+    session.press({ text: "auto-repeat" }).deadline,
+    null,
+    "the whole point: holding the key must not extend the listen"
+  );
+  assert.equal(
+    session.partial("enter cap").deadline,
+    null,
+    "and neither does speaking — the cap is on the microphone, not on silence"
+  );
+  assert.equal(
+    session.armed().deadline,
+    null,
+    "nor does an out-of-order event"
+  );
+});
+
+test("a listen that runs out is transcribed, not thrown away", () => {
+  const session = at(LISTENING);
+  session.partial("enter cap");
+
+  const effect = session.expired();
+  assert.equal(session.state, TRANSCRIBING);
+  assert.equal(effect.capture, "stop", "the microphone closes at the deadline");
+  assert.equal(effect.deadline, TRANSCRIBING_DEADLINE_MS);
+  assert.equal(effect.input, null, "what was heard so far stands");
+  assert.equal(session.echo, "enter cap");
+
+  assert.equal(
+    session.final("enter cap").run,
+    "enter cap",
+    "a long utterance still runs"
+  );
+});
+
+test("a listen that ran out on a lost key-up hears a room, and refuses it", () => {
+  const session = at(LISTENING, "xanadu");
+  session.expired();
+
+  // Nobody spoke into the tail, so the model answers it the way Whisper
+  // answers silence. The deadline needs no way to tell this case from a long
+  // utterance, because the gate that already exists tells them apart.
+  const effect = session.final(" Thank you.");
+  assert.equal(effect.run, null);
+  assert.equal(effect.notice, NOTICE_NOTHING_HEARD);
+  assert.equal(effect.input, "xanadu");
+});
+
+test("an arm or a transcribe that runs out reports the failure that stage has", () => {
+  for (const stage of [ARMING, TRANSCRIBING]) {
+    const session = at(stage);
+    const effect = session.expired();
+    assert.equal(effect.notice, NOTICE_UNAVAILABLE, stage);
+    assert.equal(effect.input, "kept", stage);
+    assert.equal(effect.run, null, stage);
+    assert.equal(effect.capture, "stop", stage);
+    assert.equal(session.state, IDLE, stage);
+  }
+});
+
+test("a deadline that arrives with no turn under way does nothing", () => {
+  const session = new VoiceSession();
+  const effect = session.expired();
+  assert.equal(session.state, IDLE);
+  assert.deepEqual(
+    effect,
+    {
+      state: IDLE,
+      input: null,
+      notice: null,
+      run: null,
+      capture: null,
+      deadline: null,
+    },
+    "a timer the shell forgot to clear cannot disturb the bar"
+  );
+});
+
+test("losing focus ends the turn without executing", () => {
+  for (const stage of [ARMING, LISTENING, TRANSCRIBING]) {
+    const session = at(stage);
+    const effect = session.blurred();
+    assert.equal(effect.capture, "stop", stage);
+    assert.equal(effect.run, null, stage);
+    assert.equal(effect.input, "kept", stage);
+    assert.equal(session.state, IDLE, stage);
+  }
+});
+
+test("a transcript arriving after a blur does nothing, as after a cancel", () => {
+  const session = at(TRANSCRIBING);
+  session.blurred();
+  assert.equal(session.final("enter cap").run, null);
+});
+
+/**
+ * The invariant the deadlines exist for. A chrome `getUserMedia` raises no
+ * prompt and lights no indicator, so a microphone this state machine opens and
+ * does not close is a microphone with nothing at all to notice it by. Asserting
+ * it per-path would leave the next path added uncovered; asserting it over
+ * every abandoning event from every stage is what makes it a property of the
+ * machine.
+ *
+ * These five are the events that mean "this turn is over" whenever they arrive.
+ * `release` and `final` are deliberately not among them: they are the ordinary
+ * progress of a turn and are only defined at the stage they belong to, which
+ * the out-of-order test covers. The safety claim is about abandonment, because
+ * abandonment is what happens when something has gone wrong.
+ */
+test("every way out of every stage closes the microphone and lands on idle", () => {
+  const enders = {
+    cancel: s => s.cancel(),
+    typed: s => s.typed(),
+    blurred: s => s.blurred(),
+    failed: s => s.failed(),
+    expired: s => s.expired(),
+  };
+
+  for (const stage of [ARMING, LISTENING, TRANSCRIBING]) {
+    for (const [event, end] of Object.entries(enders)) {
+      const session = at(stage);
+      const where = `${event} from ${stage}`;
+
+      let effect = end(session);
+      // release and expired hand a listen on to be transcribed rather than
+      // ending the turn; the microphone must already have closed, and the one
+      // stage left has to end too.
+      if (session.state === TRANSCRIBING) {
+        assert.equal(effect.capture, "stop", `${where} closed the microphone`);
+        effect = session.final("[BLANK_AUDIO]");
+      }
+
+      assert.equal(session.state, IDLE, `${where} reached idle`);
+      assert.equal(
+        session.active,
+        false,
+        `${where} left no timer for the shell to run`
+      );
+    }
+  }
 });
