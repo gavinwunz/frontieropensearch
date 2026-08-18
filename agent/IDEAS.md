@@ -1361,3 +1361,39 @@ surviving opacity rule is the Field dimming cards outside the focused
 lineage, which dims their thumbnails deliberately.
 
 Source: https://www.tpgi.com/an-argument-against-css-opacity/
+
+## Run 17 — what to measure before touching the Field's pan and zoom
+
+**Searched:** jank measurement for a large DOM under continuous transform —
+`will-change`, CSS containment, compositor-only properties.
+<https://www.corewebvitals.io/pagespeed/html-reflow-and-core-web-vitals>,
+<https://simonhearne.com/2015/jank-meter/>,
+<https://www.algolia.com/blog/engineering/60-fps-performant-web-animations-for-optimal-ux>
+
+**Verdict: mostly reject as already known, one thing to adopt.** The bulk of
+what is written on this is "animate `transform` and `opacity`, never `top` and
+`width`", which the Field already does — `#applyPositions` writes transforms.
+Advice to reach for `will-change` is explicitly *not* adopted: the sources that
+are any good say the same thing, that it is a diagnosis rather than a fix, and
+a promotion hint sprayed over forty cards buys forty layers and the memory to
+match.
+
+The one finding worth having is **CSS containment as a blast-radius bound
+rather than as a speed-up**. `contain` tells the engine a subtree's internals
+cannot affect anything outside it, so a change inside one card cannot cost a
+reflow proportional to how many cards are open. That is the shape of the Field's
+actual risk: a card is a thumbnail plus a title, its content changes on capture,
+and the number of them is unbounded by design. It is a per-card property and
+costs nothing when nothing changes, which is why it is worth trying even though
+the Field's cost is presumed to be in the transform writes.
+
+**It does not change the order of work.** Next task 2 stands as written: profile
+the Field with 40+ cards *first*. Both of these are hypotheses about where the
+time goes, and this project has now spent three runs on a bug that every
+plausible story explained equally well. The measurement is the point; these are
+just the two candidates to check against it.
+
+One correction to how it gets measured: the sources all reach for Chrome
+DevTools, and this tree has the Gecko profiler and a `profiler-analysis` path
+already available. Use those — a chrome-privileged canvas in a XUL window is not
+a page, and Chrome's numbers would not describe it even if they could be taken.
