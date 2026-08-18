@@ -86,6 +86,16 @@ Now on **Phase 3 — Beautiful and tested**.
   `browser/components/fos/tests/node/run.sh`. Wired into
   `browser/components/moz.build`.
 
+- **One design system, written down and applied.** `design/SYSTEM.md` is the
+  contract and `browser/components/fos/content/fos-tokens.css` declares it;
+  `ensureStylesheet` makes the token sheet a precondition of every other FOS
+  sheet, so it cannot be forgotten by a surface. Reconciled across all five
+  stylesheets: one type scale, one way to quiet text, one mark, one selection
+  treatment, one gutter rule, one weight for "where you are", and the three
+  layer integers named. **The headline find is that chrome had no small type at
+  all** — see the gotcha below. `browser_designsystem.js` holds the contract as
+  82 checks against a running window.
+
 - **The Context Engine, and pillar C's data layer end to end.**
   `context-engine/migrations/001-initial.sql` is the schema as a versioned
   migration, packaged into the browser jar and read over `chrome://` at open.
@@ -219,40 +229,69 @@ assuming origin is current.
 
 ## Next task
 
-Phase 2 closed, so the list is Phase 3's: visual polish on one coherent design
-system, 60fps pan and zoom, the test pyramid filled out, and a README with real
-screenshots and an architecture doc. In rough order of value.
+**1 is the flake. Nothing else in Phase 3 is worth doing while the flagship
+test is untrustworthy.**
 
-1. **The design system, written down and then applied.** Four chrome surfaces
-   were each styled as they landed and they already share tokens, but nothing
-   states the spacing scale, the type scale or the dark/light pairs as a
-   contract. Phase 3's first line is "one coherent design system"; write it as
-   `design/SYSTEM.md` with the tokens that exist, find where the four surfaces
-   disagree, and reconcile. Do this before any repainting — otherwise the
-   polish pass is six independent opinions.
-2. **Measure the Field's pan and zoom before optimising it.** "60fps canvas pan
-   and zoom, no layout jank" is the criterion and there is no measurement yet.
-   The Field is DOM, not canvas, and `#applyPositions` writes transforms on
-   every pointer move. Get a profile with a real session's worth of cards
-   (40+), then decide. Do not optimise from a guess.
-3. **The scripted end-to-end smoke run.** The demo flow already exists as a
-   browser-chrome test and the canvas screenshot route works — Phase 3 asks for
-   the two joined: a scripted run that drives the flow and saves screenshots to
-   `agent/reports/`. This run built exactly that as a scratch file and deleted
-   it; making it a permanent, non-manifest harness is most of the work.
-4. **README with real screenshots and an architecture doc.** The pillar designs
-   are in `design/FIELD.md`, `design/GRAMMAR.md` and `context-engine/SCHEMA.md`;
-   the missing piece is the document that says how the three fit together and
-   why, plus the MPL and trademark notes.
-5. **A background tab still arrives with no signal at all.** Carried over from
-   Phase 2 and unchanged: a `target=_blank` load is invisible until the Field
-   is opened. The card model already knows which card is new. Ambient-display
-   research is now in `IDEAS.md`; cheapest honest answer first.
-6. **The embedding pass, `prune`, and the voice path.** All three carried over
-   from Phase 2's list, all three still worth doing, none of them blocking a
-   Phase 3 criterion. See `IDEAS.md`.
+1. **`browser_zdemoflow.js` flakes in the full suite, and the signature is
+   sharp.** It passes alone, every time (44 checks). In a full-suite run it
+   failed 2 of 3 times this run, and once earlier with a smaller failure set —
+   measured across five full-suite runs, not inferred. When it fails, the
+   exported context pack contains the context's **name and its query but not
+   one of its four pages**, and `suggest()` returns no context-tier item. So
+   the context exists and its `context_member` query rows exist; the page side
+   is what goes missing.
+
+   `FOSContextStore.contextContents` (line ~760) is where to start. Pages come
+   from `context_member` joined to `trail_node`, and then
+   `JOIN trail t ON t.id = n.trail_id` — an **inner** join. A node whose trail
+   row is absent or not yet written therefore drops out of the brief silently
+   while its queries stay, which is exactly the observed signature. That is a
+   hypothesis with a matching shape, not a diagnosis: confirm it by dumping
+   `context_member`, `trail_node` and `trail` at pack time during a failing
+   suite run before changing anything. If it is right, the inner join is a
+   robustness bug on its own — a brief should never quietly lose a page.
+
+   Do not chase this by re-running until green. It failed 2 of 3; a single
+   green run proves nothing, which is how this run first mis-read it as
+   "my change broke the suite".
+
+2. **Measure the Field's pan and zoom before optimising it.** Unchanged from
+   last run. "60fps canvas pan and zoom, no layout jank" is the criterion and
+   there is no measurement yet. The Field is DOM, not canvas, and
+   `#applyPositions` writes transforms on every pointer move. Profile with 40+
+   cards, then decide. Do not optimise from a guess.
+
+3. **The scripted end-to-end smoke run.** The demo flow exists as a
+   browser-chrome test and the canvas screenshot route works; Phase 3 wants
+   the two joined, saving screenshots to `agent/reports/`. Blocked in spirit
+   by 1 — a smoke run built on a 2-in-3 flake is not a smoke run.
+
+4. **README with real screenshots and an architecture doc.** The pillar
+   designs are in `design/FIELD.md`, `design/GRAMMAR.md`,
+   `design/SYSTEM.md` and `context-engine/SCHEMA.md`; the missing piece is the
+   document saying how the three pillars fit together, plus MPL and trademark
+   notes.
+
+5. **Apply the design system to what it has not touched yet.** `SYSTEM.md`
+   settled type, quiet text, the mark, selection, gutter, layers and weight.
+   It did not touch spacing rhythm inside a row, focus-ring consistency, or
+   the dark/light pairs, and it explicitly left the three surfaces' *widths*
+   alone. Also still open from Phase 2's list: the address bar placeholder
+   still says "Search or enter address" while refusing to be typed in.
+
+6. **A background tab still arrives with no signal at all.** Carried over,
+   unchanged. Ambient-display research is in `IDEAS.md`.
+
+7. **The embedding pass, `prune`, and the voice path.** All carried over from
+   Phase 2, none blocking a Phase 3 criterion.
 
 ## Found this run, not yet chased
+
+- **A full-suite run is not reproducible and never was.** See Next task 1.
+  The three-strikes rule applies to this one from now on: it has now been
+  observed failing three times and passing twice, and each observation was
+  briefly explained by a different story (my change, then test pollution, then
+  ordering) before the counts were actually compared. Count it.
 
 - **The active card can have no thumbnail.** In the Field's region level the
   search result's card painted blank while its three children painted
@@ -459,6 +498,23 @@ stall browsing. So the database is a very good record and not a guaranteed one;
 do not build anything that assumes a row must exist.
 
 ## Gotchas worth not rediscovering
+
+**`--font-size-small` does nothing in chrome, and never did.** Upstream's
+`toolkit/themes/shared/design-system/src/tokens/base/font.tokens.json` gives
+both `font.size.root` and `font.size.small` a *platform* value of `unset`, so
+that chrome tracks the OS font size. `font.size.large` has no such override.
+The result is a type scale whose upper half applies in a chrome window and
+whose lower half silently does not: `font-size: var(--font-size-small)`
+resolves to nothing and the declaration falls back to inheriting. The fork had
+twenty-two of them across four surfaces, all rendering body text, which is most
+of why the surfaces read as flat. Measured, not reasoned:
+`getPropertyValue("--font-size-small")` returns the empty string in chrome and
+`0.867rem` in an in-content page. Use `--fos-font-size-small`. A token that
+resolves to nothing is invisible to stylelint, to node tests and to eslint —
+only computed style in a real window can see it, which is what
+`browser_designsystem.js` now does for every `--fos-*` token.
+
+
 
 - **`source agent/env.sh` before any `mach build`.** Without it configure dies
   with `Cannot find ccache`, which reads like a missing toolchain and is only

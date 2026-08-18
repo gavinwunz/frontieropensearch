@@ -33,3 +33,70 @@
 2026-08-18T18:20Z — Phase 2 — Run 15. The single-surface gap closed, which STATE had named the widest distance between what the phase plan claims and what the build does. Two surfaces went and neither needed a mechanism invented for it. The tab strip: `TabBarVisibility` already hides it when tabs are "displayed elsewhere", which is the clause vertical tabs stands on and is exactly what the Field is, so the change is one more condition on an existing rule rather than a second way to collapse a toolbar — and the comment warning that hiding the strip must not lose tabs is satisfied by construction, because the tabs are all still there and `browser.fos.field.replacesTabStrip=false` draws the strip again. With it gone the nav-bar takes the titlebar and the window controls land correctly with no styling of ours, because upstream already handles that case for popups. The address bar was the harder half and the research is what decided its shape. Deleting it is the obvious move and it is the one that ships advisories: Zen, a fork with these same ambitions, has an origin-spoofing advisory (GHSA-vjfv-85qf-v25c) whose root cause was chrome that hid where the user was. Against that sits the older finding that users barely look at the address bar — a 2008 lab study of 63 subjects, and an eye-tracking study where 23% never checked browser cues at all and then judged wrong 40% of the time. Those look contradictory and are not: they are about different halves of one widget. Ignoring an indicator makes it weak; removing it makes it a new attack surface, because nothing then contradicts an origin a page draws for itself. So the bar was cut along the seam it already has — entry moves to the command bar, display stays in the element that holds the eTLD+1 emphasis, the punycode handling, the certificate and mixed-content state and the site's permissions, none of which this project should be re-earning in an afternoon. `readOnly` turned out to be the supported way to do that, for the fourth time this project has found the mechanism it wanted already in the tree: popup windows and taskbar tabs have shipped an address bar that shows an origin and refuses typing for years, so every anchor and panel keeps working untouched. What is new is only the click, which opens the command bar empty, and the passthrough list that leaves the site-information control and the page actions their own press. Two habits paid again. A screenshot found what fifteen green checks could not: `readOnly` says nothing about how a field *looks*, so the bar kept an I-beam over text that would not take a caret — a control advertising an input it refuses — and the fix is now a stylesheet and an assertion on the computed cursor. And a test that failed for a good reason was right: the identity box is zero-width in this build because the trust panel supersedes it, so the test now presses whichever site-information control the user can actually reach, which is what it should have asserted from the start. Upstream fallout was smaller than feared and one file of it was real: `browser_1936752_lock_tab_sizing.js` measures tab widths that are now zero, it timed out, and a timeout aborts the whole directory. The `tabs/` and `dragdrop/` manifests now run with the strip restored — those files are the coverage keeping the strip working for the pref that restores it, and the strip-less window has its own tests. The next file, `browser_addAdjacentNewTab.js`, also times out; checked out the pre-run tree, rebuilt and re-ran to be sure, and it fails identically, in the same tab-context-menu-on-x11 family this manifest already skips several files for. Removing the strip immediately surfaced the next real gap and it is now the top of the list: a background tab arrives with no signal at all, because the strip was doing that job incidentally. Tests: 298 browser-chrome checks in the component, all green; eslint and stylelint clean; screenshots in agent/reports/no-tab-strip.png and one-surface-{rest,rest-dark,open}.png; the remaining 193 upstream tab tests left running as background job tabtests5 for next run to read.
 
 2026-08-18T18:40Z — Phase 2 — Run 16. **Phase 2 is complete**, tagged `phase-2`, merged to `main`, report in `agent/reports/phase-2.md`. The task was the one STATE had put at the top for the right reason: every stage of the phase's own "done when" was separately tested and nothing had ever run them as one sequence, so the honest answer to "is the phase finished" was unknown rather than yes. It is now a single browser-chrome test, `browser_zdemoflow.js`, driving search, three branches, the Field, a context switch and a pack export in one task — deliberately one task, because splitting it would let each stage re-establish its own preconditions, which is exactly what the other six files already do and exactly what made them blind to what this found. It found three things in the first hour. A query never joined its own context: the membership was written from whatever was active at the moment the query was issued, and for the commonest case of all — a search typed into a fresh tab — there is nothing active, because the context does not exist until the page arrives. Every pack of an enquiry that began with a search therefore reported "0 questions asked", which is half of what a brief is for. The seam to fix it was already there, since a pending query already waits for its node to exist; it now joins that node's context at the same moment, and the issue-time membership stays because a question asked while working on one topic that opens another really was asked in both. Second, a pinned context could never be released: `context <mark>` pins deliberately and correctly, but nothing undid it, so one switch aimed the bar's ranking, `what` and `pack` at that enquiry for the rest of the session however many tabs on other topics came after — "cannot be taken away by the next navigation" had been built as "cannot be taken away by anything". The verb's target is now optional and the bare form hands the decision back to provenance, as bare `back` applies to where you already are; the grammar stays at twelve words. Third, and not a defect: a key struck while content holds focus reaches the chrome keyset only after a round trip through the content process, so every assertion written against F2 as a synchronous call was measuring IPC latency. Two failures were mine and worth recording as errors of the same kind — comparing an in-memory node id against a database node id, which are separate spaces that coincide only by accident, and calling a promise-returning `store()` without awaiting it. The run also confirmed the tab-test question left open last run: 193 of 194 upstream tab tests pass, and the one failure crashes a content process on about:newtab and fails identically with both FOS prefs off, so it is not ours. The structural lesson is the window. Putting the flow in the shared window made it fail for reasons about the mark budget rather than about whether the pillars compose, and adding two tabs to a pillar-C file broke a mark assertion in a file that runs after it — so the flow moved to `BrowserTestUtils.openNewBrowserWindow()`, which `browser-init.js` wires completely, over the one shared profile database. That is what a fresh session is, and it is the right shape for any test of a sequence rather than a property. Screenshots found what 335 green checks could not, again: the search result's own card paints blank in the Field while its three children paint correctly, and the retired address bar still advertises "Search or enter address" while refusing to be typed in. Both recorded for Phase 3 rather than chased at the end of a run. Research: ambient and peripheral display evaluation, which sets a sharper bar for the background-tab signal than "show a badge" and rules out a toast, a notification system and a count badge outright; the channel itself is left as a Phase 3 design pass. Tests: 335 browser-chrome checks, 179 node tests, xpcshell green, eslint and stylelint clean; screenshots in agent/reports/demo-*.png and the exported brief in demo-pack.md.
+
+## 2026-08-18 — Phase 3, run 17: the design system, and a type scale that was never there
+
+Phase 3's first line is "one coherent design system", and the plan was to write
+down the tokens the four chrome surfaces already shared and reconcile where
+they had drifted. The drift was real and there was more of it than expected —
+five treatments of the mark across four surfaces, three of them carrying
+comments asserting they matched one of the others; two mechanisms for quiet
+text, six declarations to fourteen, mixed *within* single files; two selection
+treatments; three hand-written integers near maxint standing in for a layer
+order nothing stated. All of that is now one contract in `design/SYSTEM.md`,
+declared in `fos-tokens.css`, which `ensureStylesheet` loads as a precondition
+of every other FOS sheet so a surface cannot forget it.
+
+But the find that mattered was not drift. Reading the platform token source to
+learn what the tokens resolved to, `--font-size-small` turned out to be defined
+twice: `0.867rem` in the brand layer, and `unset` in the platform layer that
+chrome actually loads. Upstream does this deliberately — chrome tracks the OS
+font size rather than imposing one — but `font.size.large` carries no matching
+override, so chrome gets the upper half of a scale and not the lower half. A
+probe in a running window settled it: `font-size: var(--font-size-small)`
+computed to 13.3px against a 13.3px parent, which is to say it did nothing. The
+fork had twenty-two of those across four surfaces. Every label-and-detail and
+title-and-count pair in the rail, the sidebar and the Field — the whole
+primary/secondary structure those surfaces are built on — was rendering at one
+size. Nothing could see it: stylelint reads a stylesheet, and the stylesheet
+was correct; the node tests do not lay anything out; 335 browser-chrome checks
+were green. Only computed style in a real window can catch a token that
+resolves to nothing, so `browser_designsystem.js` now checks exactly that for
+every `--fos-*` token, plus the ordering of the three type steps and the
+continued inertness of the platform token, so the fork stops carrying its own
+the day upstream fixes it.
+
+The research question worth having was opacity versus colour for secondary
+text, since the fork had both. The accessibility literature is one-sided —
+transparency fools contrast checkers, which read the declared colour rather
+than the composited result — but the argument that actually bit this tree is
+plain CSS: opacity applies to the subtree, so `.fos-rail-row[data-dismissed]`
+was taking its own mark's accent and its current-node rule down with it, and a
+dismissed node you were standing on lost both. I expected forced colours to
+separate the two mechanisms and checked: it does not, both collapse in the
+`tokens-prefers-contrast` layer. Recorded in `IDEAS.md` so that argument is not
+reached for again.
+
+The run's real lesson is a process one. When the full suite came back with the
+demo flow failing, I concluded my change had broken it — the suite had passed
+at the previous commit, which looked like proof. It was one run of a flaky
+test. `browser_zdemoflow.js` passes alone every time and failed 2 of 3
+full-suite runs; across five runs the same near-identical tree produced 2
+failures, then 6, then 0, then 6, then 0. Three separate stories got invented
+for it — my change, then window pollution, then manifest ordering — before the
+counts were compared, which is the exact failure the three-strikes note in
+STATE.md was written about, and it is now counted. The signature is sharp and
+worth having: when it fails, the exported pack carries the context's name and
+its query but not one of its four pages, and `suggest()` offers no context-tier
+item, so the query side of `context_member` is intact and the page side is not.
+`contextContents` reaches the pages through `JOIN trail t ON t.id = n.trail_id`
+— an inner join, which drops a node whose trail row is missing and leaves its
+queries in place. That matches the shape exactly and is a robustness bug either
+way, but it is a hypothesis and next run confirms it by dumping the three
+tables at pack time during a failing run rather than by re-running until green.
+It is Next task 1: the Phase 2 acceptance criterion is not trustworthy, and
+Phase 3 wants the suite green twice consecutively.
+
+Tests: 426 browser-chrome checks with the new file, 82 of them the design
+system contract; stylelint clean across `browser/components/fos/`. Phase 2's
+demo flow is green in isolation and intermittent in the suite, as above.
