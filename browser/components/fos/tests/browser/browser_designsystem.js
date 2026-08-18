@@ -16,6 +16,10 @@
  * A token that resolves to nothing is therefore the thing to test for, and it
  * can only be tested where the tokens actually resolve. */
 
+const { ensureStylesheet } = ChromeUtils.importESModule(
+  "resource:///modules/FOSChrome.sys.mjs"
+);
+
 const SHEETS = [
   "fos-tokens.css",
   "fos-commandbar.css",
@@ -87,11 +91,15 @@ function usedFontSize(win, name) {
 }
 
 add_task(async function every_fos_token_resolves() {
-  // Opening one surface loads the token sheet, because `ensureStylesheet`
-  // makes the tokens a precondition of every other FOS sheet.
-  const win = await BrowserTestUtils.openNewBrowserWindow();
-  try {
-    win.FOSTrailRail?.forWindow?.(win)?.open?.();
+  // This test needs a chrome window with the token sheet on it and nothing
+  // else. It deliberately does not open one: the suite shares a single profile
+  // database, `browser_zdemoflow.js` is named to run last over whatever it
+  // finds there, and a new window wires up a trail session that writes to it.
+  // Opening two windows here was enough to change what the demo flow's
+  // exported context pack contained.
+  const win = window;
+  {
+    ensureStylesheet(win, BASE + "fos-tokens.css");
 
     const used = new Set();
     const defined = new Set();
@@ -129,15 +137,13 @@ add_task(async function every_fos_token_resolves() {
     for (const token of defined) {
       ok(used.has(token), `${token} is used by a surface`);
     }
-  } finally {
-    await BrowserTestUtils.closeWindow(win);
   }
 });
 
 add_task(async function the_type_scale_has_three_steps() {
-  const win = await BrowserTestUtils.openNewBrowserWindow();
-  try {
-    win.FOSTrailRail?.forWindow?.(win)?.open?.();
+  const win = window;
+  {
+    ensureStylesheet(win, BASE + "fos-tokens.css");
 
     // The base is the chrome font size, which in this window is the OS one:
     // both fork tokens are `rem`, precisely so they track it.
@@ -184,8 +190,6 @@ add_task(async function the_type_scale_has_three_steps() {
       platform.parent,
       "the platform's --font-size-small is still inert in chrome"
     );
-  } finally {
-    await BrowserTestUtils.closeWindow(win);
   }
 });
 
