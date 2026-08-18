@@ -455,6 +455,25 @@ export class FOSContextEngine {
           // The query that opened this page has been waiting for it to exist.
           if (this.#pendingQuery !== null) {
             await store.attachQueryToNode(this.#pendingQuery, nodeId);
+            // And it joins the context this page just joined. The membership
+            // written when the query was issued used whatever context was
+            // active *then*, which in the commonest case of all — a search
+            // typed into a fresh tab — is not this one and is usually none at
+            // all, because the context does not exist until the page arrives.
+            // That lost exactly the questions worth keeping: the one that
+            // starts an enquiry is the one its pack most needs to state.
+            //
+            // The page a question opened is a fact; the context that happened
+            // to be active while it was being typed is a guess. Both are kept
+            // rather than one replacing the other — a question asked while
+            // working on one topic that opens another really was asked in
+            // both, and the unique index makes the overlap free.
+            if (contextId) {
+              await store.addMember(contextId, {
+                queryId: this.#pendingQuery,
+                source: "provenance",
+              });
+            }
             this.#pendingQuery = null;
           }
         } else {
