@@ -107,6 +107,7 @@ export class FOSContextEngine {
   }
 
   #window;
+  #bar = null;
   #session = null;
   #marks = null;
   #store = null;
@@ -123,8 +124,11 @@ export class FOSContextEngine {
   #visit = null;
   /** Whether this window currently has the user's attention. */
   #focused = true;
-  /** The context the user is working in, overriding provenance when set. */
-  #activeContextId = null;
+  /**
+   * A context the user switched into by hand, overriding provenance until they
+   * switch again. Null means "follow the trail I am on".
+   */
+  #pinnedContextId = null;
   /** A query recorded but not yet attached to the node it opened. */
   #pendingQuery = null;
   /** Serialises writes so they land in the order they happened. */
@@ -134,9 +138,29 @@ export class FOSContextEngine {
     this.#window = window;
   }
 
-  /** The context the user is working in, or null before anything is recorded. */
+  /**
+   * The context the user is working in, or null before anything is recorded.
+   *
+   * Derived rather than stored, and that is the point. Held as a field it was
+   * set once when the first trail appeared and then never moved, so opening a
+   * second tab left every query and every page filed under the first tab's
+   * topic — the exact failure the provenance rule exists to avoid, arrived at
+   * from the other direction. Reading it from the trail the user is on now
+   * cannot drift, for the same reason the tree is reconciled rather than
+   * mirrored.
+   *
+   * `context <mark>` pins a context and outranks this: a context switched into
+   * deliberately must not be taken away by the next navigation, or the verb
+   * would be a suggestion rather than a statement.
+   */
   get activeContextId() {
-    return this.#activeContextId;
+    if (this.#pinnedContextId !== null) {
+      return this.#pinnedContextId;
+    }
+    const trailId = this.#trailIds.get(this.#session?.activeTrailId);
+    return trailId === undefined
+      ? null
+      : (this.#contextByTrail.get(trailId) ?? null);
   }
 
   /** The queue, so a test can await everything outstanding. */
@@ -248,9 +272,6 @@ export class FOSContextEngine {
           // chose, and `name` is how a context gets a real one.
           const contextId = await store.addContext({ label: trail.name });
           this.#contextByTrail.set(trailId, contextId);
-          if (this.#activeContextId === null) {
-            this.#activeContextId = contextId;
-          }
         } else if (trail.name) {
           await store.nameTrail(trailId, trail.name);
           const contextId = this.#contextByTrail.get(trailId);
@@ -321,7 +342,7 @@ export class FOSContextEngine {
     }
     const sourceNodeId =
       this.#nodeIds.get(this.#session?.currentNodeId) ?? null;
-    const contextId = this.#activeContextId;
+    const contextId = this.activeContextId;
 
     this.#enqueue(async store => {
       const queryId = await store.recordQuery({
@@ -391,28 +412,39 @@ export class FOSContextEngine {
   // ---- marks --------------------------------------------------------------
 
   /**
-   * Give live contexts marks, from whatever letters are left.
+   * Give *named* contexts marks.
    *
-   * Contexts register *after* the trail session has marked the active trail, so
-   * they take from the remainder rather than from the pages the user is working
-   * with — a Field holding forty cards must not be able to leave the page under
-   * the cursor unaddressable in order to name a topic. `assign` returns null
-   * when all 26 are held, and a context without a letter is simply not
-   * reachable by `context <mark>` yet. That is the honest cost of the budget,
-   * and the fix is search by name, which `GRAMMAR.md` §2 already specifies as
-   * the path past 26.
+   * The budget is 26 letters shared by every pillar, so anything registering a
+   * new kind of object has to say what it gives up. Contexts give up nothing,
+   * because they only claim a letter once the user has named the trail behind
+   * one — and that is not a dodge, it is the honest reading of what the verb
+   * does. `context <mark>` switches the context you are working in; an unnamed
+   * context is precisely "the trail you are already on", so there is nothing to
+   * switch to and the letter would buy the user nothing.
+   *
+   * Naming is already what promotes an object to first-class in this design, so
+   * a context earns its letter at exactly the moment it becomes somewhere you
+   * might come back to.
+   *
+   * This was not a taste call. With unnamed contexts claiming letters, a
+   * context took the mnemonic letter a page wanted and `browser_trailrail.js`
+   * caught a node on example.com addressed as `t` — a page you cannot guess the
+   * letter for is a page you have to hunt for, which is the whole value of a
+   * mnemonic mark gone. Pages are where addressing actually happens; they get
+   * the alphabet.
    */
   #syncContextMarks() {
     if (!this.#marks) {
       return;
     }
-    for (const [trailId, contextId] of this.#contextByTrail) {
-      const trail = [...this.#trailIds.entries()].find(
-        ([, id]) => id === trailId
-      );
-      const memTrail = trail ? this.#session?.store.getTrail(trail[0]) : null;
+    for (const [memTrailId, trailId] of this.#trailIds) {
+      const contextId = this.#contextByTrail.get(trailId);
+      const name = this.#session?.store.getTrail(memTrailId)?.name;
+      if (contextId === undefined || !name) {
+        continue;
+      }
       this.#marks.assign(contextKey(contextId), {
-        label: memTrail?.name ?? "",
+        label: name,
         type: "context",
       });
     }
@@ -427,10 +459,11 @@ export class FOSContextEngine {
    */
   async contents() {
     await this.#queue;
-    if (this.#activeContextId === null) {
+    const contextId = this.activeContextId;
+    if (contextId === null) {
       return null;
     }
-    return this.#store.contextContents(this.#activeContextId);
+    return this.#store.contextContents(contextId);
   }
 
   /**
@@ -485,6 +518,11 @@ export class FOSContextEngine {
    * @returns {FOSContextEngine} This engine.
    */
   wire(bar) {
+    // Held, rather than reached for through the window at report time. There is
+    // no `window.FOSCommandBar` — the window's lazy getters live on a module
+    // `lazy` object, not on the global — so a lookup there is quietly undefined
+    // and every answer is computed and then dropped on the floor.
+    this.#bar = bar;
     this.#unsubscribe.push(bar.actions.onQuery(text => this.recordQuery(text)));
 
     // `context <mark>` is the one place the user overrides provenance. Once
@@ -496,7 +534,7 @@ export class FOSContextEngine {
       if (id === null) {
         return false;
       }
-      this.#activeContextId = id;
+      this.#pinnedContextId = id;
       this.#enqueue(store => store.touchContext(id));
       return id;
     });
@@ -538,7 +576,7 @@ export class FOSContextEngine {
       console.error(e);
       message = "The context engine could not answer that.";
     }
-    this.#window.FOSCommandBar?.notify?.(message);
+    this.#bar?.notify(message);
     return message;
   }
 }

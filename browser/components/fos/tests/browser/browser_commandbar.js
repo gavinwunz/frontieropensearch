@@ -19,7 +19,7 @@
 const { FOSCommandBar } = ChromeUtils.importESModule(
   "resource:///modules/FOSCommandBar.sys.mjs"
 );
-const { KIND_SEARCH, KIND_URL, NOT_WIRED, resolveInput } =
+const { FOSActionDispatcher, KIND_SEARCH, KIND_URL, NOT_WIRED, resolveInput } =
   ChromeUtils.importESModule("resource:///modules/FOSActions.sys.mjs");
 
 function bar() {
@@ -248,29 +248,45 @@ add_task(async function test_a_query_navigates() {
 });
 
 add_task(async function test_an_unwired_verb_is_refused_not_searched() {
-  const commandBar = bar();
-  const context = commandBar.marks.assign("context-1", {
-    label: "gecko",
-    type: "context",
-  });
-
-  // The Context Engine has no UI yet, so `context` has no handler. The property
-  // that matters is what happens then: GRAMMAR.md §3 says a well-formed command
-  // must never quietly become a web search, so the dispatcher has to say it
-  // could not run rather than fall through.
-  Assert.ok(!commandBar.actions.has("context"), "`context` is unwired for now");
+  // GRAMMAR.md §3: a well-formed command must never quietly become a web
+  // search, so a verb with no handler has to say it could not run rather than
+  // fall through.
+  //
+  // This used to assert the property against `context`, which had no handler
+  // while pillar C was unbuilt. All twelve verbs are wired now, so the property
+  // is asserted against a dispatcher of its own instead — which is the better
+  // test anyway: it survives the next pillar landing, where the old one only
+  // held for as long as something was missing.
+  const dispatcher = new FOSActionDispatcher(window);
+  Assert.ok(
+    !dispatcher.has("context"),
+    "a fresh dispatcher has claimed nothing but `search`"
+  );
 
   const before = gBrowser.selectedBrowser.currentURI.spec;
-  const outcome = commandBar.run(`context ${context}`);
+  const outcome = dispatcher.run({
+    action: "context",
+    target: "a",
+    text: null,
+  });
 
-  Assert.equal(outcome.ran[0].reason, NOT_WIRED, "reported as unwired");
+  Assert.ok(!outcome.ok, "the command did not run");
+  Assert.equal(outcome.reason, NOT_WIRED, "reported as unwired");
   Assert.equal(
     gBrowser.selectedBrowser.currentURI.spec,
     before,
     "and nothing was navigated to"
   );
+});
 
-  commandBar.marks.clear();
+add_task(async function test_every_verb_in_the_table_is_wired() {
+  // The counterpart to the test above, and the one that will fail if a future
+  // grammar change adds a verb nobody implemented.
+  Assert.deepEqual(
+    bar().actions.unwired(),
+    [],
+    "no verb is announced and dead"
+  );
 });
 
 add_task(async function test_every_verb_the_grammar_defines_is_accounted_for() {

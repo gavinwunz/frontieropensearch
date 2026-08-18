@@ -7,3 +7,5 @@ head = ""
 firefox-appdir = "browser"
 
 ["test_field.js"]
+
+["test_contextstore.js"]
