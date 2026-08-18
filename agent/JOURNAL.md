@@ -356,3 +356,71 @@ unconditionally, so a test pressing `accel+L` and waiting for urlbar focus waits
 forever. 355 files across fifteen directories. That is a run's work with a
 diagnosis in front of it, not a manifest line at the end of this one, and it is
 now the top of the standing list.
+
+## Run 21 — 2026-08-18 — a pref that half-restores, and a region that refused every drag
+
+Two items off the standing list, the first two on it, both with a user-visible
+defect behind them.
+
+**Upstream's keys.** The task the last run left at the top was "find the full
+set of prefs that gives a window back to upstream, do not write a manifest line
+until you have". The answer turned out to be one sentence long and it explains
+the hang exactly: a pref that restores a *surface* had never restored the
+*gesture*. `browser.fos.commandBar.replacesAddressBar=false` gave back a
+typable address bar, and `focusURLBar`, `focusURLBar2`, `key_search` and
+`key_search2` went on naming `FOS:CommandBar` in `browser-sets.inc.xhtml`
+whatever the pref said. So an upstream test that presses accel+L and then waits
+for `gURLBar.focused` did not fail against it — it waited, burned four timeout
+extensions and had to be killed. **A half-restoring pref is worse than one that
+does nothing, because a suite can report the second and can only stall on the
+first**, and that is the generalisable part.
+
+The fix is smaller than the diagnosis. `GlobalKeyListener.cpp` reads a `<key>`'s
+`command` attribute at dispatch, not at parse — so pointing the four keys back
+at what they said before is enough, and no second path through the handler is
+needed. It has to happen at window init rather than in the handler because one
+FOS command id stands in for two upstream ones: accel+L was
+`Browser:OpenLocation` and accel+K was `Tools:Search`, and by the time the
+command fires only the key still knows which.
+
+Doing it properly turned up two more. `key_gotoHistory` carries no `command` at
+all upstream and is dispatched by id, so restoring it means *removing* an
+attribute — a table that only knew how to rewrite would have had to invent a
+command id that does not exist. And that key needed a pref of its own, which
+earned its place immediately: `browser_sidebar_keys.js` goes from 2 passed and
+1 failed to 17 passed and 0 failed with it. `Browser:ShowAllTabs` is the third,
+and is a command rather than a key, so it reads the Field pref in the handler:
+with the strip drawn again, its own overflow button opens its own panel.
+
+Pinned in all eighteen `urlbar/tests/` manifests and both `sidebar/tests/`
+ones. `browser_searchModeSwitcher_basic.js` goes from hanging the harness to
+everything passing except one environmental crash. The whole 397-file directory
+is running in the background — 0 unexpected failures at 53 files.
+
+**The Field.** At exactly the lattice capacity — 56 cards on 56 seats — every
+drag was refused, and not only a drag across the region: a drag of less than
+one seat-step was refused too, because until the dragged card clears the
+minimum distance from the seat it vacated its own seat is not free either. So
+"you may not move anything" was the whole of the behaviour on a full region,
+which is the negation of §2 rather than a corner of it.
+
+§6's capacity ladder already answers this for placement — seed, evict, grow —
+and the drag path had implemented the first rung and refused. It reaches the
+third now and skips the second on purpose: eviction exists to bound the card
+count against a page *arriving*, and a drag brings nothing, so dismissing
+somebody's page because they tidied is a surprise the ladder never promised.
+Growth turns out to be bounded by the arrangement rather than by the pointer —
+one added row is a whole row of free seats — so twenty successive drags in a
+full region cost four rows and then stopped, and every refusal left was
+`would-displace-pinned`, the one refusal §6 wrote a rule for.
+
+**And one thing worth not rediscovering.** The `about:newtab` content-process
+crash was recorded as belonging to one bfcache test. It is universal to this
+build: it fires at the teardown of every test file, upstream and FOS alike, and
+about one file in eight escalates it into a four-minute timeout. Verified by
+counting it in a `tabbrowser` file and a FOS file that both passed. It is why
+an upstream directory is a six-hour job here, and it is why a timeout in an
+upstream suite must not be read as a fork defect before checking the file alone.
+
+Suite: 546 FOS browser-chrome checks green, 185 node tests green, 0 failures,
+lint clean.

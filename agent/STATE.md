@@ -304,81 +304,109 @@ one.
   through a bug, and correcting the selector would have built the surface this
   module exists to prevent. 526 browser-chrome checks.
 
+- **A surface pref now gives the window back, gesture and all.** The two prefs
+  that turn a FOS surface off restored the element and not the key: the four
+  keys that focus the address bar named `FOS:CommandBar` in
+  `browser-sets.inc.xhtml` unconditionally, so a typable bar that no keystroke
+  could reach is what `replacesAddressBar=false` had been handing upstream, and
+  that is why the previous attempt at pinning **hung** instead of failing. A
+  `<key>` resolves its `command` when it fires rather than when it is parsed —
+  `XULKeySetGlobalKeyListener::GetElementForHandler` does the `getElementById`
+  at dispatch — so a table in `browser-sets.js` points the keys back at window
+  init, which is where it has to happen because one FOS command id stands in
+  for two upstream ones. `browser.fos.trailRail.replacesHistorySidebar` is new
+  and earned it: `browser_sidebar_keys.js` goes from 2 passed / 1 failed to 17
+  passed / 0 failed with it. `Browser:ShowAllTabs` follows the Field pref
+  through the handler, since a command has no attribute to rewrite. Pinned in
+  all eighteen `urlbar/tests/` manifests and both `sidebar/tests/` ones.
+  `browser_fosrestore.js` is 20 checks, every one of them with a deadline, so
+  the regression comes back as a failure rather than as a stall.
+
+- **A full region takes a drag again.** At exactly the lattice capacity every
+  drag was refused, including a drag of less than one seat-step — until the
+  dragged card clears the minimum distance from the seat it vacated, its own
+  seat is not free either, so `#firstFreeSeat` had nothing to re-seat into.
+  §6's ladder already answers this for placement (seed, evict, grow); the drag
+  path implemented the first rung and stopped. It reaches the third now and
+  skips the second deliberately — eviction bounds the card count against a page
+  *arriving*, and a drag brings nothing. Growth is bounded by the arrangement:
+  one added row is a whole row of free seats, so twenty successive drags cost
+  four rows and then stopped, and every refusal left was
+  `would-displace-pinned`. The extent is provisional and committed only when
+  the push settles, so a refused drag leaves the height alone. 185 node tests,
+  546 browser-chrome checks.
+
 ## In progress
 
-Nothing. `agent/dev` and `main` are level, tagged `phase-3`, and pushed.
+`fos-job-urlbarall.service` is running the whole of
+`browser/components/urlbar/tests/` against the newly pinned manifests —
+`agent/logs/urlbarall.current`. At 53 files it had **0 unexpected failures**
+and 7 timeouts, all of them environmental (see the crash note below). ~6 hours
+for 397 files, and it survives a restart, so read it at the start of the next
+run rather than starting it again. `main` is still at `phase-3`; `agent/dev` is
+three commits ahead and pushed.
 
 ## Next task
 
 The phase plan is complete, so there is no criterion pulling the next run in a
-particular direction. The list below is ordered by value, not by urgency, and
-the first two are the ones with a user-visible defect behind them.
+particular direction. The list below is ordered by value, not by urgency.
 
-1. **Upstream's urlbar tests are not pinned, and they are failing.**
-   `browser_searchModeSwitcher_basic.js` fails 10 of 12 against this build.
-   This fork made the address bar read-only several runs ago and took `accel+L`
-   and friends for the command bar before that, and 355 upstream test files
-   across fifteen `browser/components/urlbar/tests/` directories drive exactly
-   that bar. The precedent is set — `browser.fos.field.replacesTabStrip=false`
-   in the `tabs/` and `dragdrop/` manifests — but it is **not a one-line
-   repeat**: setting `browser.fos.commandBar.replacesAddressBar=false` alone
-   left the file **hanging** rather than passing — it exhausted every timeout
-   extension and had to be stopped by hand — which fits the key bindings being
-   owned by `FOS:CommandBar` regardless of that pref. Diagnose which
-   prefs a restored window actually needs before writing any manifest. See the
-   note below.
+1. **Read `agent/logs/urlbarall.current` first.** If it finished, the number
+   that matters is unexpected *failures*, not timeouts — every timeout seen so
+   far is the teardown crash or a missing clipboard, both environmental and
+   both verified as such. Any real failure is a genuine incompatibility between
+   this fork and a restored address bar, and is the highest-value thing in the
+   tree.
 
-2. **A full region refuses every drag.** At 56 cards, 59 of 60 pointer moves in
-   a drag toward the middle are refused. §6 working as specified, but "you may
-   not move anything" is a corner the design should answer deliberately, and
-   the Field is the surface the whole pillar rests on.
-
-3. **The overview's reposition-only path.** One crowded-overview rebuild is
+2. **The overview's reposition-only path.** One crowded-overview rebuild is
    17.6ms and does not fit in a frame. `IDEAS.md` run 18 has the numbers and
    the shape of the fix. Not urgent — a level switch is one keystroke and one
    dropped frame.
 
-4. **A background tab still arrives with no signal at all.** Ambient-display
+3. **A background tab still arrives with no signal at all.** Ambient-display
    research is in `IDEAS.md`.
 
-5. **The embedding pass, `prune`, and the voice path.** All carried over from
+4. **The embedding pass, `prune`, and the voice path.** All carried over from
    Phase 2. The embedding pass is what properly fixes the entity extractor's
    remaining limitation; the voice path is the second half of the grammar's
    hands-free promise, of which one end-to-end path exists.
+
+5. **A region's height is a ratchet.** Growth is now reachable from a drag as
+   well as from placement, and nothing ever shrinks a region back. Making the
+   height the smallest whole number of lattice rows that contains every card
+   would be tidier and cannot drift, but it is a derived quantity that changes
+   mid-drag and could rescale the region twice in one gesture — a worse promise
+   to break than an untidy height. Recorded in `FIELD.md` §6 as open, not as a
+   defect.
 
 6. **The active card can have no thumbnail**, and **closing the rail while the
    Field is open leaves Escape with nowhere to go.** Both narrow, both below.
 
 ## Found this run, not yet chased
 
-- **Upstream's urlbar tests run against this fork's address bar, and nobody
-  had checked.** `browser_searchModeSwitcher_basic.js`: 10 of 12 subtests fail.
-  This is not fallout from hiding the switcher — the bar has been read-only
-  since the run that retired it as an input, and those tests type into it — but
-  hiding the switcher is what made the gap visible. The obvious fix, pinning
-  `browser.fos.commandBar.replacesAddressBar=false` in the manifest the way
-  `tabs/` pins the Field pref, **did not work**: the file went from failing to
-  hanging, exhausting all four timeout extensions with no further output. The likely reason is that the pref restores the input but not the
-  keys — `FOS:CommandBar` owns `accel+L`, `alt+D`, `accel+K` and `accel+E`
-  unconditionally, and a test that presses `accel+L` and waits for the urlbar to
-  take focus waits forever. So the next run's first job is to find the full set
-  of prefs that gives a window back to upstream, not to write a manifest line.
-  Scale: 355 files in fifteen directories.
+- **A content process crashes on `about:newtab` at the teardown of every test
+  file, and it is environmental.** Signal 11, "remote browser crashed while
+  on about:newtab", once per file. Previously recorded only for
+  `browser_bfcache_exemption_about_pages.js`; it is in fact universal to this
+  build — verified by running one upstream `tabbrowser` file and one FOS file
+  and counting the crash in both, while both passed. Most files survive it;
+  roughly one in eight escalates into a four-minute timeout, which is what
+  makes a 397-file upstream directory a six-hour job here. No stack is
+  available: the crash reporter is disabled at build time, `ulimit -c` is 0 and
+  apport owns `core_pattern`, so getting one is its own task. Do not read a
+  timeout in an upstream suite as a fork defect without first checking whether
+  the file passes alone.
+
+- **Some upstream timeouts are the sandbox, not the crash.**
+  `browser-editing/browser_clipboard.js` times out on
+  `testFormattingOfClipboardSuggestion` alone as well as in the suite. No
+  clipboard, so a second cause of timeout that also is not this fork's.
 
 - **The entity extractor glues a sentence-initial capital to the name after
   it.** "Reading Project Xanadu" comes out as one phrase. Documented in the
   module rather than fixed, because nothing in capitalisation distinguishes it
   from "The Mother of All Demos", which is one phrase and should be. The real
   answer is the embedding pass, where a model does this properly.
-
-- **A full region refuses every drag.** At 56 cards — a region's capacity — 59
-  of 60 pointer moves in a drag toward the middle were refused, so a full
-  region cannot be rearranged at all. This is §6 working as specified: the push
-  chain has nowhere to go and refusing beats silently destroying a position the
-  user chose. But "you may not move anything" is a corner the design should
-  answer deliberately rather than arrive at, and the Field is the surface the
-  whole pillar rests on. Found by the perf harness, which had to count
-  committed moves to notice it was measuring refusals.
 
 - **The active card can have no thumbnail.** In the Field's region level the
   search result's card painted blank while its three children painted
@@ -447,8 +475,9 @@ build input is not.
 
 ## Background jobs
 
-None outstanding. Started with `./agent/bg.sh <name> <cmd>`; check with
-`./agent/bg-status.sh`.
+`urlbarall` — the whole of `browser/components/urlbar/tests/` against the newly
+pinned manifests. Started with `./agent/bg.sh <name> <cmd>`; check with
+`./agent/bg-status.sh`. Read this one before starting anything.
 Each runs as its own transient systemd unit `fos-job-<name>.service`, in
 `app.slice` beside `fos.service` rather than inside it, which is what makes it
 survive a restart. `agent/logs/<name>.current` symlinks the live log.
