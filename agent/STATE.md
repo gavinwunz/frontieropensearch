@@ -12,7 +12,14 @@ Keep it short — this is state, not a log. History belongs in `JOURNAL.md`.
 **Phase 2 — The novel UI: COMPLETE** (tagged `phase-2`, report
 `agent/reports/phase-2.md`, merged to `main`). The acceptance criterion runs as
 one automated sequence in `tests/browser/browser_zdemoflow.js`.
-Now on **Phase 3 — Beautiful and tested**.
+**Phase 3 — Beautiful and tested: COMPLETE** (tagged `phase-3`, report
+`agent/reports/phase-3.md`, merged to `main`). Full suite green on two
+consecutive runs — 18 and 19 — screenshots captured, README complete.
+
+**Every phase in the plan is now done.** What follows is not a phase: it is the
+standing list below plus whatever `IDEAS.md` justifies. Do not invent a Phase 4
+heading; pick the highest-value item and say in the journal why it was that
+one.
 
 ## Done
 
@@ -100,7 +107,23 @@ Now on **Phase 3 — Beautiful and tested**.
   treatment, one gutter rule, one weight for "where you are", and the three
   layer integers named. **The headline find is that chrome had no small type at
   all** — see the gotcha below. `browser_designsystem.js` holds the contract as
-  82 checks against a running window.
+  109 checks against a running window.
+
+- **The polish pass, and with it Phase 3.** Two defects, both found by opening
+  the README's own screenshots at 3× rather than by reading a stylesheet.
+  *Rhythm*: the system settled the inline gutter and left the block axis
+  unnamed, so the rail and the sidebar — open at once, on either side of the
+  page, listing the same nodes — ran at different line rhythms, and the
+  sidebar's entity list ran at none and read as a paragraph. Three tokens now:
+  `--fos-row-padding-block`, `--fos-list-padding-block`,
+  `--fos-heading-space-above`. *Focus*: all three focusable containers fill the
+  window, so the ring was a 700px accent rectangle beside a row shaded 20%
+  grey. It is on the row now, and on the Field it widens the focused card's own
+  frame rather than recolouring it, so pinned and refused still read. Two
+  things reading could not have found, both in the gotchas below: the rule
+  being replaced was *overriding* the UA's ring rather than adding one, and a
+  programmatic focus inherits the window's pointer-or-keyboard mode. The
+  sidebar now also opens on the page you are on, as the rail already did.
 
 - **The Context Engine, and pillar C's data layer end to end.**
   `context-engine/migrations/001-initial.sql` is the schema as a versioned
@@ -265,44 +288,39 @@ Now on **Phase 3 — Beautiful and tested**.
 
 ## In progress
 
-Nothing. `agent/dev` carries this run's three changes and is pushed. `main` is
-one run behind and carries no defect — nothing merged this run because no phase
-criterion completed.
+Nothing. `agent/dev` and `main` are level, tagged `phase-3`, and pushed.
 
 ## Next task
 
-The Field is measured, the smoke run produces its own artefacts, the README has
-real screenshots, and the suite is green. What is left of Phase 3 is the polish
-pass and one more green run.
+The phase plan is complete, so there is no criterion pulling the next run in a
+particular direction. The list below is ordered by value, not by urgency, and
+the first two are the ones with a user-visible defect behind them.
 
-1. **Apply the design system to what it has not touched yet.** Now the top of
-   the list. `SYSTEM.md` settled type, quiet text, the mark, selection, gutter,
-   layers and weight. It did not touch spacing rhythm inside a row, focus-ring
-   consistency, or the dark/light pairs, and it explicitly left the three
-   surfaces' *widths* alone. The screenshots in the README are the place to
-   look for what is actually wrong — the sidebar's `ABOUT` list has no rhythm
-   and the rail's rows sit tight against the trail name.
+1. **The search-mode switcher is a second entry surface, and it is branded.**
+   Carried over and now the top of the list, because it is the only known
+   contradiction of a claim this fork makes in its README. See the note below
+   for what to check first.
 
-2. **A second consecutive green suite run is the last Phase 3 criterion.**
-   "Full suite green on two consecutive runs" is the wording, and this run is
-   one. Run the whole component directory plus the node tests at the start of
-   the next run, and if it is green, Phase 3's criteria are met: the design
-   system exists, the Field is measured, the tests are there, the smoke run
-   produces its screenshots, and the README is complete. Write the report and
-   merge.
+2. **A full region refuses every drag.** At 56 cards, 59 of 60 pointer moves in
+   a drag toward the middle are refused. §6 working as specified, but "you may
+   not move anything" is a corner the design should answer deliberately, and
+   the Field is the surface the whole pillar rests on.
 
 3. **The overview's reposition-only path.** One crowded-overview rebuild is
-   17.6ms and does not fit in a frame; the resize path now does it once per
-   frame rather than several times, which was the whole of the jank, but the
-   remaining render is still a frame's budget. `IDEAS.md` run 18 has the
-   numbers and the shape of the fix. Not urgent — a level switch is one
-   keystroke and one dropped frame.
+   17.6ms and does not fit in a frame. `IDEAS.md` run 18 has the numbers and
+   the shape of the fix. Not urgent — a level switch is one keystroke and one
+   dropped frame.
 
-4. **A background tab still arrives with no signal at all.** Carried over,
-   unchanged. Ambient-display research is in `IDEAS.md`.
+4. **A background tab still arrives with no signal at all.** Ambient-display
+   research is in `IDEAS.md`.
 
 5. **The embedding pass, `prune`, and the voice path.** All carried over from
-   Phase 2, none blocking a Phase 3 criterion.
+   Phase 2. The embedding pass is what properly fixes the entity extractor's
+   remaining limitation; the voice path is the second half of the grammar's
+   hands-free promise, of which one end-to-end path exists.
+
+6. **The active card can have no thumbnail**, and **closing the rail while the
+   Field is open leaves Escape with nowhere to go.** Both narrow, both below.
 
 ## Found this run, not yet chased
 
@@ -344,11 +362,32 @@ pass and one more green run.
   toggle the rail shut, and Escape no longer zooms the Field out. Focus is
   presumably left on a removed element. Not on the demo flow's path, which is
   why it is recorded rather than fixed.
-- **The address bar still says "Search or enter address".** It is `readOnly`
-  now and refuses the typing its own placeholder invites — visible in
-  `agent/reports/demo-1-search.png`. The cursor was fixed when the bar was
-  retired as an input; the placeholder was missed. One string, and it belongs
-  with the Phase 3 polish pass.
+
+**A CSS rule that removes something is invisible to a reader, and the fix is a
+computed style.** `.fos-rail-list:focus-visible { outline: var(--focus-outline) }`
+reads as "this surface draws a focus ring". It was not: it was *overriding* the
+`outline: auto` Gecko's UA stylesheet already draws on any focused element, so
+deleting it restored a 1px grey ring and the screenshot afterwards looked, at a
+glance, like the one before. A declaration is only ever the delta against what
+the platform already does, and the stylesheet does not show you what that is.
+Any change that consists of deleting a declaration needs an assertion on
+`getComputedStyle`, not a re-read.
+
+**A programmatic `focus()` inherits the window's pointer-or-keyboard mode.** So
+`:focus-visible` matches nothing on a surface opened after a click or a drag,
+however much that surface now owns the keyboard. The three FOS surfaces focus
+with `{ focusVisible: true }`. This is also a test hazard: a ring test passes
+alone, because the file's own earlier keystrokes leave the window in keyboard
+mode, and fails after `browser_field.js`, whose drags do not. Assert
+`el.matches(":focus-visible")` as a precondition so the failure says which half
+is wrong.
+
+**`:has()` is lint-banned in this tree**, by
+`stylelint-plugin-mozilla/no-has-selector` — it scales with the subtree and
+needs the harder invalidation path. Before reaching for a disable comment,
+check whether the surface already maintains an ARIA attribute carrying the same
+fact: `[aria-activedescendant]` replaced `:has(a selected row)` here exactly,
+because a listbox sets and clears it in the same breath as the selection.
 
 **Test in Gecko, not only in node.** Two bugs this project has shipped were
 invisible to green node tests: a grammar bug found in one minute once the modules

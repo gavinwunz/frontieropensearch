@@ -227,3 +227,57 @@ Tests: full component suite green (475 browser-chrome checks, both xpcshell
 files), 182 node tests green, smoke run green. Six commits pushed to
 `agent/dev`. Phase 3 now needs one more green run and the design-system polish
 pass; everything else on its list is done.
+
+---
+
+## Run 19 — 2026-08-18 — Phase 3 complete
+
+Opened with the whole component suite on the unchanged tree: green, 464
+browser-chrome checks, both xpcshell files, 182 node tests. That is the control
+the rest of the run is measured against.
+
+Then the polish pass, which is what Phase 3 had left. The instrument was not
+the stylesheets — those had already been reconciled — it was the README's own
+screenshots, opened at 3×. Two defects, neither visible in any single file.
+
+The first is rhythm. `SYSTEM.md` settled the inline gutter and deliberately
+said nothing about the block axis, and four surfaces then answered it four
+ways. The rail and the sidebar are open at the same time on either side of the
+page, listing the same nodes, at 17.6px and 21px per row; the sidebar's entity
+list, at `padding-block: 0`, rendered as a paragraph with a heading over it.
+Three tokens, one role each, and the test measures them on real rows rather
+than reading them out of the sheet — a later rule overriding the token is
+exactly how the entity list got there.
+
+The second is focus, and it cost the most. All three focusable containers fill
+the window, so `:focus-visible` on the container drew a 700px accent rectangle
+down the side of the browser next to a row shaded 20% grey — the loudest mark
+in the surface pointing at the box rather than at the page Enter would open,
+and saying twice what selection already means. The ring goes on the row.
+
+Then three things in a row that reading could not have found. **The rule being
+replaced was not adding a ring**, it was overriding the one the UA stylesheet
+draws on every focused element, so deleting it handed the container back a 1px
+grey `outline: auto` and the next screenshot looked like nothing had happened;
+the live test said so in one line. **`:has()` is lint-banned here** for
+invalidation cost, and the replacement was not a compromise — every one of the
+three surfaces already sets `aria-activedescendant` in the same breath as the
+selection, which is the same fact, free to match, and already written down for
+assistive technology. And **a programmatic focus inherits the window's
+pointer-or-keyboard mode**, so a surface opened after a click took every
+keystroke off the page and showed no sign of it — a real defect, found only
+because the ring test passed alone and failed after `browser_field.js`, whose
+drags leave the window in pointer mode.
+
+The sidebar also opens on the page you are on now, as the rail already did.
+Without that, the one branch where the ring has nowhere to go but around the
+panel is the state everybody sees first, so the rule and the seeding are one
+decision.
+
+Suite at the close: 504 browser-chrome checks, 64 xpcshell checks over two
+files, 182 node tests, smoke run green, screenshots retaken. Green on this run
+and on run 18, which is Phase 3's last criterion.
+
+**Phase 3 is complete** — `agent/reports/phase-3.md`, tagged `phase-3`, merged
+to `main`. Every phase in the plan is now done; the next run picks from the
+standing list in `STATE.md` and says why.
