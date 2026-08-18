@@ -3,7 +3,10 @@
 #
 # Drives the demo flow — search, branch three ways, zoom out to the Field,
 # switch context, export a context pack — in a real browser and leaves the
-# screenshots and the exported brief in agent/reports/.
+# screenshots and the exported brief in agent/reports/. Then drives a second,
+# longer session over the fixture pages to take the pictures the README points
+# at, which the demo cannot: it browses the mochitest server, whose pages are
+# blank, and a Field full of blank cards documents nothing.
 #
 # The flow itself is browser/components/fos/tests/browser/browser_zdemoflow.js
 # and is an ordinary browser-chrome test, so it runs in the suite too. What
@@ -30,8 +33,9 @@ cd "$root"
 # --setenv, and the flow needs the directory in the browser's own environment.
 ./mach mochitest \
   --setenv "FOS_SHOTS=$shots" \
-  browser/components/fos/tests/browser/browser_zdemoflow.js
+  browser/components/fos/tests/browser/browser_zdemoflow.js \
+  browser/components/fos/tests/browser/browser_zzscreenshots.js
 
 echo
 echo "smoke: artefacts"
-ls -l "$shots"/demo-* 
+ls -l "$shots"/demo-* "$shots"/shot-*

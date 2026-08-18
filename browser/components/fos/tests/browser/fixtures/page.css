@@ -1,0 +1,92 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* Shared styling for the fixture pages.
+ *
+ * These exist to be photographed. The mochitest server's own pages are blank,
+ * and a screenshot of the Field full of blank white cards documents nothing —
+ * a card is a thumbnail, and a thumbnail of nothing is not a thumbnail. So the
+ * fixtures are ordinary reading pages: a heading, a standfirst, body text and
+ * a figure, which is what a research session actually looks like and what the
+ * cards need to be recognisable at 100px wide. */
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  margin: 0 auto;
+  padding: 3rem 2rem;
+  max-width: 42rem;
+  font: 16px/1.65 system-ui, sans-serif;
+  color: #1c1b22;
+  background: #fff;
+}
+
+header {
+  border-bottom: 1px solid #d7d7db;
+  padding-bottom: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #0060df;
+  margin: 0 0 0.5rem;
+}
+
+h1 {
+  font-size: 2rem;
+  line-height: 1.2;
+  margin: 0 0 0.75rem;
+}
+
+.standfirst {
+  font-size: 1.1rem;
+  color: #5b5b66;
+  margin: 0;
+}
+
+figure {
+  margin: 2rem 0;
+}
+
+.plate {
+  height: 11rem;
+  border-radius: 6px;
+}
+
+figcaption {
+  font-size: 0.8rem;
+  color: #5b5b66;
+  margin-top: 0.5rem;
+}
+
+h2 {
+  font-size: 1.25rem;
+  margin: 2rem 0 0.5rem;
+}
+
+blockquote {
+  margin: 1.5rem 0;
+  padding-left: 1rem;
+  border-left: 3px solid #0060df;
+  color: #42414d;
+  font-style: italic;
+}
+
+nav {
+  margin-top: 2.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid #d7d7db;
+  font-size: 0.9rem;
+}
+
+nav a {
+  color: #0060df;
+  margin-right: 1.5rem;
+}

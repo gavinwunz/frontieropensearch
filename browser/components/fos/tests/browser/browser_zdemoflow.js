@@ -187,7 +187,15 @@ async function shoot(name) {
   canvas.height = Math.round(height * ratio);
   const ctx = canvas.getContext("2d");
   ctx.scale(ratio, ratio);
-  ctx.drawWindow(win, 0, 0, width, height, "white");
+  // `DRAWWINDOW_USE_WIDGET_LAYERS` is what puts the page in the picture. The
+  // default path draws the parent process's own layers and content lives in
+  // another process, so without it every stage is photographed with a blank
+  // white rectangle where the page was.
+  const flags =
+    ctx.DRAWWINDOW_DRAW_VIEW |
+    ctx.DRAWWINDOW_USE_WIDGET_LAYERS |
+    ctx.DRAWWINDOW_DRAW_CARET;
+  ctx.drawWindow(win, 0, 0, width, height, "white", flags);
 
   const data = canvas
     .toDataURL("image/png")

@@ -1,4 +1,10 @@
 [DEFAULT]
+support-files = [
+  "fixtures/memex.html",
+  "fixtures/nls.html",
+  "fixtures/page.css",
+  "fixtures/xanadu.html",
+]
 
 ["browser_commandbar.js"]
 
@@ -19,3 +25,5 @@
 ["browser_zdemoflow.js"]
 
 ["browser_zzfieldperf.js"]
+
+["browser_zzscreenshots.js"]
