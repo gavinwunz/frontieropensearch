@@ -735,7 +735,7 @@ export class FOSContextEngine {
       text,
       {
         marked: this.#markedFor(text),
-        context: contents?.pages ?? [],
+        context: this.#withMarks(contents?.pages ?? []),
         trail: this.#withMarks(trail),
         crossings: this.#withMarks(crossings),
         history,

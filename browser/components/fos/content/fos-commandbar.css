@@ -124,12 +124,15 @@
 }
 
 /* A page offered as a suggestion. Its label is a page title rather than a verb
-   or a letter, so it takes the room the fixed label column was protecting and
-   truncates instead — and the provenance line beside it is what the tier
-   heading above is claiming, so it must not be the part that disappears. */
+   or a letter, so it gives up the fixed label column and truncates instead.
+
+   The provenance line sits directly beside the title rather than out at the
+   far edge: it is what the tier heading above is claiming about this row in
+   particular, and a column of details separated from their titles by half the
+   bar is a column nobody reads as belonging to them. */
 .fos-commandbar-row[data-kind="page"] .fos-commandbar-label {
   min-width: 0;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   font-weight: var(--font-weight);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -137,7 +140,8 @@
 }
 
 .fos-commandbar-row[data-kind="page"] .fos-commandbar-detail {
-  flex: none;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 /* The letter a suggested page already answers to, in the treatment the rail

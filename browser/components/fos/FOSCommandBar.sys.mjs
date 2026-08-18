@@ -416,14 +416,19 @@ export class FOSCommandBar {
       detail.className = "fos-commandbar-detail";
       detail.textContent = row.detail ?? "";
 
-      if (row.kind === R_PAGE && row.mark) {
+      if (row.kind === R_PAGE) {
         // The letter this page already answers to, shown where the user is
         // about to go to it. The spoken word is not repeated here — the
         // candidate list a verb opens is where the vocabulary is taught, and
         // eight rows each carrying a word would drown the titles.
+        //
+        // The badge is rendered even when there is no letter, because a page
+        // out of Places never has one and a title that starts a character to
+        // the left of the marked titles above it reads as a different kind of
+        // row rather than as the same row without a mark.
         const badge = doc.createElementNS(HTML_NS, "span");
         badge.className = "fos-commandbar-mark";
-        badge.textContent = row.mark;
+        badge.textContent = row.mark ?? "";
         item.append(badge);
       }
 
