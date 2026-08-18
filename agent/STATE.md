@@ -286,6 +286,24 @@ one.
   says "Press to search or run a command", set by overriding `_setPlaceholder`
   rather than by writing the attribute — see the gotcha below.
 
+- **The last second entry surface is gone: the search-mode switcher.**
+  Upstream's unified search button wears the default engine's icon — Google's,
+  in an ordinary profile — and it is on-screen whenever `pageproxystate` is
+  `invalid`, which is every blank tab and therefore the state a fresh window
+  opens on. `agent/reports/searchmode-switcher-before.png` is it sitting beside
+  the placeholder that reads "Press to search or run a command"; `-after.png`
+  is the same window with the bar saying one thing. Everything it offered was
+  already unreachable, verified by doing it rather than assumed: picking Google
+  set the search mode, painted the chiclet and focused a read-only input, and
+  the next keystroke left the value empty. Hidden with `display: none` scoped
+  to `[fos-location-display]`, because the button parks itself off-screen
+  precisely to stay focusable and returns to the tab order on `focusin`.
+  **Two of the seven passthrough selectors named nothing** — the switcher and
+  the go button, both classes now that the address bar is an element shared
+  with the search bar — so the mouse press had been reaching the command bar
+  through a bug, and correcting the selector would have built the surface this
+  module exists to prevent. 526 browser-chrome checks.
+
 ## In progress
 
 Nothing. `agent/dev` and `main` are level, tagged `phase-3`, and pushed.
@@ -296,10 +314,18 @@ The phase plan is complete, so there is no criterion pulling the next run in a
 particular direction. The list below is ordered by value, not by urgency, and
 the first two are the ones with a user-visible defect behind them.
 
-1. **The search-mode switcher is a second entry surface, and it is branded.**
-   Carried over and now the top of the list, because it is the only known
-   contradiction of a claim this fork makes in its README. See the note below
-   for what to check first.
+1. **Upstream's urlbar tests are not pinned, and they are failing.**
+   `browser_searchModeSwitcher_basic.js` fails 10 of 12 against this build.
+   This fork made the address bar read-only several runs ago and took `accel+L`
+   and friends for the command bar before that, and 355 upstream test files
+   across fifteen `browser/components/urlbar/tests/` directories drive exactly
+   that bar. The precedent is set — `browser.fos.field.replacesTabStrip=false`
+   in the `tabs/` and `dragdrop/` manifests — but it is **not a one-line
+   repeat**: setting `browser.fos.commandBar.replacesAddressBar=false` alone
+   left the file timing out rather than passing, which fits the key bindings
+   being owned by `FOS:CommandBar` regardless of that pref. Diagnose which
+   prefs a restored window actually needs before writing any manifest. See the
+   note below.
 
 2. **A full region refuses every drag.** At 56 cards, 59 of 60 pointer moves in
    a drag toward the middle are refused. §6 working as specified, but "you may
@@ -324,16 +350,19 @@ the first two are the ones with a user-visible defect behind them.
 
 ## Found this run, not yet chased
 
-- **The search-mode switcher is a second entry surface, and it is branded.**
-  Visible at the left of the address bar in a real window: a Google logo and a
-  chevron, `#urlbar-searchmode-switcher`, which `FOSLocationDisplay` explicitly
-  passes through so it keeps its own press. Two problems in one control. It is
-  a way to start a search that is not the command bar, which is the claim this
-  module exists to make true; and what it opens sets a search mode on an input
-  that cannot be typed into, so it is likely to be a control that does nothing
-  a user can act on. Not verified either way yet — check what pressing it
-  actually does before deciding whether it joins the passthrough list's
-  exceptions or is handed to the command bar like the rest of the bar.
+- **Upstream's urlbar tests run against this fork's address bar, and nobody
+  had checked.** `browser_searchModeSwitcher_basic.js`: 10 of 12 subtests fail.
+  This is not fallout from hiding the switcher — the bar has been read-only
+  since the run that retired it as an input, and those tests type into it — but
+  hiding the switcher is what made the gap visible. The obvious fix, pinning
+  `browser.fos.commandBar.replacesAddressBar=false` in the manifest the way
+  `tabs/` pins the Field pref, **did not work**: the file went from failing to
+  timing out. The likely reason is that the pref restores the input but not the
+  keys — `FOS:CommandBar` owns `accel+L`, `alt+D`, `accel+K` and `accel+E`
+  unconditionally, and a test that presses `accel+L` and waits for the urlbar to
+  take focus waits forever. So the next run's first job is to find the full set
+  of prefs that gives a window back to upstream, not to write a manifest line.
+  Scale: 355 files in fifteen directories.
 
 - **The entity extractor glues a sentence-initial capital to the name after
   it.** "Reading Project Xanadu" comes out as one phrase. Documented in the
@@ -576,6 +605,27 @@ stall browsing. So the database is a very good record and not a guaranteed one;
 do not build anything that assumes a row must exist.
 
 ## Gotchas worth not rediscovering
+
+**A selector list is a claim about a document, and it fails silently.** Two of
+`FOSLocationDisplay`'s seven passthrough selectors matched nothing —
+`#urlbar-searchmode-switcher` and `#urlbar-go-button` — because the address bar
+became a custom element shared with the search bar, and what were ids on a
+singleton are classes on a reusable one. Both failed in the direction that
+looks like success: the control quietly loses its press to the command bar,
+which is indistinguishable from working until somebody presses that control.
+Reading the list cannot find this; one `querySelector` loop against a real
+window finds all of it, and `browser_locationdisplay.js` now runs it every
+time. Reach for the same guard wherever this fork keeps a list of upstream
+selectors.
+
+**Hiding an upstream control: check how it already hides itself first.** The
+search-mode switcher uses `position: fixed; top: -999px` under an `offscreen`
+attribute, and that is deliberate — it stays focusable, puts itself back in the
+tab order on `focusin`, and opens its panel on ArrowDown. Copying the technique
+would have moved a Google logo out of sight and left the whole engine list one
+Tab away. `display: none` is the only one of the three that leaves the tab
+order and the accessibility tree at the same time, and the difference is
+invisible in a screenshot.
 
 **One store, many windows: never read connection-wide state after a write.**
 `FOSContextEngine.store()` opens one SQLite connection for the whole process and

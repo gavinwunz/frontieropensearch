@@ -281,3 +281,77 @@ and on run 18, which is Phase 3's last criterion.
 **Phase 3 is complete** — `agent/reports/phase-3.md`, tagged `phase-3`, merged
 to `main`. Every phase in the plan is now done; the next run picks from the
 standing list in `STATE.md` and says why.
+
+## Run 20 — 2026-08-18 — the last second entry surface
+
+The phase plan is finished, so this run picked from the standing list, and it
+picked the top item because it was the only known contradiction of a claim the
+README makes: "no separate URL bar, search box, or menu". `STATE.md` had the
+sighting — a Google logo and a chevron at the left of the address bar — and
+deliberately withheld the verdict: *check what pressing it actually does before
+deciding.* That instruction earned its keep. Four probes in a driven browser
+produced four facts and three of them contradicted the note that raised the
+issue.
+
+It is upstream's unified search button. It parks itself off-screen at
+`top: -999px` and comes back whenever `pageproxystate` is `invalid` — every
+blank tab, so the state a fresh window opens on, not a corner.
+`BrowserTestUtils.isHidden` says false in both states, which is how it went
+unnoticed; the tell is a bounding rect at `y = -994`.
+
+The press was already reaching the command bar — **through a bug**. The
+passthrough entry naming the switcher was `#urlbar-searchmode-switcher`, and
+the element has no id at all. So the single-entry-surface claim was accidentally
+true of the mouse, and the natural-looking fix — correcting the selector — would
+have read like tidying and built the second entry surface the module exists to
+prevent. `.urlbar-go-button` was dead the same way. One upstream change explains
+both: the address bar became a custom element shared with the search bar, so ids
+on a singleton became classes on a reusable one.
+
+The keyboard went straight past the mouse handler anyway. The button sets its
+own `tabIndex` to 0 on `focusin` and opens its panel on ArrowDown, listing
+twelve destinations. A `mousedown` handler is not a policy about entry; it is a
+policy about mice.
+
+And the control was dead regardless. Picking Google set the search mode, painted
+the chiclet, focused the input — and the input is read-only, so the value stayed
+empty. The hypothesis in `STATE.md` was that it "does nothing a user can act
+on". Confirmed by doing it, which is the only way that sentence was ever going
+to stop being a guess.
+
+So: `display: none`, scoped to the attribute. Not the `offscreen` technique the
+button already uses, because that hiding is *designed* to stay focusable —
+copying it would have moved a third party's logo out of sight and left the
+engine list one Tab away. Only leaving the box tree leaves the tab order and the
+accessibility tree with it. Two screenshots at 3× carry the change:
+`agent/reports/searchmode-switcher-before.png` has the Google mark sitting
+beside a placeholder reading "Press to search or run a command"; `-after.png`
+has a bar that says one thing.
+
+What is genuinely lost is per-query engine choice, and it is worth stating
+rather than glossing: the command bar searches with the default engine, because
+`GRAMMAR.md` refused keyword prefixes on Chrome's evidence. But it was lost
+before this change — an engine you cannot type to is a chiclet, not a choice.
+
+The generalisable find is the guard, not the fix. **A selector list is a claim
+about a document, and it fails silently in the direction that looks like
+success**: a dead selector means the control quietly loses its press, which is
+indistinguishable from working until somebody presses that control. Reading
+cannot catch it; one `querySelector` loop against a real window catches all of
+it, and now runs every time. Third time this project has learned that the tree
+does not tell you what it does — after the UA-stylesheet ring in run 19 and
+`--font-size-small` before it.
+
+Suite: 526 browser-chrome checks green, 0 failures, lint clean.
+
+**Found and not fixed, deliberately.** Hiding the switcher made visible that
+upstream's urlbar tests were never pinned against this fork:
+`browser_searchModeSwitcher_basic.js` fails 10 of 12. That is not fallout from
+this change — the bar has been read-only for several runs and those tests type
+into it. The obvious repeat of the `tabs/` precedent does **not** work: pinning
+`browser.fos.commandBar.replacesAddressBar=false` took the file from failing to
+timing out, which fits `FOS:CommandBar` owning `accel+L` and friends
+unconditionally, so a test pressing `accel+L` and waiting for urlbar focus waits
+forever. 355 files across fifteen directories. That is a run's work with a
+diagnosis in front of it, not a manifest line at the end of this one, and it is
+now the top of the standing list.
