@@ -36,6 +36,9 @@ const { FOSCommandBar } = ChromeUtils.importESModule(
 const { FOSContextEngine } = ChromeUtils.importESModule(
   "resource:///modules/FOSContextEngine.sys.mjs"
 );
+const { FOSContextSidebar } = ChromeUtils.importESModule(
+  "resource:///modules/FOSContextSidebar.sys.mjs"
+);
 const { FOSTrailRail } = ChromeUtils.importESModule(
   "resource:///modules/FOSTrailRail.sys.mjs"
 );
@@ -255,7 +258,13 @@ add_task(async function take_the_screenshots() {
   // 5. What the context knows so far.
   bar().run("what");
   await shoot("shot-context");
-  bar().run("dismiss");
+  // Put the window back to rest. `dismiss` was used here and is a Field verb
+  // that takes a required target, so it parsed as an error and closed nothing:
+  // the next picture was taken with this sidebar still open over the toolbar
+  // and `what`'s sentence still on screen, which is not "an ordinary window
+  // doing nothing" and could not answer the question that shot is taken for.
+  FOSContextSidebar.forWindow(win).close();
+  bar().dismissNotice();
 
   // 6. The ambient signal, which is the one thing the fork says about a page
   //    that loads where you are not looking. It is a state on the resting bar
