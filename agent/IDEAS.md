@@ -2300,3 +2300,145 @@ with one reliable finger would actually want. It stays unbuilt because a mis-tap
 would open the microphone for the whole thirty-second deadline, and how often a
 mis-tap happens is a question about use rather than about design. `GRAMMAR.md`
 §9 carries it.
+
+## Run 32 — what a picture found that six hundred assertions could not
+
+The run's task was the oldest item on the list: two changes made in run 23 that
+"still owe eyes rather than assertions". Both were shipped, both were green, and
+neither had ever been looked at. Looking at them found three defects, none of
+which any test in the suite could have caught, because every assertion in it
+measures a thing and none of them asks what that thing is on top of.
+
+### The rails covered the browser
+
+`.fos-rail` and `.fos-sidebar` are `position: fixed; inset-block: 0`, above the
+toolbox on purpose — it carries `z-index: 0` and would otherwise paint over
+them. So they ran the full height of the window: with the rail open there was no
+back, forward or reload button, and with the sidebar open there was no app menu,
+no extensions button, no window controls, no page actions and **no unseen mark**
+— the fork's one permanent signal, covered by the surface that answers it.
+
+Overlaying the *page* is a staged trade-off this project recorded and accepted.
+Overlaying the browser was never chosen; it came along with the same
+declaration, and nothing distinguished the two until a screenshot did.
+
+**Generalise it:** a test can assert the geometry of a surface without ever
+asserting what that geometry costs the surfaces around it. Occlusion is a
+relation, and a suite built one component at a time has no natural place to put
+a relation. The cheap defence is to photograph the window and look at it; the
+durable one is a test that names the *other* thing — here, "a panel starts below
+the toolbox", which is now in `browser_designsystem.js` because that is where
+this fork keeps claims about the window rather than about a component.
+
+### A background arrival was quietly becoming "where you are"
+
+`onLocationChange` fires for every browser in the window, not just the one in
+front, and `#setCurrent` took the trail of whichever browser it was handed. A
+page finishing in a background tab therefore moved the active trail — and with
+it `#syncMarks`, so the letters re-lettered to that trail; and with the letters
+went the context sidebar, `what`, what `name` names, and the tiers the command
+bar ranks by.
+
+Found in the same picture: the sidebar in the unseen-mark shot was describing an
+"Unnamed context, 1 page" while `what`'s own sentence, still on screen a few
+hundred pixels below it, described "memex research, 3 pages". Two surfaces
+disagreeing about which enquiry was in play, in one window, at one moment.
+
+**The generalisation is about which object a notification is *about*.**
+`currentNodeId` was written correctly — it reads the selected browser and cannot
+drift. `activeTrailId` was written as a field updated by whatever event arrived,
+and the events arrive for tabs the user is not looking at. Derived state was
+right and pushed state was wrong, in the same class, three lines apart. Where a
+window-scoped fact can be derived from what is selected, derive it.
+
+### The reset step in the screenshot run reset nothing
+
+The step between the context shot and the unseen shot ran the verb `dismiss` to
+put the window back to rest. `dismiss` is a Field verb with a *required target*,
+so with no target it parsed as an error and closed nothing. The picture meant to
+show "an ordinary window doing nothing" was taken with a sidebar open over the
+toolbar and a stale notice floating over the page — which is why it could not
+answer the question it was taken for, and is a small lesson about using the
+product's own grammar as test setup: a verb that fails safely fails silently.
+
+### Item 1's actual question, answered
+
+*Does the 8px accent dot read at a glance without shouting?* **Yes** — adopt as
+built. With the toolbar no longer covered it sits at the end of the address bar,
+after the bookmark star, quieter than the star and found without hunting. See
+`agent/reports/shot-unseen.png`, which is now the picture it was supposed to be.
+
+### The resize numbers, and the claim they do not support
+
+| | p50 | p95 |
+| --- | --- | --- |
+| `crowded-overview-resizing-frame` | 41.20ms | 53.90ms |
+| `closed-field-resizing-frame` (control) | 20.08ms | 24.90ms |
+| `resize-burst-of-10` | 1.19ms | 1.90ms |
+
+The burst is fixed and comprehensively so: ten resize events in one tick cost
+1.19ms where they cost 53ms before coalescing. **Sustained** resizing of the
+worst case the design permits — twelve trails, 480 cards, 480 miniatures — still
+costs ~21ms a frame over the control, and the reason is visible in the other
+row: one `crowded-overview-render` is 18.27ms p50, which is longer than a frame
+on its own. Coalescing bounded the number of rebuilds per frame at one; it could
+not make one rebuild cheap.
+
+Recorded rather than chased. It is the deliberate worst case, dragging a window
+edge while the overview is up is rare, and the fix — extending the reposition
+fast path to cover the rebuild — is real work rather than a tweak. What matters
+is not to record it as solved: run 18's note reads as though coalescing closed
+the gap, and it closed the burst.
+
+### The research: where a background arrival should send you, and how
+
+*Searched: calm technology and the centre/periphery distinction; task
+interruption, resumption cost and recovery in real workplaces.*
+
+Weiser and Seely Brown's 1995 definition is the frame the unseen mark was
+already built to — "that which informs but doesn't demand our focus or
+attention", technology that moves between periphery and centre and increases
+peripheral reach "without increasing information overload". The dot is the
+periphery half and it is right. What the design had no evidence about was the
+*centre* half: what happens after the user chooses to look.
+
+Iqbal and Horvitz's CHI 2007 field study is the evidence, and it is unusually
+direct. Logging information workers' real days, they measured:
+
+- **27% of alert-driven suspensions left the previously active window unvisited
+  for more than two hours** into the resumption phase.
+- Users who responded to an alert immediately **tabbed through 7.5 applications
+  on average** in pursuit of the one that had alerted them.
+- ~10 minutes spent on the diversion itself, then **another 10–15 minutes**
+  before returning to focused work on the disrupted task.
+- A task worked on for less than 5 minutes before suspension had a **10% chance
+  of not being resumed within two hours**.
+
+Their design guideline drawn from that data: *"provide easy access to suspended
+task context… in the form of thumbnails with views of the suspended states."*
+That is the Field, described in 2007 by people who had measured why it was
+needed and did not build it. **Verdict: adopt, as the missing pointer.** The
+finding that changed the build is the 7.5 applications — the expensive half of
+coming back is not switching, it is *searching*, and a boolean signal that opens
+a canvas of identical cards hands the user exactly that search.
+
+So the Field now says which card arrived: `data-arrived` on the card and its
+miniature, and on the tile of the trail it landed in, drawn as the same dot in
+the same colour and size the address bar wears. Two levels, one question — which
+trail, then which card. It clears on **close**, not on open, because opening the
+Field is the question and closing it is the answer; the boolean's own rule
+(cleared by opening) would have made the per-card state clear itself before it
+could be read, which is the sort of thing that looks correct because it matches
+the rule beside it.
+
+**Rejected while here:** a count rather than a state (the existing note already
+settles it — nobody reads a peripheral number precisely, and a growing number is
+the tab strip's worst property); a notification or toast (an event demands the
+attention calm technology is defined by not demanding); and a new verb to jump
+to the arrival, which would add a thirteenth action to reach a card that already
+has a letter — `enter <mark>` is the jump, and the dot's job is to tell you a
+mark is worth asking about.
+
+Sources: [Designing Calm Technology, Weiser & Seely Brown](https://people.csail.mit.edu/rudolph/Teaching/weiser.pdf),
+[Calm technology](https://en.wikipedia.org/wiki/Calm_technology),
+[Disruption and Recovery of Computing Tasks, Iqbal & Horvitz, CHI 2007](https://www.microsoft.com/en-us/research/wp-content/uploads/2016/11/CHI_2007_Iqbal_Horvitz-1.pdf)

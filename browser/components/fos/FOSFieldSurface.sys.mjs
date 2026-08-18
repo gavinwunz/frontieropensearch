@@ -130,6 +130,8 @@ export class FOSFieldSurface {
   /** Whether anything has arrived since the Field was last looked at. */
   #unseen = false;
   #unseenListeners = new Set();
+  /** The nodes that arrived while the Field was shut, until it is shut again. */
+  #arrived = new Set();
   /** When this window started watching, so a restored page is not an arrival. */
   #watchingSince = Infinity;
 
@@ -339,6 +341,13 @@ export class FOSFieldSurface {
         changed = true;
         if (node.id !== current && node.created_at >= this.#watchingSince) {
           arrived = true;
+          // Which card, not just that one exists. The dot on the bar says
+          // something arrived and the Field is where it went; a canvas of
+          // identical cards then makes the user find it, which is the search
+          // Iqbal and Horvitz measured as the expensive half of coming back
+          // — their subjects tabbed through 7.5 windows looking for the one
+          // they had been alerted about. See IDEAS.md, run 32.
+          this.#arrived.add(node.id);
         }
       } catch (e) {
         // A node whose trail has gone is not a card; it is not an error
@@ -383,6 +392,19 @@ export class FOSFieldSurface {
    */
   get hasUnseen() {
     return this.#unseen;
+  }
+
+  /**
+   * The nodes that arrived while the Field was shut, as node ids.
+   *
+   * The per-card half of `hasUnseen`: the boolean says something arrived and
+   * this says what. It survives `open` and clears on `close`, because opening
+   * the Field is the question and closing it is the answer.
+   *
+   * @returns {Set<number>} A copy — the caller must not be able to clear it.
+   */
+  get arrivedNodes() {
+    return new Set(this.#arrived);
   }
 
   /**
@@ -449,6 +471,11 @@ export class FOSFieldSurface {
     if (!this.#root) {
       return;
     }
+    // Closing the Field is the user saying they have looked, so the per-card
+    // state clears here rather than on `open`. The boolean clears on open
+    // because opening is what it asks for; this one has to survive that open,
+    // or the surface the dot sends you to could not say what the dot meant.
+    this.#arrived.clear();
     this.#root.hidden = true;
     this.#level = LEVEL.PAGE;
     this.#window.gBrowser?.selectedBrowser?.focus();
@@ -778,6 +805,16 @@ export class FOSFieldSurface {
     el.id = `fos-field-tile-${nested ? "nest" : tile.region.id}`;
     el.dataset.regionId = nested ? "nest" : String(tile.region.id);
     el.setAttribute("role", "group");
+    // A miniature is about ten pixels across at the overview scale, so the
+    // accent on one is not readable as an answer to "where did it go" — the
+    // tile has to carry it too. Two levels, one question: which trail, then
+    // which card.
+    el.toggleAttribute(
+      "data-arrived",
+      regions.some(region =>
+        model.cardsIn(region.id).some(card => this.#arrived.has(card.node_id))
+      )
+    );
     el.style.left = `${tile.x}px`;
     el.style.top = `${tile.y}px`;
     el.style.width = `${tile.width}px`;
@@ -825,6 +862,7 @@ export class FOSFieldSurface {
         const mini = doc.createElementNS(HTML_NS, "div");
         mini.className = "fos-field-mini";
         mini.dataset.nodeId = String(card.node_id);
+        mini.toggleAttribute("data-arrived", this.#arrived.has(card.node_id));
         mini.style.left = `${card.x}px`;
         mini.style.top = `${card.y}px`;
         mini.style.width = `${model.geometry.cardWidth}px`;
@@ -928,6 +966,7 @@ export class FOSFieldSurface {
     el.setAttribute("role", "option");
     el.toggleAttribute("data-pinned", card.pinned);
     el.toggleAttribute("data-lineage", lineage.has(card.id));
+    el.toggleAttribute("data-arrived", this.#arrived.has(card.node_id));
     el.style.left = `${card.left}px`;
     el.style.top = `${card.top}px`;
     el.style.width = `${card.width}px`;

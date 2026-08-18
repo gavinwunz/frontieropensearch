@@ -201,6 +201,44 @@
   opacity: var(--opacity-deemphasized-strong);
 }
 
+/* What arrived while the Field was shut, until it is shut again.
+
+   The same dot the retired address bar wears, in the same colour and the same
+   size, because it is the same signal answering its own second half: the bar
+   says something arrived, the Field says which one. A second visual language
+   for one fact would make the second surface a new thing to learn rather than
+   the destination of the first.
+
+   A dot rather than an outline colour, deliberately: the card's outline is
+   already spoken for three times over — pinned, lineage, refused — and a
+   fourth meaning on the same channel would make none of them readable. */
+.fos-field-card[data-arrived]::after,
+.fos-field-tile[data-arrived] .fos-field-tile-head::after {
+  content: "";
+  flex: 0 0 auto;
+  align-self: center;
+  inline-size: var(--fos-signal-size);
+  block-size: var(--fos-signal-size);
+  border-radius: var(--border-radius-circle);
+  background: var(--fos-signal-color);
+}
+
+.fos-field-card[data-arrived]::after {
+  position: absolute;
+  inset-block-start: var(--space-xxsmall);
+  inset-inline-end: var(--space-xxsmall);
+}
+
+/* At the overview scale a miniature is about ten pixels across, so a dot on
+   one would be a smudge. The whole miniature takes the accent instead, which
+   is the same information at the only fidelity that level has. */
+.fos-field-mini[data-arrived] {
+  outline-color: var(--fos-signal-color);
+  /* Twice the ordinary hairline, because at this scale a colour change on a
+     one-pixel outline around a ten-pixel box is a couple of tinted pixels. */
+  outline-width: calc(var(--border-width) * 2);
+}
+
 /* A refused drop. §6: refusing is correct, because the alternative is silently
    destroying a position the user deliberately chose — but it has to be
    visible, or a drag that stops dead reads as a bug. */

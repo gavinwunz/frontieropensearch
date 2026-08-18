@@ -804,3 +804,81 @@ function assertNoRenderedOverlap() {
     }
   }
 }
+
+/**
+ * The dot says something arrived; the Field says which one.
+ *
+ * The boolean on its own only gets the user as far as a canvas of identical
+ * cards, and then they have to find the arrival themselves — which is the
+ * expensive half of coming back, not the cheap half. Iqbal and Horvitz logged
+ * information workers tabbing through 7.5 windows in pursuit of the one they
+ * had been alerted about, and 27% of suspensions leaving the prior window
+ * unvisited for more than two hours. Their design guideline from that data is
+ * "provide easy access to suspended task context, as thumbnails of the
+ * suspended states" — which is the Field, so what is left to build is the
+ * pointer into it. IDEAS.md, run 32.
+ */
+add_task(async function the_field_says_which_card_arrived() {
+  const surface = field();
+  surface.open();
+  surface.close();
+  Assert.equal(surface.arrivedNodes.size, 0, "a look clears the arrivals");
+
+  await goTo(PAGE_A);
+  Assert.ok(
+    !surface.arrivedNodes.has(session().currentNodeId),
+    "the page navigated to is not an arrival"
+  );
+
+  const tab = BrowserTestUtils.addTab(gBrowser, PAGE_C);
+  try {
+    await BrowserTestUtils.browserLoaded(tab.linkedBrowser, false, PAGE_C);
+    await TestUtils.waitForCondition(
+      () => surface.hasUnseen,
+      "the arrival lit the signal"
+    );
+
+    const arrival = session().nodeForBrowser(tab.linkedBrowser);
+    Assert.ok(
+      surface.arrivedNodes.has(arrival),
+      "and the Field knows which node it was"
+    );
+
+    // The half that could most easily have been got wrong: the boolean clears
+    // on open, because opening the Field is what it asks for. This one must
+    // survive that open, or the surface the dot sends you to would have
+    // nothing to point at by the time you arrived.
+    surface.open();
+    Assert.ok(!surface.hasUnseen, "opening cleared the boolean, as before");
+    Assert.ok(
+      surface.arrivedNodes.has(arrival),
+      "and the card is still marked, which is the whole point of opening"
+    );
+
+    // Drawn at both levels: the overview says which trail, the region says
+    // which card.
+    const tile = window.document.querySelector(".fos-field-tile[data-arrived]");
+    Assert.ok(tile, "the overview marks the trail the arrival landed on");
+    Assert.ok(
+      window.document.querySelector(`.fos-field-mini[data-arrived]`),
+      "and the miniature within it"
+    );
+
+    surface.showRegion(surface.model.cardForNode(arrival).region_id);
+    Assert.ok(
+      window.document.querySelector(".fos-field-card[data-arrived]"),
+      "and the card itself, once the trail is open"
+    );
+
+    // Closing is the user saying they have looked.
+    surface.close();
+    Assert.equal(
+      surface.arrivedNodes.size,
+      0,
+      "and closing the Field clears them"
+    );
+  } finally {
+    surface.close();
+    BrowserTestUtils.removeTab(tab);
+  }
+});
