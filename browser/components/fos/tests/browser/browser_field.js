@@ -350,6 +350,75 @@ add_task(async function test_a_drag_pins_and_never_overlaps() {
 });
 
 /**
+ * A restart is revisitation, and revisitation is where a thumbnail pays.
+ *
+ * The Field's own snapshots live in memory, so before this every card in a
+ * restored session was a grey rectangle with a caption — the condition Data
+ * Mountain measured as its weakest, at the one moment PadPrints says the
+ * picture is worth most. The fix is Gecko's own thumbnail store: written when
+ * a page is departed, read when a card has no snapshot of its own.
+ *
+ * Both halves are asserted against the disk and against what is drawn, because
+ * neither is visible to the model tests: whether the file is really written
+ * depends on `shouldStoreThumbnail` agreeing about a live channel, and whether
+ * `moz-page-thumb://` really paints in chrome depends on the protocol handler.
+ */
+add_task(async function test_departing_a_page_stores_its_thumbnail() {
+  // The mochitest profile turns page-thumbnail capturing off wholesale
+  // (`testing/profiles/common/user.js`), which is exactly the machinery under
+  // test here, so these two tasks turn it back on for their own duration.
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.pagethumbnails.capturing_disabled", false]],
+  });
+  await goTo(PAGE_A);
+  // The Field captures every open tab on the way in; PAGE_A is one of them.
+  field().open();
+
+  await TestUtils.waitForCondition(
+    () => IOUtils.exists(PageThumbs.getThumbnailPath(PAGE_A)),
+    "the departed page reached the thumbnail store"
+  );
+  field().close();
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function test_a_card_without_a_snapshot_paints_the_stored_one() {
+  // A restored card is one with no in-memory snapshot and no browser to take
+  // one from. Refusing every capture is that card exactly, and is the only way
+  // to reach the fallback without restarting the browser mid-test.
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.pagethumbnails.capturing_disabled", false]],
+  });
+  const captureTabPreviewThumbnail = PageThumbs.captureTabPreviewThumbnail;
+  PageThumbs.captureTabPreviewThumbnail = async () => false;
+  try {
+    // A second visit to the same page: a new node, so nothing in the memory
+    // cache is keyed to it, while the store already holds its picture.
+    await goTo(PAGE_B);
+    await goTo(PAGE_A);
+    const nodeId = session().currentNodeId;
+    field().open();
+    field().showRegion(session().store.getNode(nodeId).trail_id);
+
+    const shot = await TestUtils.waitForCondition(() => {
+      const card = window.document.querySelector(
+        `.fos-field-card[data-node-id="${nodeId}"] .fos-field-shot`
+      );
+      return card?.style.backgroundImage.includes("moz-page-thumb") && card;
+    }, "the card with no snapshot of its own painted the stored thumbnail");
+
+    Assert.ok(
+      !shot.hasAttribute("data-empty"),
+      "and it is no longer in the empty state"
+    );
+  } finally {
+    PageThumbs.captureTabPreviewThumbnail = captureTabPreviewThumbnail;
+    field().close();
+    await SpecialPowers.popPrefEnv();
+  }
+});
+
+/**
  * Property 3 where it can actually be violated: on screen.
  *
  * The model's `overlaps()` is authoritative about the boxes the model owns,

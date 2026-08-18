@@ -116,6 +116,15 @@ export class FOSFieldSurface {
   /** node id -> data URL. */
   #thumbs = new Map();
 
+  /**
+   * page url -> a `moz-page-thumb://` URL, or null when nothing is on disk.
+   *
+   * The memory cache above dies with the process; this one is the answer for a
+   * card whose page has not been visited since the browser started, which after
+   * the trail restore is most of them.
+   */
+  #stored = new Map();
+
   constructor(window) {
     this.#window = window;
     this.#session = FOSTrailSession.forWindow(window);
@@ -443,17 +452,105 @@ export class FOSFieldSurface {
     if (this.isOpen) {
       this.#paintThumbs();
     }
+    this.#store(browser);
   }
 
-  /** Put cached snapshots into whatever cards are on screen. */
+  /**
+   * Put the page in Gecko's thumbnail store too, which outlives the process.
+   *
+   * The capture above is the card's, and it dies with the window; this is the
+   * same moment written to disk so a restored card has something to show. It is
+   * a second capture rather than a re-encoding of the first because the store
+   * is shared — it is keyed by url, read by anything in the browser that wants
+   * a picture of a page, and expects the standard thumbnail geometry, not a
+   * card-shaped crop. `captureAndStoreIfStale` is what keeps that affordable:
+   * every open of the Field asks about every open tab, and all but the first
+   * ask in a thumbnail's lifetime costs one stat of a file.
+   *
+   * `shouldStoreThumbnail` is the whole guard, and is the reason to go through
+   * this store rather than persist our own: it already refuses private windows,
+   * about: pages, error responses and documents whose channel says not to cache
+   * them. `init` is idempotent, and registers the listener that wipes stored
+   * thumbnails when the user clears history — nothing else in this build calls
+   * it, and writing to a store that outlives a history clear is not something
+   * to ship.
+   *
+   * @param {object} browser The browser that was just captured.
+   */
+  async #store(browser) {
+    try {
+      if (!(await lazy.PageThumbs.shouldStoreThumbnail(browser))) {
+        return;
+      }
+      lazy.PageThumbs.init();
+      await lazy.PageThumbs.captureAndStoreIfStale(browser);
+    } catch (e) {
+      // Same tear-down races as the capture above, plus a disk that refused
+      // the write. A card that has to fall back to its caption is not an error.
+      return;
+    }
+    // Whatever this url's answer was before, it now has an image on disk.
+    this.#stored.delete(browser.currentURI?.spec);
+  }
+
+  /**
+   * Put cached snapshots into whatever cards are on screen.
+   *
+   * Memory first, disk second: a page visited this session has a card-shaped
+   * capture taken when it was departed, which is sharper and more current than
+   * anything the shared store holds.
+   */
   #paintThumbs() {
     for (const el of this.#stage.querySelectorAll("[data-node-id]")) {
-      const url = this.#thumbs.get(Number(el.dataset.nodeId));
+      const nodeId = Number(el.dataset.nodeId);
+      const url = this.#thumbs.get(nodeId) ?? this.#storedFor(nodeId);
       const shot = el.querySelector(".fos-field-shot");
       if (url && shot && shot.style.backgroundImage !== `url("${url}")`) {
         shot.style.backgroundImage = `url("${url}")`;
         shot.toggleAttribute("data-empty", false);
       }
+    }
+  }
+
+  /**
+   * The stored thumbnail for a node's page, if one is already known to exist.
+   *
+   * Answers from the cache and never blocks a paint: the first ask for a url
+   * starts the disk check and returns nothing, and the check repaints if it
+   * found something. A url that has no thumbnail stays in the map as null so
+   * the Field does not stat it again on every render.
+   *
+   * @param {number} nodeId
+   * @returns {?string} A `moz-page-thumb://` URL, or null.
+   */
+  #storedFor(nodeId) {
+    const url = this.#session.store.getNode(nodeId)?.url;
+    if (!url) {
+      return null;
+    }
+    if (!this.#stored.has(url)) {
+      this.#stored.set(url, null);
+      this.#probeStored(url);
+    }
+    return this.#stored.get(url);
+  }
+
+  /**
+   * @param {string} url A page url.
+   */
+  async #probeStored(url) {
+    let exists = false;
+    try {
+      exists = await IOUtils.exists(lazy.PageThumbs.getThumbnailPath(url));
+    } catch (e) {
+      exists = false;
+    }
+    if (!exists) {
+      return;
+    }
+    this.#stored.set(url, lazy.PageThumbs.getThumbnailURL(url));
+    if (this.isOpen) {
+      this.#paintThumbs();
     }
   }
 
