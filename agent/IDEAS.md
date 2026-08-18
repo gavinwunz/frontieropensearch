@@ -326,3 +326,51 @@ branch, bookmark graveyards. Real complaints beat invented personas.
   parses action-first and treats anything not starting with a known verb as a query — so
   search is the unmarked default and commands are the marked case, in both modalities.
 - **Phase:** 2C, as the command bar's grammar.
+
+### Bush's trails were curated and shared, not recorded
+- **Found:** 2026-08-18, re-reading "As We May Think" against our own pillar B —
+  en.wikipedia.org/wiki/Memex and themarginalian.org/2012/10/11/as-we-may-think-1945/.
+- **What it is:** A memex trail was an *authored* object. The user deliberately joined
+  documents into a path, **named it**, wrote the name into a code book, and could hand the
+  whole trail to another researcher to drop into their own memex. Bush treats trails as
+  first-class citizens of the environment, as important as the documents they run through,
+  and imagined trail-blazing as a profession.
+- **Verdict:** adopt the distinction. It is the answer to the Nyxt problem.
+- **Why:** We named pillar B after Bush and then specified something he did not describe.
+  Our trail is captured automatically — every click spawns a node — which makes it a
+  *recording*. Bush's trail is a *selection*. That gap matters commercially and not just
+  historically, because run 2 established that Nyxt already ships an automatic browsing
+  history tree, leaving the tree itself unable to carry any novelty claim.
+  The resolution is to keep both and stop conflating them, and it is the strongest idea
+  this run produced. Capture stays automatic and total, because that is the half browsers
+  are genuinely good at and the manual tapping was the weakest part of the memex — Bush's
+  users had to know a path mattered *before* walking it, which nobody does. But a **Trail**
+  proper is then a named, curated selection promoted out of that raw tree, by a deliberate
+  act. The automatic tree is the raw material; the Trail is the artefact.
+  This is what separates us from Nyxt rather than a claim we cannot support, and the
+  primitives it needs already exist in `design/GRAMMAR.md` without having been designed for
+  it: `name` promotes, `graft` curates by reattaching, and export makes the result
+  shareable — which is Bush's whole point, since a trail nobody else can take is just a
+  private bookmark folder.
+- **Phase:** 2B. The promotion step is the pillar's acceptance criterion, not a nice-to-have —
+  a tree you can only look at is a curiosity, per the earlier entry.
+
+### Trail crossings: the same page on several trails is the memex's actual payload
+- **Found:** 2026-08-18, checking Bush's "the same document may be part of many trails at
+  once" against `context-engine/SCHEMA.md`.
+- **What it is:** In the memex the value compounds because trails *mesh* — one document sits
+  on many paths, so arriving at it from one line of enquiry exposes the others.
+- **Verdict:** adopt as a Context Engine surface. No schema change needed.
+- **Why:** Worth recording that the schema already survives this, since it looked at first
+  like a tree-versus-DAG problem. It is not: `trail_node` is a *visit*, not a document, so
+  one URL already appears as many nodes across many trails, and `trail_node` is already
+  indexed on `url`. The multi-trail document falls out for free.
+  What is missing is that nothing ever *tells* the user. "You have hit this page from three
+  different trails" is the memex's compounding effect, it is cheap on an index we already
+  have, and it is exactly the sort of thing flat history cannot express — a recency list
+  can say you have been here before, but not that this page keeps turning up from unrelated
+  directions, which is a much stronger signal that it matters.
+  It belongs to the Context Engine rather than to Trails: a crossing is evidence that two
+  contexts are related, which is a clustering input, and it feeds the context sidebar's
+  "what you know so far" directly.
+- **Phase:** 2C, as a signal in the sidebar and a ranking input in the command bar.
