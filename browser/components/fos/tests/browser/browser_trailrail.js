@@ -322,6 +322,44 @@ add_task(async function test_the_rail_renders_the_captured_tree() {
   BrowserTestUtils.removeTab(tab);
 });
 
+add_task(async function test_the_focus_ring_lands_on_the_selected_row() {
+  // SYSTEM.md §5. The rail's list fills the window's height, so a ring on the
+  // container was a 700px accent rectangle down the side of the browser next
+  // to a faintly shaded row — the loudest mark in the surface pointing at the
+  // box rather than at the page Enter would open.
+  //
+  // Checked here rather than only in the stylesheet because the rule turns on
+  // `:has()` over a live subtree, and a selector that reads correctly and
+  // matches nothing is this project's most expensive recurring bug.
+  const tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, PAGE_A);
+  await goTo(PAGE_B);
+
+  rail().open();
+
+  const list = rail().list;
+  ok(list.matches(":focus-visible"), "the list holds a keyboard focus");
+  const selected = list.querySelector('.fos-rail-row[aria-selected="true"]');
+  ok(selected, "a row is selected");
+
+  const styleOf = el => window.getComputedStyle(el);
+  info(`list outline: ${styleOf(list).outline}`);
+  info(`row outline: ${styleOf(selected).outline}`);
+
+  Assert.equal(
+    styleOf(list).outlineStyle,
+    "none",
+    "no ring around the panel while a row can carry it"
+  );
+  Assert.notEqual(
+    styleOf(selected).outlineStyle,
+    "none",
+    "the selected row carries the ring instead"
+  );
+
+  rail().close();
+  BrowserTestUtils.removeTab(tab);
+});
+
 add_task(async function test_a_reload_is_not_a_new_page() {
   // Two things arrive at the progress listener looking like one: a reload, and
   // the second half of a process switch, which is what re-entering a restored

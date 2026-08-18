@@ -131,7 +131,12 @@ export class FOSContextSidebar {
       this.#unsubscribe = this.#session.subscribe(() => this.render());
     }
     await this.render();
-    this.#body.focus();
+    // `focusVisible: true` rather than a bare focus: this surface takes the
+    // keyboard off the page the moment it opens, so it has to show where the
+    // keyboard went — and a plain programmatic focus inherits whatever mode
+    // the window is already in, which after a click or a drag means no ring at
+    // all on a surface that now owns every keystroke.
+    this.#body.focus({ focusVisible: true });
   }
 
   close() {
@@ -242,6 +247,16 @@ export class FOSContextSidebar {
 
     for (const section of model.sections) {
       this.#body.appendChild(this.#drawSection(section));
+    }
+
+    // The panel opens with the page you are on already selected, which is what
+    // the rail does, so the two surfaces agree about what a selection is — and
+    // so the focus ring lands on a row instead of around a panel the height of
+    // the window (SYSTEM.md §5). Only when nothing has been selected yet: a
+    // redraw must never drag the selection off the row the user arrowed to.
+    if (this.#selected === null) {
+      const here = this.#rows.findIndex(row => row.current && row.enterable);
+      this.#selected = here === -1 ? null : here;
     }
     this.#applySelection();
   }

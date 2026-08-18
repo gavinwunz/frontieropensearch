@@ -48,6 +48,22 @@ const STYLESHEET = "chrome://browser/content/fos/fos-locationdisplay.css";
 const PREF = "browser.fos.commandBar.replacesAddressBar";
 
 /**
+ * What an empty address bar says now.
+ *
+ * Upstream's is "Search or enter address", which is an instruction to type
+ * here — and this bar refuses typing. A control that advertises something it
+ * will not do is the same defect as the I-beam the stylesheet removed, one
+ * layer up, and it is the first thing a new window shows: the placeholder is
+ * only visible when there is no address, which is exactly the blank tab a
+ * first run opens on.
+ *
+ * So it describes what a press does rather than what a keystroke would. Not
+ * "the command bar" by name, because a surface a user has not met yet cannot
+ * be referred to by name in the sentence that introduces it.
+ */
+const PLACEHOLDER = "Press to search or run a command";
+
+/**
  * Elements inside the address bar that keep their own click.
  *
  * Each is a control with a job of its own, and each of those jobs is the
@@ -92,6 +108,7 @@ export class FOSLocationDisplay {
   #urlbar = null;
   #onMouseDown = null;
   #wired = false;
+  #setPlaceholder = null;
 
   constructor(window) {
     this.#window = window;
@@ -129,6 +146,30 @@ export class FOSLocationDisplay {
     urlbar.setAttribute("fos-location-display", "true");
     ensureStylesheet(this.#window, STYLESHEET);
 
+    // Not simply written onto the element: the placeholder is Fluent's, and
+    // the search service sets it again — with the default engine's name in it
+    // — some time after a window is built, so anything written at wiring time
+    // is overwritten a moment later by a string that reads "Search with
+    // <engine> or enter address". Found by a test, having looked right in the
+    // window that produced it.
+    //
+    // So the override goes on the one method that owns the decision, and every
+    // later caller lands on ours. `_setPlaceholder` is internal to
+    // `UrlbarInputBase`, which is exactly why this is the right seam for a
+    // fork: the element has been given a new job, and this is the method that
+    // states the old one.
+    this.#setPlaceholder = urlbar._setPlaceholder.bind(urlbar);
+    urlbar._setPlaceholder = () => {
+      const input = urlbar.inputField;
+      if (!input) {
+        return;
+      }
+      input.removeAttribute("data-l10n-id");
+      input.removeAttribute("data-l10n-args");
+      input.setAttribute("placeholder", PLACEHOLDER);
+    };
+    urlbar._setPlaceholder();
+
     // Capture, because the input inside would otherwise take the click first
     // and put a caret in text the user cannot edit. `mousedown` rather than
     // `click`, for the same reason and one better: focus moves on mousedown,
@@ -150,6 +191,14 @@ export class FOSLocationDisplay {
     });
     this.#urlbar.readOnly = false;
     this.#urlbar.removeAttribute("fos-location-display");
+    if (this.#setPlaceholder) {
+      delete this.#urlbar._setPlaceholder;
+      this.#urlbar.inputField?.removeAttribute("placeholder");
+      // Null rather than the engine name: the name is the search service's to
+      // know, and it re-states it on the next engine change anyway.
+      this.#urlbar._setPlaceholder(null);
+      this.#setPlaceholder = null;
+    }
     this.#onMouseDown = null;
     this.#wired = false;
   }

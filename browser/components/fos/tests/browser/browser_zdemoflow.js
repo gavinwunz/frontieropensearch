@@ -139,6 +139,94 @@ function type(text) {
 }
 
 /**
+ * Photograph the whole chrome window, if this run was asked for pictures.
+ *
+ * Off unless `FOS_SHOTS` names a directory, so an ordinary test run writes
+ * nothing and only the smoke run (`agent/smoke.sh`) produces artefacts. The
+ * directory is passed in rather than derived, because a test cannot know where
+ * the source tree is and a path baked into the tree would be a personal path
+ * in a public repository.
+ *
+ * `drawWindow` is the only route to a picture of chrome here: there is no
+ * headless display on this machine, and a real X grab would photograph
+ * somebody's desktop rather than the browser.
+ *
+ * @param {string} name The file name, without an extension.
+ */
+async function shoot(name) {
+  const dir = Services.env.get("FOS_SHOTS");
+  if (!dir) {
+    return;
+  }
+  // A frame to let whatever the stage just did actually paint.
+  await new Promise(resolve => win.requestAnimationFrame(resolve));
+  await new Promise(resolve => win.requestAnimationFrame(resolve));
+
+  // The harness drives this window over Marionette, and a remote-controlled
+  // window wears a robot icon and red diagonal stripes across the address bar
+  // (`:root[remotecontrol]`, browser/themes/shared/urlbar-searchbar.css). That
+  // warning is upstream's and it is correct — it exists to tell a user their
+  // browser is being driven — but it is a fact about the harness rather than
+  // about this browser, and a screenshot carrying it documents the test rig.
+  // Dropped for the length of the capture and put straight back, so the window
+  // the rest of the flow runs in keeps the warning it is entitled to.
+  const root = win.document.documentElement;
+  const controlled = root.hasAttribute("remotecontrol");
+  if (controlled) {
+    root.removeAttribute("remotecontrol");
+  }
+
+  const ratio = win.devicePixelRatio;
+  const width = win.innerWidth;
+  const height = win.innerHeight;
+  const canvas = win.document.createElementNS(
+    "http://www.w3.org/1999/xhtml",
+    "canvas"
+  );
+  canvas.width = Math.round(width * ratio);
+  canvas.height = Math.round(height * ratio);
+  const ctx = canvas.getContext("2d");
+  ctx.scale(ratio, ratio);
+  // `DRAWWINDOW_USE_WIDGET_LAYERS` is what puts the page in the picture. The
+  // default path draws the parent process's own layers and content lives in
+  // another process, so without it every stage is photographed with a blank
+  // white rectangle where the page was.
+  const flags =
+    ctx.DRAWWINDOW_DRAW_VIEW |
+    ctx.DRAWWINDOW_USE_WIDGET_LAYERS |
+    ctx.DRAWWINDOW_DRAW_CARET;
+  ctx.drawWindow(win, 0, 0, width, height, "white", flags);
+
+  const data = canvas
+    .toDataURL("image/png")
+    .replace(/^data:image\/png;base64,/, "");
+  const bytes = Uint8Array.from(atob(data), c => c.charCodeAt(0));
+  if (controlled) {
+    root.setAttribute("remotecontrol", "true");
+  }
+
+  const path = PathUtils.join(dir, `${name}.png`);
+  await IOUtils.write(path, bytes);
+  info(`SHOT ${path} (${bytes.length} bytes)`);
+}
+
+/**
+ * Write a text artefact beside the screenshots, if pictures were asked for.
+ *
+ * @param {string} name The file name, with its extension.
+ * @param {string} text What to write.
+ */
+async function writeArtefact(name, text) {
+  const dir = Services.env.get("FOS_SHOTS");
+  if (!dir) {
+    return;
+  }
+  const path = PathUtils.join(dir, name);
+  await IOUtils.writeUTF8(path, text);
+  info(`ARTEFACT ${path} (${text.length} characters)`);
+}
+
+/**
  * The children of a node, oldest first.
  *
  * @param {number} nodeId The parent.
@@ -230,6 +318,8 @@ add_task(async function test_the_demo_flow() {
   const contextId = engine().activeContextId;
   Assert.notStrictEqual(contextId, null, "the search opened a context");
 
+  await shoot("demo-1-search");
+
   // ------------------------------------------------- 2. branch three ways
   info("stage 2 — branch three ways");
 
@@ -267,6 +357,8 @@ add_task(async function test_the_demo_flow() {
     "the trail is exactly the search result and its three branches"
   );
 
+  await shoot("demo-2-branches");
+
   // ------------------------------------------------ 3. zoom out to the Field
   info("stage 3 — zoom out to the Field");
 
@@ -288,6 +380,8 @@ add_task(async function test_the_demo_flow() {
   );
   Assert.ok(tile, "the enquiry has a region of its own in the overview");
 
+  await shoot("demo-3-field-overview");
+
   field().showRegion(trailId);
   Assert.equal(field().level, LEVEL.REGION, "zoomed into the enquiry");
 
@@ -301,6 +395,8 @@ add_task(async function test_the_demo_flow() {
       `and ${node.url} is on screen, so the whole enquiry is visible at once`
     );
   }
+
+  await shoot("demo-3-field-region");
 
   EventUtils.synthesizeKey("KEY_Escape", {}, win);
   EventUtils.synthesizeKey("KEY_Escape", {}, win);
@@ -375,6 +471,8 @@ add_task(async function test_the_demo_flow() {
       "in, from a tab that never visited it"
   );
 
+  await shoot("demo-4-switch-context");
+
   // ------------------------------------------------ 5. export a context pack
   info("stage 5 — export a context pack");
 
@@ -412,6 +510,11 @@ add_task(async function test_the_demo_flow() {
     pack.includes("Frontier OpenSearch"),
     "and says where it came from, since a model should not have to guess"
   );
+
+  await shoot("demo-5-pack");
+  // The brief itself, not only a picture of the surface that produced it: the
+  // artefact this pillar exists to hand to a model is the markdown.
+  await writeArtefact("demo-pack.md", pack);
 
   // And the release, which is what stops the switch in stage four outliving
   // the enquiry that motivated it. Without it one deliberate `context` pins

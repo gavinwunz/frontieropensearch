@@ -114,3 +114,42 @@ test("an explicit save outranks the clock", () => {
 test("the threshold is overridable, because it is a floor and not a fact", () => {
   assert.equal(deriveOutcome({ dwellMs: 5000, readThresholdMs: 1000 }), "read");
 });
+
+test("a name keeps the lowercase words inside it", () => {
+  // Found in a screenshot of the context sidebar: a run of capitals alone cut
+  // this title into "The Mother" and "All Demos", two fragments neither of
+  // which is a thing, both shown to the user as what the context was about.
+  const found = names("The Mother of All Demos changed everything.");
+  assert.ok(
+    found.includes("the mother of all demos"),
+    `the whole title is one entity, got ${JSON.stringify(found)}`
+  );
+  assert.ok(!found.includes("the mother"), "and not the half of it");
+  assert.ok(!found.includes("all demos"), "nor the other half");
+});
+
+test("a joiner does not glue two names together", () => {
+  // `and` is deliberately not a joiner: it is the word that most often
+  // separates two names, and admitting it would produce one entity that
+  // nothing is about.
+  // Not phrased with a capital at the start: a sentence-initial capital that
+  // runs straight into a name is glued to it, which is a limitation of
+  // capitalisation as evidence rather than of the joiner list, and is why the
+  // extractor calls itself shallow.
+  const found = names("It compares Project Xanadu and Vannevar Bush.");
+  assert.ok(found.includes("project xanadu"), "the first name survives");
+  assert.ok(found.includes("vannevar bush"), "and so does the second");
+  assert.ok(
+    !found.some(entry => entry.includes(" and ")),
+    `nothing was glued across the conjunction, got ${JSON.stringify(found)}`
+  );
+});
+
+test("a trailing joiner is not eaten", () => {
+  const found = names("Ted Nelson wrote of hypertext.");
+  assert.ok(found.includes("ted nelson"), "the name is the name");
+  assert.ok(
+    !found.some(entry => entry.endsWith(" of")),
+    `no name ends in its joiner, got ${JSON.stringify(found)}`
+  );
+});

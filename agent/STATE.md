@@ -12,7 +12,14 @@ Keep it short — this is state, not a log. History belongs in `JOURNAL.md`.
 **Phase 2 — The novel UI: COMPLETE** (tagged `phase-2`, report
 `agent/reports/phase-2.md`, merged to `main`). The acceptance criterion runs as
 one automated sequence in `tests/browser/browser_zdemoflow.js`.
-Now on **Phase 3 — Beautiful and tested**.
+**Phase 3 — Beautiful and tested: COMPLETE** (tagged `phase-3`, report
+`agent/reports/phase-3.md`, merged to `main`). Full suite green on two
+consecutive runs — 18 and 19 — screenshots captured, README complete.
+
+**Every phase in the plan is now done.** What follows is not a phase: it is the
+standing list below plus whatever `IDEAS.md` justifies. Do not invent a Phase 4
+heading; pick the highest-value item and say in the journal why it was that
+one.
 
 ## Done
 
@@ -33,6 +40,12 @@ Now on **Phase 3 — Beautiful and tested**.
   Mozilla's Firefox Terms of Use. Telemetry genuinely off —
   `canRecordBase`/`canRecordExtended` both false. Relay, accounts, VPN/Monitor
   promos off. See `agent/reports/phase-1.md` for the full table.
+- **The context engine's writes are correct under two windows.** The store's
+  inserts return their own id atomically; `design/ARCHITECTURE.md` §2 records
+  the per-window / per-profile split the bug came out of.
+- **`design/ARCHITECTURE.md`** — how the three pillars compose, the wiring
+  order at window init, the three-layer split, and the full list of files the
+  fork touches outside `browser/components/fos/`. Linked from the README.
 - **The Field's card and region model.** `FOSField.sys.mjs`: regions that are
   trails, cards seeded by provenance, pinning on first move, the non-occlusion
   push, capacity by eviction then growth, and the three-level overview with
@@ -94,7 +107,23 @@ Now on **Phase 3 — Beautiful and tested**.
   treatment, one gutter rule, one weight for "where you are", and the three
   layer integers named. **The headline find is that chrome had no small type at
   all** — see the gotcha below. `browser_designsystem.js` holds the contract as
-  82 checks against a running window.
+  109 checks against a running window.
+
+- **The polish pass, and with it Phase 3.** Two defects, both found by opening
+  the README's own screenshots at 3× rather than by reading a stylesheet.
+  *Rhythm*: the system settled the inline gutter and left the block axis
+  unnamed, so the rail and the sidebar — open at once, on either side of the
+  page, listing the same nodes — ran at different line rhythms, and the
+  sidebar's entity list ran at none and read as a paragraph. Three tokens now:
+  `--fos-row-padding-block`, `--fos-list-padding-block`,
+  `--fos-heading-space-above`. *Focus*: all three focusable containers fill the
+  window, so the ring was a 700px accent rectangle beside a row shaded 20%
+  grey. It is on the row now, and on the Field it widens the focused card's own
+  frame rather than recolouring it, so pinned and refused still read. Two
+  things reading could not have found, both in the gotchas below: the rule
+  being replaced was *overriding* the UA's ring rather than adding one, and a
+  programmatic focus inherits the window's pointer-or-keyboard mode. The
+  sidebar now also opens on the page you are on, as the rail already did.
 
 - **The Context Engine, and pillar C's data layer end to end.**
   `context-engine/migrations/001-initial.sql` is the schema as a versioned
@@ -221,77 +250,105 @@ Now on **Phase 3 — Beautiful and tested**.
   node tests, xpcshell green. Screenshots per stage in
   `agent/reports/demo-*.png`, the exported brief in `demo-pack.md`.
 
+- **The Field is measured, and the one real jank is gone.**
+  `tests/browser/browser_zzfieldperf.js` times a drag one move per animation
+  frame, splitting each move into script, the layout its writes then cost, and
+  the interval the refresh driver delivered. **The drag was never the problem**:
+  at 40 cards carrying thumbnails a move is 1.5ms of script and 0.01ms of
+  layout, and 60 consecutive frames arrived at the display's own 17.08ms
+  cadence with none dropped. The cost is `render`, which rebuilds the stage
+  from nothing, and the resize listener called it unthrottled — on the worst
+  case the design permits (twelve trails, 480 cards, 480 miniatures) one
+  rebuild is 17.6ms and ten resize events in one tick cost 53ms of them, taking
+  the frame interval during a window drag to a p95 of 65ms against 23ms with
+  the Field closed. Now coalesced to one render per frame: the burst is 7.6ms.
+  `browser_field.js` holds the behaviour, `IDEAS.md` run 18 the numbers and the
+  two hypotheses they refuted.
+
+- **The scripted end-to-end smoke run, and the README's pictures.**
+  `agent/smoke.sh` drives the demo flow and then a second, longer session over
+  three fixture pages worth reading, leaving eleven screenshots and the
+  exported brief in `agent/reports/`. Both files are ordinary browser-chrome
+  tests that photograph themselves only when `FOS_SHOTS` names a directory, so
+  a normal suite run writes nothing. **The headline find is that every
+  screenshot this project has ever taken had a blank rectangle where the page
+  was**: `drawWindow` draws the parent process's own layers and content is in
+  another process. `DRAWWINDOW_USE_WIDGET_LAYERS` fixes it. The README now
+  shows the rail, the Field at both levels, the command bar and the context
+  sidebar, all over real pages.
+
+- **The entity extractor keeps names whole.** "The Mother of All Demos" was
+  filed as "The Mother" and "All Demos" — found by reading the context sidebar
+  in a screenshot, which is the only surface that displays this output.
+
+- **The address bar no longer invites the typing it refuses.** The placeholder
+  said "Search or enter address" on a bar made read-only four runs ago. It now
+  says "Press to search or run a command", set by overriding `_setPlaceholder`
+  rather than by writing the attribute — see the gotcha below.
+
 ## In progress
 
-Nothing. `agent/dev` and `main` both carry Phase 2; `phase-2` is tagged. The
-final push (`push5`) went out at the end of the run — check it landed before
-assuming origin is current.
+Nothing. `agent/dev` and `main` are level, tagged `phase-3`, and pushed.
 
 ## Next task
 
-**1 is the flake. Nothing else in Phase 3 is worth doing while the flagship
-test is untrustworthy.**
+The phase plan is complete, so there is no criterion pulling the next run in a
+particular direction. The list below is ordered by value, not by urgency, and
+the first two are the ones with a user-visible defect behind them.
 
-1. **`browser_zdemoflow.js` flakes in the full suite, and the signature is
-   sharp.** It passes alone, every time (44 checks). In a full-suite run it
-   failed 2 of 3 times this run, and once earlier with a smaller failure set —
-   measured across five full-suite runs, not inferred. When it fails, the
-   exported context pack contains the context's **name and its query but not
-   one of its four pages**, and `suggest()` returns no context-tier item. So
-   the context exists and its `context_member` query rows exist; the page side
-   is what goes missing.
+1. **The search-mode switcher is a second entry surface, and it is branded.**
+   Carried over and now the top of the list, because it is the only known
+   contradiction of a claim this fork makes in its README. See the note below
+   for what to check first.
 
-   `FOSContextStore.contextContents` (line ~760) is where to start. Pages come
-   from `context_member` joined to `trail_node`, and then
-   `JOIN trail t ON t.id = n.trail_id` — an **inner** join. A node whose trail
-   row is absent or not yet written therefore drops out of the brief silently
-   while its queries stay, which is exactly the observed signature. That is a
-   hypothesis with a matching shape, not a diagnosis: confirm it by dumping
-   `context_member`, `trail_node` and `trail` at pack time during a failing
-   suite run before changing anything. If it is right, the inner join is a
-   robustness bug on its own — a brief should never quietly lose a page.
+2. **A full region refuses every drag.** At 56 cards, 59 of 60 pointer moves in
+   a drag toward the middle are refused. §6 working as specified, but "you may
+   not move anything" is a corner the design should answer deliberately, and
+   the Field is the surface the whole pillar rests on.
 
-   Do not chase this by re-running until green. It failed 2 of 3; a single
-   green run proves nothing, which is how this run first mis-read it as
-   "my change broke the suite".
+3. **The overview's reposition-only path.** One crowded-overview rebuild is
+   17.6ms and does not fit in a frame. `IDEAS.md` run 18 has the numbers and
+   the shape of the fix. Not urgent — a level switch is one keystroke and one
+   dropped frame.
 
-2. **Measure the Field's pan and zoom before optimising it.** Unchanged from
-   last run. "60fps canvas pan and zoom, no layout jank" is the criterion and
-   there is no measurement yet. The Field is DOM, not canvas, and
-   `#applyPositions` writes transforms on every pointer move. Profile with 40+
-   cards, then decide. Do not optimise from a guess.
+4. **A background tab still arrives with no signal at all.** Ambient-display
+   research is in `IDEAS.md`.
 
-3. **The scripted end-to-end smoke run.** The demo flow exists as a
-   browser-chrome test and the canvas screenshot route works; Phase 3 wants
-   the two joined, saving screenshots to `agent/reports/`. Blocked in spirit
-   by 1 — a smoke run built on a 2-in-3 flake is not a smoke run.
+5. **The embedding pass, `prune`, and the voice path.** All carried over from
+   Phase 2. The embedding pass is what properly fixes the entity extractor's
+   remaining limitation; the voice path is the second half of the grammar's
+   hands-free promise, of which one end-to-end path exists.
 
-4. **README with real screenshots and an architecture doc.** The pillar
-   designs are in `design/FIELD.md`, `design/GRAMMAR.md`,
-   `design/SYSTEM.md` and `context-engine/SCHEMA.md`; the missing piece is the
-   document saying how the three pillars fit together, plus MPL and trademark
-   notes.
-
-5. **Apply the design system to what it has not touched yet.** `SYSTEM.md`
-   settled type, quiet text, the mark, selection, gutter, layers and weight.
-   It did not touch spacing rhythm inside a row, focus-ring consistency, or
-   the dark/light pairs, and it explicitly left the three surfaces' *widths*
-   alone. Also still open from Phase 2's list: the address bar placeholder
-   still says "Search or enter address" while refusing to be typed in.
-
-6. **A background tab still arrives with no signal at all.** Carried over,
-   unchanged. Ambient-display research is in `IDEAS.md`.
-
-7. **The embedding pass, `prune`, and the voice path.** All carried over from
-   Phase 2, none blocking a Phase 3 criterion.
+6. **The active card can have no thumbnail**, and **closing the rail while the
+   Field is open leaves Escape with nowhere to go.** Both narrow, both below.
 
 ## Found this run, not yet chased
 
-- **A full-suite run is not reproducible and never was.** See Next task 1.
-  The three-strikes rule applies to this one from now on: it has now been
-  observed failing three times and passing twice, and each observation was
-  briefly explained by a different story (my change, then test pollution, then
-  ordering) before the counts were actually compared. Count it.
+- **The search-mode switcher is a second entry surface, and it is branded.**
+  Visible at the left of the address bar in a real window: a Google logo and a
+  chevron, `#urlbar-searchmode-switcher`, which `FOSLocationDisplay` explicitly
+  passes through so it keeps its own press. Two problems in one control. It is
+  a way to start a search that is not the command bar, which is the claim this
+  module exists to make true; and what it opens sets a search mode on an input
+  that cannot be typed into, so it is likely to be a control that does nothing
+  a user can act on. Not verified either way yet — check what pressing it
+  actually does before deciding whether it joins the passthrough list's
+  exceptions or is handed to the command bar like the rest of the bar.
+
+- **The entity extractor glues a sentence-initial capital to the name after
+  it.** "Reading Project Xanadu" comes out as one phrase. Documented in the
+  module rather than fixed, because nothing in capitalisation distinguishes it
+  from "The Mother of All Demos", which is one phrase and should be. The real
+  answer is the embedding pass, where a model does this properly.
+
+- **A full region refuses every drag.** At 56 cards — a region's capacity — 59
+  of 60 pointer moves in a drag toward the middle were refused, so a full
+  region cannot be rearranged at all. This is §6 working as specified: the push
+  chain has nowhere to go and refusing beats silently destroying a position the
+  user chose. But "you may not move anything" is a corner the design should
+  answer deliberately rather than arrive at, and the Field is the surface the
+  whole pillar rests on. Found by the perf harness, which had to count
+  committed moves to notice it was measuring refusals.
 
 - **The active card can have no thumbnail.** In the Field's region level the
   search result's card painted blank while its three children painted
@@ -305,11 +362,32 @@ test is untrustworthy.**
   toggle the rail shut, and Escape no longer zooms the Field out. Focus is
   presumably left on a removed element. Not on the demo flow's path, which is
   why it is recorded rather than fixed.
-- **The address bar still says "Search or enter address".** It is `readOnly`
-  now and refuses the typing its own placeholder invites — visible in
-  `agent/reports/demo-1-search.png`. The cursor was fixed when the bar was
-  retired as an input; the placeholder was missed. One string, and it belongs
-  with the Phase 3 polish pass.
+
+**A CSS rule that removes something is invisible to a reader, and the fix is a
+computed style.** `.fos-rail-list:focus-visible { outline: var(--focus-outline) }`
+reads as "this surface draws a focus ring". It was not: it was *overriding* the
+`outline: auto` Gecko's UA stylesheet already draws on any focused element, so
+deleting it restored a 1px grey ring and the screenshot afterwards looked, at a
+glance, like the one before. A declaration is only ever the delta against what
+the platform already does, and the stylesheet does not show you what that is.
+Any change that consists of deleting a declaration needs an assertion on
+`getComputedStyle`, not a re-read.
+
+**A programmatic `focus()` inherits the window's pointer-or-keyboard mode.** So
+`:focus-visible` matches nothing on a surface opened after a click or a drag,
+however much that surface now owns the keyboard. The three FOS surfaces focus
+with `{ focusVisible: true }`. This is also a test hazard: a ring test passes
+alone, because the file's own earlier keystrokes leave the window in keyboard
+mode, and fails after `browser_field.js`, whose drags do not. Assert
+`el.matches(":focus-visible")` as a precondition so the failure says which half
+is wrong.
+
+**`:has()` is lint-banned in this tree**, by
+`stylelint-plugin-mozilla/no-has-selector` — it scales with the subtree and
+needs the harder invalidation path. Before reaching for a disable comment,
+check whether the surface already maintains an ARIA attribute carrying the same
+fact: `[aria-activedescendant]` replaced `:has(a selected row)` here exactly,
+because a listbox sets and clears it in the same breath as the selection.
 
 **Test in Gecko, not only in node.** Two bugs this project has shipped were
 invisible to green node tests: a grammar bug found in one minute once the modules
@@ -499,6 +577,23 @@ do not build anything that assumes a row must exist.
 
 ## Gotchas worth not rediscovering
 
+**One store, many windows: never read connection-wide state after a write.**
+`FOSContextEngine.store()` opens one SQLite connection for the whole process and
+every window's engine writes through it. Each engine serialises only its own
+queue, so statements from two windows interleave as a matter of course. Anything
+that asks the *connection* a question after a write — `last_insert_rowid()`,
+`changes()`, `total_changes()` — is asking about whatever happened last, from
+any window and any table. Use `RETURNING`. This cost three runs and produced a
+database referencing rows that had never existed, with no error anywhere: the
+wrong id is a perfectly plausible integer.
+
+The reason it looked like a test-harness flake is worth keeping too. Alone, one
+window is the only writer and the two statements are correct; in a full suite,
+six earlier files have left an engine on the shared window actively recording,
+so the interleaving is constant. **"Passes alone, fails in the suite" is not
+evidence of test pollution.** It is evidence of concurrency, and the second
+writer may well be the product rather than the harness.
+
 **`--font-size-small` does nothing in chrome, and never did.** Upstream's
 `toolkit/themes/shared/design-system/src/tokens/base/font.tokens.json` gives
 both `font.size.root` and `font.size.small` a *platform* value of `unset`, so
@@ -674,12 +769,51 @@ only computed style in a real window can see it, which is what
 - A `&&` chain after a `md5sum` of a path that may not exist silently skips the
   rest. Cost a confusing minute when `generate-mark.py` appeared not to run.
 
+- **A performance number needs a control beside it or it is decoration.** The
+  first version of the Field harness reported a confident set of drag timings
+  for a drag that was refused on every move and never moved a card — the
+  numbers looked plausible and were about nothing. Counting committed moves
+  cost two lines and caught it. Same shape for the rest: the layout figure is
+  only believable because a second flush measured immediately after reads
+  0.00ms against the first's 0.01ms, and the resize figure only because the
+  same loop was run with the Field closed. **Every measurement in that file has
+  a control, and that is why it is trustworthy.**
+- **`mach test` does not take `--setenv`; `mach mochitest` does.** The generic
+  runner reports it as `UNKNOWN TEST: FOO=bar`, which reads like a bad path
+  rather than a rejected option. `agent/smoke.sh` calls `mach mochitest` for
+  this reason alone.
+- **`drawWindow` does not draw the page unless you ask it to.** The default
+  path draws the parent process's own layers and content lives in another
+  process, so every screenshot this project took between Phase 0 and now had a
+  blank white rectangle where the page was — and it was never noticed, because
+  the surfaces being photographed were all chrome. Pass
+  `DRAWWINDOW_USE_WIDGET_LAYERS | DRAWWINDOW_DRAW_VIEW`, which snapshots what
+  the compositor actually put on screen.
+- **A screenshot taken by the harness wears upstream's remote-control
+  warning.** A robot icon and red diagonal stripes across the address bar, from
+  `:root[remotecontrol]` in `browser/themes/shared/urlbar-searchbar.css`,
+  because Marionette is driving the window. It is correct behaviour and it
+  documents the test rig rather than the browser, so the capture drops the
+  attribute for its own duration and puts it straight back. Anything that
+  photographs chrome from a test needs the same two lines.
+- **The urlbar placeholder is set again after the window is built.** The search
+  service calls `_setPlaceholder` with the default engine's name once it knows
+  it, so an attribute written at wiring time survives about a second and then
+  becomes "Search with Google or enter address". Overriding the method is the
+  seam that holds. The general lesson is the one that keeps recurring: a value
+  written once into a surface somebody else also writes will be overwritten,
+  and only a test in a real window notices — this looked right in the window
+  that produced it.
+
+
 ## Failure counters
 
 <!-- Task name → consecutive failures. At 3, stop retrying the same way, write the
      analysis below, and change approach or task. -->
 
-None active. Full build and push were both cleared in earlier runs.
+None active. The demo-flow flake was counted at three and is now closed by a
+root cause rather than by a green run — the change of approach the rule asks
+for was "dump the tables instead of re-running", and it worked first time.
 
 The push failure is the one to remember: it failed four runs running and each
 run invented a fresh plausible story (transport, process lifetime) rather than

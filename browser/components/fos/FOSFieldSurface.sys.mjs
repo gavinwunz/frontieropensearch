@@ -123,6 +123,7 @@ export class FOSFieldSurface {
   #layout = null;
   #drag = null;
   #unsubscribe = null;
+  #resizeFrame = 0;
 
   /** node id -> data URL. */
   #thumbs = new Map();
@@ -176,6 +177,10 @@ export class FOSFieldSurface {
   detach() {
     this.#unsubscribe?.();
     this.#unsubscribe = null;
+    if (this.#resizeFrame) {
+      this.#window.cancelAnimationFrame(this.#resizeFrame);
+      this.#resizeFrame = 0;
+    }
   }
 
   /** The card ids currently rendered, in DOM order. Tests read this. */
@@ -325,7 +330,12 @@ export class FOSFieldSurface {
     this.#root.hidden = false;
     this.showOverview();
     this.#captureOpenTabs();
-    this.#stage.focus();
+    // `focusVisible: true` rather than a bare focus: this surface takes the
+    // keyboard off the page the moment it opens, so it has to show where the
+    // keyboard went — and a plain programmatic focus inherits whatever mode
+    // the window is already in, which after a click or a drag means no ring at
+    // all on a surface that now owns every keystroke.
+    this.#stage.focus({ focusVisible: true });
   }
 
   /** Leave the Field for the page level. */
@@ -830,6 +840,24 @@ export class FOSFieldSurface {
     return el;
   }
 
+  /**
+   * Re-render at most once per frame.
+   *
+   * Deliberately a frame rather than a timeout: the work exists to put a
+   * correct picture on the next frame, so the refresh driver is the thing that
+   * knows when it is needed. A trailing timeout would also leave the last
+   * render firing after the gesture ended.
+   */
+  #onResize() {
+    if (this.#resizeFrame) {
+      return;
+    }
+    this.#resizeFrame = this.#window.requestAnimationFrame(() => {
+      this.#resizeFrame = 0;
+      this.render();
+    });
+  }
+
   #applyFocus() {
     const active = this.#stage.querySelector(
       this.#level === LEVEL.REGION
@@ -1084,7 +1112,16 @@ export class FOSFieldSurface {
     // re-layout rather than a scroll. Positions are stored in field units for
     // exactly this reason: nothing moves, the same arrangement is drawn at a
     // different scale, which is acceptance property 2 under a resize.
-    this.#window.addEventListener("resize", () => this.render());
+    //
+    // Coalesced to one render per frame, because `render` rebuilds the stage
+    // from nothing and a resize gesture fires this event far faster than a
+    // frame. Measured on a crowded overview — twelve trails, 480 cards, 480
+    // miniatures — a rebuild is ~15ms and ten events arriving in one tick cost
+    // ~53ms of them, which took the frame interval during a window drag from
+    // 17ms to a p95 of 65ms against 23ms with the Field closed. Nothing about
+    // the rebuild itself needed to get faster: what was wrong was doing it more
+    // than once for one frame. See `tests/browser/browser_zzfieldperf.js`.
+    this.#window.addEventListener("resize", () => this.#onResize());
 
     this.#root = root;
     this.#stage = stage;

@@ -148,6 +148,42 @@ export function canonicalise(name) {
 
 /** Salience by evidence, strongest first. See `extractEntities`. */
 const WEIGHT_QUOTED = 1.0;
+/**
+ * The lowercase words a name is allowed to contain.
+ *
+ * A run of capitals alone splits "The Mother of All Demos" into "The Mother"
+ * and "All Demos" — two fragments, neither of which is a thing, both filed as
+ * entities and both shown to the user. Found by reading the context sidebar in
+ * a screenshot, which is the only place the extractor's output is on display.
+ *
+ * Deliberately short, and deliberately without `and`. A joiner is a word that
+ * appears *inside* a name; `and` is the word that most often separates two of
+ * them, and admitting it would turn "Xanadu and the Memex" into one entity
+ * that nothing is about. The particles are here because a surname is a name:
+ * van, von, de, di.
+ */
+const JOINERS = [
+  "of",
+  "the",
+  "for",
+  "de",
+  "del",
+  "della",
+  "di",
+  "da",
+  "du",
+  "van",
+  "von",
+  "la",
+  "le",
+  "el",
+  "bin",
+  "ibn",
+].join("|");
+
+/** The tail of a word, once its first letter has been matched. */
+const WORD = "[\\p{L}\\p{N}'’-]*";
+
 const WEIGHT_PROPER_PHRASE = 0.8;
 const WEIGHT_PROPER = 0.6;
 const WEIGHT_PLAIN = 0.3;
@@ -158,7 +194,11 @@ const WEIGHT_PLAIN = 0.3;
  * This is a shallow extractor and says so. Real named-entity recognition is a
  * model's job and belongs with the embedding work, which runs on the in-tree ML
  * runtime; what it would add is exactly the part this cannot do, which is
- * telling a person from an organisation from a place. So `kind` here is
+ * telling a person from an organisation from a place. The limitation to know
+ * about is that a sentence-initial capital running straight into a name is
+ * glued to it — "Reading Project Xanadu" comes out as one phrase — because
+ * nothing in capitalisation distinguishes that from "The Mother of All Demos".
+ * So `kind` here is
  * `term` for everything except a quoted title, which is `work` — guessing
  * between the other four from capitalisation alone would produce a column full
  * of confident nonsense, and `entity.kind` is meant to be trusted by the
@@ -170,6 +210,8 @@ const WEIGHT_PLAIN = 0.3;
  *   - a run of capitalised words is a name;
  *   - a single capitalised word is weaker, and worthless at the start of a
  *     sentence where capitalisation is grammar rather than evidence;
+ *   - a name may contain the lowercase words names contain — "The Mother of
+ *     All Demos" is one thing, not "The Mother" and "All Demos";
  *   - everything else is a plain content word.
  *
  * @param {string} text A query, a page title, or a heading.
@@ -231,7 +273,10 @@ export function extractEntities(text) {
     // source has to be recovered rather than accumulated from the pieces.
     const start = remainder.indexOf(sentence, searchedTo);
     searchedTo = start + sentence.length;
-    const proper = /(\p{Lu}[\p{L}\p{N}'’-]*(?:\s+\p{Lu}[\p{L}\p{N}'’-]*)*)/gu;
+    const proper = new RegExp(
+      `(\\p{Lu}${WORD}(?:\\s+(?:(?:${JOINERS})\\s+)?\\p{Lu}${WORD})*)`,
+      "gu"
+    );
     for (const match of sentence.matchAll(proper)) {
       const phrase = match[1];
       const atSentenceStart = match.index === 0;

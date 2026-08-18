@@ -1,12 +1,18 @@
 [DEFAULT]
+support-files = [
+  "fixtures/memex.html",
+  "fixtures/nls.html",
+  "fixtures/page.css",
+  "fixtures/xanadu.html",
+]
 
 ["browser_commandbar.js"]
-
-["browser_designsystem.js"]
 
 ["browser_contextengine.js"]
 
 ["browser_contextsidebar.js"]
+
+["browser_designsystem.js"]
 
 ["browser_field.js"]
 
@@ -17,3 +23,7 @@
 ["browser_trailrail.js"]
 
 ["browser_zdemoflow.js"]
+
+["browser_zzfieldperf.js"]
+
+["browser_zzscreenshots.js"]

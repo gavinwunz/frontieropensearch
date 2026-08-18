@@ -25,6 +25,52 @@ global visit frequency. Any context can be exported as a markdown brief.
 
 Everything is local. There is no account, no sync service, and no telemetry.
 
+## What it looks like
+
+Every picture below was taken by the browser itself, driving a real session
+over the pages in `browser/components/fos/tests/browser/fixtures/`. Run
+`./agent/smoke.sh` to regenerate all of them.
+
+**Trails.** Navigation is a tree. This reader searched, opened *As We May
+Think*, went to *Project Xanadu*, came back, and went to *The Mother of All
+Demos* instead. In a linear history the second of those destroys the first;
+here both are siblings, and either can be re-entered with its scroll position
+intact. The letter beside each page is its mark — type it anywhere to go there.
+
+![The trail rail beside a page, showing one search branching two
+ways](agent/reports/shot-trails.png)
+
+**The Field.** Every open page is a card, and cards are grouped by the trail
+they came from — not by the order the tabs were opened in. Zoom out and two
+separate enquiries are two separate regions.
+
+![The Field zoomed out, two named enquiries side by
+side](agent/reports/shot-field-overview.png)
+
+Zoom into one and it is that enquiry alone, each card in the place its
+provenance put it.
+
+![The Field zoomed into one enquiry](agent/reports/shot-field-region.png)
+
+**One entry surface.** There is no separate URL bar, search box, or menu for
+any of this. One bar takes a search, a URL, a command, a page mark, or a
+context, under one grammar — and the same grammar is what a voice or dwell
+path drives, with no separate accessibility mode.
+
+**Ranked by what you are working on.** The bar offers pages from the enquiry in
+play before pages you merely visit often, and it says which tier each
+suggestion came from rather than presenting one opaque list.
+
+![The command bar offering a page from the active
+context](agent/reports/shot-command-bar.png)
+
+**The Context Engine.** What you asked, what answered it, and what the pages
+were about — held locally, per research context, and exportable as a markdown
+brief written to be pasted into a language model.
+
+![The context sidebar listing questions, pages and
+entities](agent/reports/shot-context.png)
+
 ## Building
 
 Requires roughly 40GB of free disk and 16GB of RAM.
@@ -65,3 +111,8 @@ description format.
 The research log — every interface idea considered, adopted, or rejected, with
 reasons — is in `agent/IDEAS.md` and is probably the most interesting file in
 the repository.
+
+`./agent/smoke.sh` drives the whole demo end to end in a real browser — search,
+branch three ways, zoom out to the Field, switch context, export a context pack
+— and writes the screenshots above, plus one per stage of the demo and the
+exported brief itself, to `agent/reports/`.

@@ -11,9 +11,9 @@ Research context **memex research**: 1 question asked, 4 pages opened. Exported 
 ### Skimmed or abandoned
 
 - [mochitest index /](https://example.com/?q=associative+trails+memex) — trail "memex research"
-- [mochitest index /](https://example.org/) — 1s — trail "memex research"
-- [mochitest index /](https://example.net/) — 1s — trail "memex research"
-- [https://test1.example.com/](https://test1.example.com/) — 2s — trail "memex research"
+- [mochitest index /](https://example.org/) — trail "memex research"
+- [mochitest index /](https://example.net/) — trail "memex research"
+- [mochitest index /](https://test1.example.com/) — trail "memex research"
 
 ## Key entities
 

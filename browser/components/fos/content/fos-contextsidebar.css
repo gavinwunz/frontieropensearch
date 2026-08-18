@@ -80,10 +80,23 @@
 .fos-sidebar-body {
   flex: 1;
   overflow-y: auto;
-  padding: var(--space-small) 0;
+  padding: var(--fos-list-padding-block) 0;
 }
 
+/* SYSTEM.md §5, and the same reasoning as the rail's list: the ring belongs on
+   the row, not around the panel. */
 .fos-sidebar-body:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-inset);
+}
+
+/* Off once a row can carry it. The `none` is explicit because it is
+   suppressing the UA stylesheet's own ring, not ours — see the rail. */
+.fos-sidebar-body[aria-activedescendant]:focus-visible {
+  outline: none;
+}
+
+.fos-sidebar-body:focus-visible .fos-sidebar-row[aria-selected="true"] {
   outline: var(--focus-outline);
   outline-offset: var(--focus-outline-inset);
 }
@@ -94,7 +107,7 @@
 
 .fos-sidebar-heading {
   margin: 0;
-  padding: var(--space-xsmall) var(--fos-gutter-panel);
+  padding: var(--fos-heading-space-above) var(--fos-gutter-panel) var(--fos-row-padding-block);
   font-size: var(--fos-font-size-small);
   font-weight: var(--fos-font-weight-emphasis);
   text-transform: uppercase;
@@ -104,7 +117,7 @@
 
 .fos-sidebar-note {
   margin: 0;
-  padding: 0 var(--fos-gutter-panel) var(--space-xsmall);
+  padding: 0 var(--fos-gutter-panel) var(--fos-row-padding-block);
   font-size: var(--fos-font-size-small);
 }
 
@@ -127,7 +140,7 @@
   display: flex;
   align-items: baseline;
   gap: var(--space-small);
-  padding: var(--space-xsmall) var(--fos-gutter-panel);
+  padding: var(--fos-row-padding-block) var(--fos-gutter-panel);
 }
 
 /* Only a row that goes somewhere offers to be clicked. An entity is a topic,
@@ -203,9 +216,4 @@
 .fos-sidebar-row[data-kind="query"]:not([data-enterable]) .fos-sidebar-label {
   color: var(--fos-text-color-quiet);
   font-style: italic;
-}
-
-/* Entities read as a list of topics rather than a list of destinations. */
-.fos-sidebar-row[data-kind="entity"] {
-  padding-block: 0;
 }

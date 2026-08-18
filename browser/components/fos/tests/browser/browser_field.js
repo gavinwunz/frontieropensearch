@@ -147,6 +147,40 @@ add_task(async function test_the_overview_renders_every_region() {
   field().close();
 });
 
+add_task(async function test_the_focus_ring_lands_on_the_focused_card() {
+  // SYSTEM.md §5. The stage is the whole content area, so a ring on it framed
+  // the window instead of pointing at anything. Live, because the rule it
+  // replaced was overriding the UA's own ring rather than adding one.
+  await goTo(PAGE_A);
+  field().open();
+  const trailId = session().activeTrailId;
+  field().showRegion(trailId);
+
+  const stage = window.document.querySelector(".fos-field-stage");
+  stage.focus({ focusVisible: true });
+  EventUtils.synthesizeKey("KEY_ArrowUp", {}, window);
+
+  const focused = stage.querySelector(".fos-field-card[data-focus]");
+  ok(focused, "a card has the focus");
+  ok(stage.matches(":focus-visible"), "the stage holds a keyboard focus");
+  is(
+    window.getComputedStyle(stage).outlineStyle,
+    "none",
+    "no ring around the stage while a card can carry it"
+  );
+  is(
+    parseFloat(window.getComputedStyle(focused).outlineWidth),
+    parseFloat(
+      window
+        .getComputedStyle(window.document.documentElement)
+        .getPropertyValue("--focus-outline-width")
+    ),
+    "the focused card's frame is widened to the ring's width"
+  );
+
+  field().close();
+});
+
 add_task(async function test_zoom_moves_between_the_three_levels() {
   await goTo(PAGE_A);
   await goTo(PAGE_B);
@@ -430,6 +464,58 @@ add_task(async function test_a_card_without_a_snapshot_paints_the_stored_one() {
     PageThumbs.captureTabPreviewThumbnail = captureTabPreviewThumbnail;
     field().close();
     await SpecialPowers.popPrefEnv();
+  }
+});
+
+/**
+ * A burst of resize events is one render, not one render each.
+ *
+ * `render` rebuilds the stage from nothing, and a resize gesture fires its
+ * event many times per frame. Measured on a crowded overview a rebuild is
+ * around 15ms, so the unthrottled version spent a whole frame's budget several
+ * times over producing pictures nobody ever saw. This is the behaviour that
+ * fix rests on; `browser_zzfieldperf.js` holds the numbers.
+ */
+add_task(async function a_burst_of_resizes_renders_once() {
+  await goTo(PAGE_A);
+  const surface = field();
+  surface.open();
+  await new Promise(resolve => window.requestAnimationFrame(resolve));
+
+  const rendered = [];
+  const original = surface.render.bind(surface);
+  surface.render = () => {
+    rendered.push(1);
+    original();
+  };
+
+  try {
+    for (let i = 0; i < 10; i++) {
+      window.dispatchEvent(new Event("resize"));
+    }
+    Assert.equal(
+      rendered.length,
+      0,
+      "no render happens in the event's own tick"
+    );
+
+    await new Promise(resolve => window.requestAnimationFrame(resolve));
+    // The coalesced render is scheduled on a frame, so it has run by the time
+    // the frame after that one arrives.
+    await new Promise(resolve => window.requestAnimationFrame(resolve));
+    Assert.equal(rendered.length, 1, "ten resize events produced one render");
+
+    window.dispatchEvent(new Event("resize"));
+    await new Promise(resolve => window.requestAnimationFrame(resolve));
+    await new Promise(resolve => window.requestAnimationFrame(resolve));
+    Assert.equal(
+      rendered.length,
+      2,
+      "and a later resize is not swallowed by the one before it"
+    );
+  } finally {
+    delete surface.render;
+    surface.close();
   }
 });
 

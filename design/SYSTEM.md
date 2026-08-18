@@ -111,19 +111,82 @@ kind of state from the identical row in the rail beside it.
 Hover on an enterable row stays distinct from selection, because they mean
 different things: hover is the pointer, selection is where the keyboard is.
 
-## 6. Gutter
+**The focus ring goes on the selected row, not around the container holding
+it.** Every one of the fork's three focusable containers — the rail's list, the
+sidebar's body, the Field's stage — fills the window, so `:focus-visible` on
+the container drew an accent rectangle 700px tall down the side of the browser,
+next to a row shaded 20% grey. That put the loudest mark in the surface on the
+box rather than on the page Enter was about to open, and it said twice, in two
+visual languages, the one thing selection already means. Both README
+screenshots showed it.
 
-`--fos-gutter-panel` (0.75rem) and `--fos-gutter-dialog` (1rem): the inline
-padding shared by every row, header and heading of a surface, so that labels
-down a panel share one left edge.
+So the container's ring is conditional, and it is still there for the case the
+condition names: a list with nothing selected, which has nothing else to carry
+it. WCAG 2.4.7 is met either way, by the row or by the container.
 
-It is a property of the **surface**, not of the row. A flanking panel is
-22–24rem and a centred dialog is 44rem, and the wider surface carries the wider
-gutter. This was already what the surfaces did; it was simply never stated, so
-individual rows had begun to drift off it.
+The condition is `[aria-activedescendant]` on the container, not `:has()` a
+selected row. The two are the same fact — every one of the three surfaces sets
+and clears that attribute in the same breath as the selection — but `:has()`
+makes every keystroke down a long trail invalidate a subtree match, and the
+tree's own `no-has-selector` lint rule says so. The attribute is not standing
+in for the state; it *is* the state, already declared to assistive technology.
 
-Rows inside a Field tile are miniatures rather than panel rows and are exempt.
-That exception is stated here because it is the one the rule needs.
+Two declarations, not one, and the second is explicit `outline: none`. The rule
+this replaced was never adding a ring — it was **overriding** the one the UA
+stylesheet draws on any focused element. Deleting it handed the container back
+a 1px grey `outline: auto`, which looked exactly like a change that had done
+nothing. Only a live test could see that, which is why all three surfaces check
+their own ring in a running window and not just here.
+
+A panel also opens with a row already selected — the page you are on, in both
+the rail and the sidebar — so in practice the container's branch is reached
+only by a surface with nothing in it.
+
+And all three focus with `{ focusVisible: true }` rather than plainly. A
+programmatic focus inherits whichever mode the window is already in, so a rail
+opened by a command bar that was opened by *clicking* the address bar took the
+keyboard and showed no sign of having it. A surface that takes every keystroke
+off the page has to say so however it was invoked.
+
+On the Field the same rule applies to a tile or a card, and the ring is a
+**widening** rather than a recolour: a focused card may also be pinned or may
+have just refused a drop, and those are the colours that have something to say.
+
+## 6. Spacing
+
+Two axes, both properties of the **surface** rather than of the row.
+
+**Inline.** `--fos-gutter-panel` (0.75rem) and `--fos-gutter-dialog` (1rem):
+the padding shared by every row, header and heading, so that labels down a
+panel share one left edge. A flanking panel is 22–24rem and a centred dialog is
+44rem, and the wider surface carries the wider gutter. This was already what
+the surfaces did; it was simply never stated, so individual rows had begun to
+drift off it.
+
+**Block.** The first version of this section settled the inline axis and said
+nothing about the other one, and four surfaces then answered it four ways: a
+rail row padded itself `xxsmall`, a sidebar row and a command bar row `xsmall`,
+and the sidebar's list of entities nothing at all. The rail and the sidebar are
+open at the same time on either side of the page, listing the same nodes at
+different line rhythms; and the entity list, at no rhythm, read as a paragraph
+rather than as rows.
+
+```
+--fos-row-padding-block    0.25rem    a row in any list
+--fos-list-padding-block   0.5rem     a scrolling body, above its first row
+--fos-heading-space-above  0.5rem     above a group heading
+```
+
+A group heading takes a full step above and a **row's** step below, so it binds
+to the rows it labels instead of floating between two groups.
+
+An entity row now sits on the same rhythm as every other row. What makes an
+entity a topic rather than a destination is that it carries no mark, no time
+and no hover — not that it is packed tighter than the rows above it.
+
+Rows inside a Field tile are miniatures rather than panel rows and are exempt
+from both axes. That exception is stated here because it is the one the rule
+needs.
 
 ## 7. Layers
 
@@ -173,7 +236,14 @@ checks in a running chrome window that:
   its own the day that changes;
 - no surface de-emphasises text with opacity, except the one object-level rule
   §3 names;
-- no surface reaches for the dead platform token again.
+- no surface reaches for the dead platform token again;
+- every list row in the window, in whichever surface, has the same block
+  padding, and it is the token's — measured on real rows rather than read out
+  of the stylesheet, which is the only way to catch a later rule overriding it;
+- every container that declares a focus ring for itself also gives it up, in
+  as many words, once it points at a descendant (§5) — the live half of that
+  claim is in each surface's own test file, because a computed `outline: auto`
+  coming from the UA stylesheet is invisible to any amount of reading.
 
 A lint rule can only see what a stylesheet says. The bug this system was built
 around was a stylesheet that said the right thing and meant nothing.

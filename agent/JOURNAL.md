@@ -100,3 +100,184 @@ Phase 3 wants the suite green twice consecutively.
 Tests: 426 browser-chrome checks with the new file, 82 of them the design
 system contract; stylelint clean across `browser/components/fos/`. Phase 2's
 demo flow is green in isolation and intermittent in the suite, as above.
+
+## Run 17 — 2026-08-18 — Phase 3
+
+The demo-flow flake was a product bug, not a test one, and it was corrupting the
+database.
+
+Last run's note said to stop re-running and dump `context_member`, `trail_node`
+and `trail` at pack time during a failing suite run. That is what was done, and
+it answered on the first failing run. The dump: four node membership rows for
+the context, of which two named node ids that do not exist, and the two that do
+were both on `trail_id` 159 with no trail 159 in the table. Nothing in this
+component deletes rows, so those references were never going to resolve and the
+inner joins in `contextContents` were dropping every page — the exported pack
+had none, which is why it looked like "a page went missing".
+
+The cause is in `FOSContextStore.#insert`: an INSERT followed by a separate
+`SELECT last_insert_rowid()`. One store is shared by every window in the
+process, each window's engine serialises only its own writes, and
+`last_insert_rowid()` is a property of the connection across every table on it.
+So an insert reported whatever row had most recently been written by anyone —
+a plausible integer, from the wrong table, silently. Running alone there is one
+writer and the pair is correct; in a full suite six earlier files have left an
+engine recording on the shared window, so the interleaving is constant. That is
+the lesson worth keeping: "passes alone, fails in the suite" is evidence of
+concurrency, and the second writer can be the product rather than the harness.
+Three runs went into three different stories about test pollution.
+
+Fixed with `RETURNING id`. The regression test was checked against the old
+implementation rather than merely added — 20 concurrent trail inserts returned
+**one** distinct id. The three failure signatures seen across three runs (a
+query attached to no node, a suggest tier with no context item, a pack missing
+its pages) are all the same bug seen from different sides.
+
+Also this run: `design/ARCHITECTURE.md`, the missing document saying how the
+three pillars compose — one spine and two readers, the wiring order at window
+init, the per-window/per-profile split the bug came out of, and the honest list
+of the six files the fork touches outside its own directory. The README's
+pointer to `docs/` was wrong and now points at a real table.
+
+Merged to `main`, which had been carrying the bug under a Phase 2 tag whose
+acceptance criterion did not actually hold there.
+
+Tests: full suite green **five consecutive runs** (427 browser-chrome checks,
+both xpcshell files) against three of three failing before the fix; 179 node
+tests green.
+
+### Run 19 — 2026-08-18 — Phase 3
+
+Measured the Field before touching it, which is what the last two runs' notes
+kept asking for, and the measurement refuted both of the hypotheses it was
+written to test. The drag is not the problem: at 40 cards carrying thumbnails a
+pointer move costs 1.5ms of script and 0.01ms of layout, and 60 consecutive
+frames arrived at the display's own cadence with none dropped. `#applyPositions`
+does not write transforms as `STATE.md` claimed — it writes `left` and `top` —
+and it does not matter that it does, because the loop rewrites most cards to the
+value they already had and an unchanged declaration dirties nothing. CSS
+containment goes the same way: it was proposed as a bound on blast radius, and
+the blast radius is already 10µs at 56 cards.
+
+What the measurement did find is one real source of jank, in the place nobody
+had proposed. `render` rebuilds the stage from nothing, the resize listener
+called it unthrottled, and on the worst case the design permits — twelve trails,
+480 cards, 480 miniatures — one rebuild is 17.6ms and ten resize events in a
+single tick cost 53ms of them. Frame intervals during a real window drag: p95
+65ms with the Field open, 23ms with it closed. Coalesced to one render per
+animation frame, the burst is 7.6ms. The rebuild itself is untouched; it stopped
+happening several times for one frame.
+
+The harness stays as `browser_zzfieldperf.js`, with a control beside every
+number. That discipline earned itself immediately: the first version reported
+confident timings for a drag that was being refused on every move and had never
+moved a card at all.
+
+Then the second Phase 3 criterion: the demo flow now photographs itself. Six
+stage screenshots and the exported brief land in `agent/reports/` when
+`FOS_SHOTS` names a directory, and `agent/smoke.sh` is the run that sets it. The
+pictures there had come from a scratch test that was deleted afterwards, so
+until now they could not be regenerated. Looking at the first one is what found
+that a harness screenshot wears upstream's remote-control stripes, and reading
+the address bar in it is what led to the placeholder: the bar was made read-only
+four runs ago and still said "Search or enter address" while refusing every
+keystroke. Fixing it needed the `_setPlaceholder` override rather than an
+attribute, because the search service writes that string again after the window
+is built — which the test caught and the window it was written in did not.
+
+Two findings recorded and not chased: a full region refuses every drag, so at
+capacity nothing can be rearranged; and the Google-branded search-mode switcher
+is still a second way to start a search from a bar that claims to be one entry
+surface.
+
+Tests: full component suite green (473 browser-chrome checks, both xpcshell
+files), 179 node tests green, smoke run green. Three commits pushed to
+`agent/dev`. Nothing merged to `main` — no phase criterion completed this run.
+
+Second half of the run, after the measurement work was committed.
+
+Joined the demo flow to the screenshot route, which Phase 3 asks for: five
+stages photographed and the exported brief written beside them, gated on
+`FOS_SHOTS` so an ordinary suite run writes nothing. Then read the first
+picture, which is what the project's own rule says to do, and it paid for
+itself three times. It showed the harness's remote-control stripes across the
+address bar; it showed the placeholder still saying "Search or enter address" on
+a bar that has refused typing for four runs; and once that was fixed and the
+README screenshots were driven over three fixture pages, it showed that **every
+screenshot this project has taken since Phase 0 had a blank rectangle where the
+page should be**. `drawWindow` draws the parent process's own layers and
+content is in another process. Nobody noticed because every surface being
+photographed was chrome. `DRAWWINDOW_USE_WIDGET_LAYERS` fixes it, and the
+README now shows the rail, the Field at both levels, the command bar and the
+context sidebar over pages that are actually being read.
+
+The last of those pictures then showed the context sidebar reporting five
+entities for three things — "All Demos" and "The Mother" filed separately,
+because a run of capitals cuts a name in half at the word that joins it. Fixed
+with a short joiner list that deliberately excludes `and`, and the limitation
+that remains is written into the module rather than papered over.
+
+The placeholder is worth its own note. Writing the string at wiring time looked
+right in the window that produced it and was wrong a second later: the search
+service sets the placeholder again once it knows the default engine. Only the
+test caught it. That is the third time this run that a thing which looked
+correct in one window was wrong in the run that came after.
+
+Tests: full component suite green (475 browser-chrome checks, both xpcshell
+files), 182 node tests green, smoke run green. Six commits pushed to
+`agent/dev`. Phase 3 now needs one more green run and the design-system polish
+pass; everything else on its list is done.
+
+---
+
+## Run 19 — 2026-08-18 — Phase 3 complete
+
+Opened with the whole component suite on the unchanged tree: green, 464
+browser-chrome checks, both xpcshell files, 182 node tests. That is the control
+the rest of the run is measured against.
+
+Then the polish pass, which is what Phase 3 had left. The instrument was not
+the stylesheets — those had already been reconciled — it was the README's own
+screenshots, opened at 3×. Two defects, neither visible in any single file.
+
+The first is rhythm. `SYSTEM.md` settled the inline gutter and deliberately
+said nothing about the block axis, and four surfaces then answered it four
+ways. The rail and the sidebar are open at the same time on either side of the
+page, listing the same nodes, at 17.6px and 21px per row; the sidebar's entity
+list, at `padding-block: 0`, rendered as a paragraph with a heading over it.
+Three tokens, one role each, and the test measures them on real rows rather
+than reading them out of the sheet — a later rule overriding the token is
+exactly how the entity list got there.
+
+The second is focus, and it cost the most. All three focusable containers fill
+the window, so `:focus-visible` on the container drew a 700px accent rectangle
+down the side of the browser next to a row shaded 20% grey — the loudest mark
+in the surface pointing at the box rather than at the page Enter would open,
+and saying twice what selection already means. The ring goes on the row.
+
+Then three things in a row that reading could not have found. **The rule being
+replaced was not adding a ring**, it was overriding the one the UA stylesheet
+draws on every focused element, so deleting it handed the container back a 1px
+grey `outline: auto` and the next screenshot looked like nothing had happened;
+the live test said so in one line. **`:has()` is lint-banned here** for
+invalidation cost, and the replacement was not a compromise — every one of the
+three surfaces already sets `aria-activedescendant` in the same breath as the
+selection, which is the same fact, free to match, and already written down for
+assistive technology. And **a programmatic focus inherits the window's
+pointer-or-keyboard mode**, so a surface opened after a click took every
+keystroke off the page and showed no sign of it — a real defect, found only
+because the ring test passed alone and failed after `browser_field.js`, whose
+drags leave the window in pointer mode.
+
+The sidebar also opens on the page you are on now, as the rail already did.
+Without that, the one branch where the ring has nowhere to go but around the
+panel is the state everybody sees first, so the rule and the seeding are one
+decision.
+
+Suite at the close: 504 browser-chrome checks, 64 xpcshell checks over two
+files, 182 node tests, smoke run green, screenshots retaken. Green on this run
+and on run 18, which is Phase 3's last criterion.
+
+**Phase 3 is complete** — `agent/reports/phase-3.md`, tagged `phase-3`, merged
+to `main`. Every phase in the plan is now done; the next run picks from the
+standing list in `STATE.md` and says why.

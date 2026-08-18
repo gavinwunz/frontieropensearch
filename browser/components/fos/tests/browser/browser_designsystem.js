@@ -224,6 +224,132 @@ add_task(async function text_is_quieted_by_colour_not_opacity() {
   }
 });
 
+/**
+ * The used block padding of a bare element carrying a class, in this window.
+ *
+ * Read off a real element rather than out of the stylesheet, because the
+ * failure this guards against is a later rule overriding the token — which is
+ * exactly how the sidebar's entity rows came to have no block padding at all
+ * while the row rule above them said otherwise.
+ *
+ * @param {Window} win A chrome window.
+ * @param {string} className The row's class.
+ * @param {object} [attrs] Attributes to set, for rows selected by one.
+ * @returns {number} The used `padding-block-start`, in px.
+ */
+function usedRowPadding(win, className, attrs = {}) {
+  const doc = win.document;
+  const el = doc.createElement("div");
+  el.className = className;
+  for (const [name, value] of Object.entries(attrs)) {
+    el.setAttribute(name, value);
+  }
+  doc.documentElement.appendChild(el);
+  const used = parseFloat(win.getComputedStyle(el).paddingBlockStart);
+  el.remove();
+  return used;
+}
+
+add_task(async function every_list_row_shares_one_rhythm() {
+  // SYSTEM.md §6. The rail and the sidebar are open at the same time on either
+  // side of the page and list the same nodes; they ran at different line
+  // rhythms, and the sidebar's entity list ran at none, which read as a
+  // paragraph rather than as rows.
+  const win = window;
+  {
+    for (const name of SHEETS) {
+      ensureStylesheet(win, BASE + name);
+    }
+
+    const rows = [
+      ["fos-rail-row", {}],
+      ["fos-sidebar-row", {}],
+      // The list that had `padding-block: 0` of its own.
+      ["fos-sidebar-row", { "data-kind": "entity" }],
+      ["fos-commandbar-row", {}],
+    ];
+
+    const [first] = rows;
+    const expected = usedRowPadding(win, first[0], first[1]);
+    Assert.greater(expected, 0, "a row has block padding at all");
+
+    for (const [className, attrs] of rows) {
+      const used = usedRowPadding(win, className, attrs);
+      const what = Object.entries(attrs)
+        .map(([k, v]) => `[${k}="${v}"]`)
+        .join("");
+      Assert.equal(
+        used,
+        expected,
+        `.${className}${what} is on the one row rhythm (${used}px)`
+      );
+    }
+
+    // And the two flanking panels inset their scrolling bodies by the same
+    // amount, so neither list starts hard against the header rule over it.
+    const rail = usedRowPadding(win, "fos-rail-list");
+    const sidebar = usedRowPadding(win, "fos-sidebar-body");
+    Assert.greater(rail, expected, "a body is inset further than a row");
+    Assert.equal(
+      rail,
+      sidebar,
+      `the rail and the sidebar inset their bodies alike (${rail}px)`
+    );
+  }
+});
+
+add_task(async function the_focus_ring_is_never_around_the_container() {
+  // SYSTEM.md §5. All three focusable containers fill the window, so a ring on
+  // one of them drew a 700px accent rectangle beside a faintly shaded row —
+  // the loudest mark in the surface on the box rather than on the page Enter
+  // would open, saying twice what selection already means.
+  //
+  // A container may still declare the ring, because it is the only thing left
+  // to carry one when nothing is selected. What it must then also do is turn
+  // it off again the moment it points at a descendant — and turn it off
+  // *explicitly*, because the declaration it is replacing was overriding the
+  // UA stylesheet's own `outline: auto` rather than adding a ring, so removing
+  // it left the container ringed and looked like nothing had changed. That is
+  // why this is checked at all, and why the three surfaces check it live as
+  // well: browser_trailrail.js, browser_contextsidebar.js, browser_field.js.
+  for (const name of SHEETS) {
+    const text = await sheetText(name);
+    const rules = text.split("}").map(rule => {
+      const [selector, body = ""] = rule.split("{");
+      return { selector: selector.trim(), body };
+    });
+
+    for (const { selector, body } of rules) {
+      if (
+        !selector.includes(":focus-visible") ||
+        !/outline:\s*var\(--focus-outline\)/.test(body)
+      ) {
+        continue;
+      }
+
+      const tail = selector.slice(
+        selector.lastIndexOf(":focus-visible") + ":focus-visible".length
+      );
+      if (/\S/.test(tail)) {
+        ok(true, `${name}: ${selector} — the ring is on a descendant`);
+        continue;
+      }
+
+      const container = selector.split(":focus-visible")[0].trim();
+      const off = rules.some(
+        rule =>
+          rule.selector.includes(`${container}[aria-activedescendant]`) &&
+          /outline:\s*none/.test(rule.body)
+      );
+      ok(
+        off,
+        `${name}: ${selector} gives itself a ring, and gives it up again ` +
+          `once it points at a descendant`
+      );
+    }
+  }
+});
+
 add_task(async function the_dead_token_is_gone() {
   // The exact declaration that produced the bug, so it cannot come back by
   // being copied out of an older surface.

@@ -27,13 +27,13 @@
        silently does not — `font-size: var(--font-size-small)` inherits, which
        is to say it does nothing at all. Measured in a running window: 13.3px
        against a 13.3px parent.
-    
+
        That left 22 declarations across four surfaces asking for small text and
        getting body text, which is most of the reason the rail, the sidebar and
        the Field read as flat. A label and its detail, a title and its count are
        primary/secondary pairs in every one of these surfaces, and they were
        rendering identically.
-    
+
        So the fork restores the missing step rather than redefining the
        platform's. In `rem`, because in chrome the root font size *is* the OS
        font size — which is the thing upstream was protecting, and `rem` tracks
@@ -41,7 +41,7 @@
        platform's own: 0.867 is exactly as far below the base as `large`'s
        1.133 is above it, so what lands is the symmetric scale upstream already
        describes, with the half chrome drops put back.
-    
+
        Namespaced, and never assigned to `--font-size-small`, so no upstream
        widget in the chrome window changes size. */
     /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
@@ -72,7 +72,7 @@
        four places, so it is the one that least survives four opinions — and it
        had five treatments, three of them carrying comments claiming to match
        one of the others.
-    
+
        Monospace because the glyph sits in a fixed column in three of those four
        surfaces and a proportional letter makes that column jitter. */
     /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
@@ -104,13 +104,39 @@
     --fos-gutter-panel: var(--space-medium);
     --fos-gutter-dialog: var(--space-large);
 
+    /* ---- rhythm --------------------------------------------------------- */
+
+    /* The gutter above settles the inline axis and deliberately said nothing
+       about the block one, so four surfaces answered that four ways: a rail
+       row padded itself `xxsmall`, a sidebar row and a command bar row
+       `xsmall`, and the sidebar's list of entities nothing at all. The rail
+       and the sidebar are open at the same time, on either side of the page,
+       listing the same nodes at different line rhythms; and one list inside
+       the sidebar ran at no rhythm at all, so it read as a paragraph rather
+       than as rows. Block padding is the same kind of property as the gutter
+       and belongs in the same place.
+
+       Rows inside a Field tile are miniatures rather than panel rows, and are
+       exempt for the same reason they are exempt from the gutter. */
+    --fos-row-padding-block: var(--space-xsmall);
+
+    /* What a scrolling body keeps above its first row and below its last, so
+       a list does not begin hard against the header rule over it. */
+    --fos-list-padding-block: var(--space-small);
+
+    /* A group heading takes a full step above it and a row's step below, so
+       it binds to the rows it labels instead of floating between two groups.
+       The sidebar's headings were symmetric and sat as near to the group they
+       had just ended as to the one they were introducing. */
+    --fos-heading-space-above: var(--space-small);
+
     /* ---- layers --------------------------------------------------------- */
 
     /* Every FOS surface floats above the toolbox, which is a flex item with
        `z-index: 0` and therefore paints over anything lower however far up the
        document the surface is appended. That is why these are at the top of the
        range rather than at 10.
-    
+
        The order between them is a design statement and was previously three
        hand-written integers near maxint in three files, with nothing anywhere
        saying which was meant to be on top. Command surfaces take the keyboard

@@ -90,13 +90,13 @@
 
 .fos-commandbar-list {
   margin: 0;
-  padding: var(--space-xsmall) 0;
+  padding: var(--fos-list-padding-block) 0;
   list-style: none;
   overflow-y: auto;
 }
 
 .fos-commandbar-group {
-  padding: var(--space-small) var(--fos-gutter-dialog) var(--space-xsmall);
+  padding: var(--fos-heading-space-above) var(--fos-gutter-dialog) var(--fos-row-padding-block);
   font-size: var(--fos-font-size-small);
   font-weight: var(--fos-font-weight-emphasis);
   text-transform: uppercase;
@@ -108,7 +108,7 @@
   display: flex;
   gap: var(--space-small);
   align-items: baseline;
-  padding: var(--space-xsmall) var(--fos-gutter-dialog);
+  padding: var(--fos-row-padding-block) var(--fos-gutter-dialog);
   cursor: default;
 }
 
