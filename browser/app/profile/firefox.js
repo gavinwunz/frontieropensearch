@@ -3768,3 +3768,10 @@ pref("distribution.mozillaonline.ignore", true);
 #ifdef XP_MACOSX
   pref("browser.macAppMenu.setAsDefaultShown", false);
 #endif
+
+// Frontier OpenSearch, pillar A. The Field replaces the tab strip, so the
+// strip itself is not drawn: open pages are shown on the Field, and the tabs
+// toolbar hides on the same "tabs are displayed elsewhere" grounds that
+// vertical tabs already stands on. Set to false to get the strip back — the
+// tabs themselves are untouched either way, only the surface that draws them.
+pref("browser.fos.field.replacesTabStrip", true);

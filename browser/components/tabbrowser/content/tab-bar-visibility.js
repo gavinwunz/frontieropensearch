@@ -14,6 +14,14 @@ var TabBarVisibility = {
       !isSingleTabWindow &&
       Services.prefs.getBoolPref("sidebar.verticalTabs", false);
 
+    // Frontier OpenSearch, pillar A. The Field is where open pages are shown,
+    // so this window's tabs are displayed elsewhere in exactly the sense the
+    // rule below already allows for — the same ground vertical tabs stands on,
+    // and the reason no separate mechanism is introduced here.
+    let fieldReplacesTabStrip =
+      !isSingleTabWindow &&
+      Services.prefs.getBoolPref("browser.fos.field.replacesTabStrip", true);
+
     // When `gBrowser` has not been initialized, we're opening a new window and
     // assume only a single tab is loading.
     let hasSingleTab = !gBrowser || gBrowser.visibleTabs.length == 1;
@@ -21,7 +29,9 @@ var TabBarVisibility = {
     // To prevent tabs being lost, hiding the tabs toolbar should only work
     // when only a single tab is visible or tabs are displayed elsewhere.
     let hideTabsToolbar =
-      (isSingleTabWindow && hasSingleTab) || hasVerticalTabs;
+      (isSingleTabWindow && hasSingleTab) ||
+      hasVerticalTabs ||
+      fieldReplacesTabStrip;
 
     // We only want a non-customized titlebar for popups. It should not be the
     // case, but if a popup window contains more than one tab we re-enable
