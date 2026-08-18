@@ -600,3 +600,46 @@ confirm the specification.
   hardware, not availability — measure those, do not re-litigate whether ASR is possible.
 - **Lesson:** run 2's claim came from a capability table; this one came from the dispatch
   code. When a feature looks blocked, check the code that would do the blocking.
+
+### Node overlap removal (VPSC) is the wrong shape for a drag
+- **Found:** 2026-08-18, Dwyer, Marriott and Stuckey, "Fast Node Overlap Removal", GD 2005
+  (people.eng.unimelb.edu.au/pstuckey/papers/gd2005b.pdf); Gansner and Hu, "Efficient,
+  Proximity-Preserving Node Overlap Removal", JGAA 2010 (graphviz.org/documentation/GH10.pdf).
+- **What it is:** The graph-drawing literature's answer to exactly our problem — adjust a
+  layout so equal or unequal rectangles do not overlap while staying as close as possible to
+  where they started. VPSC generates a linear number of separation constraints and solves
+  them per axis, a horizontal pass then a vertical one, minimising total displacement.
+- **Verdict:** reject for the drag path; keep in mind for a future batch reflow.
+- **Why:** Two mismatches, and the first is fatal. It is a *batch* method that minimises
+  displacement *globally*, so re-running it each frame of a drag can flip between optima and
+  move a card the user is not touching a long way for a small pointer movement. FIELD.md §6
+  promises the opposite — that what is on screen mid-drag is exactly what a drop commits,
+  which is what removes the settle animation. Second, VPSC has no notion of refusing:
+  pinned cards enter as hard constraints and the problem simply becomes infeasible, whereas
+  our design needs "this drop is not possible, nothing moved" as a first-class outcome.
+
+  Our case is also strictly easier than the one the papers solve, which is worth saying so
+  nobody reaches for the heavy tool again. Only one card moves at a time and every other
+  card was already legal, so it is a single-source incremental problem: a push front
+  spreading from the moved card, each overlap resolved along its axis of least penetration,
+  propagating only through unpinned cards. That is also what Data Mountain describes, and it
+  is O(cards touched) rather than O(all cards).
+
+  It would be the right tool for a batch reflow — importing a trail, or a region whose
+  extent changed — if that ever needs to preserve relative arrangement. Nothing needs it yet.
+- **Phase:** 2A, decided and built.
+
+### A session-sized workload is a different test from a correct one
+- **Found:** 2026-08-18, from this project's own defects rather than from a source.
+- **What it is:** Both Field defects — a busy region refusing ordinary drags, and placement
+  throwing once a card sat off the seeding lattice — passed a full unit suite and appeared
+  the first time the model saw forty cards in a real runtime.
+- **Verdict:** adopt as a testing rule.
+- **Why:** Neither was a logic error that a smaller case would have exposed; both were
+  *density* effects. At three cards a push chain never reaches a region edge and the lattice
+  is never fragmented, so the invariant tests were all true and all uninformative. This is
+  the third time on this project that a green suite hid a live bug, after the grammar bug and
+  the truncated wordmark, and the pattern is the same each time: the test exercised the code
+  but not the condition. Field tests now run at session scale, and the two defects are
+  regression tests at the size that produced them.
+- **Phase:** 2, standing.

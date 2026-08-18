@@ -178,6 +178,38 @@ Adopted with one modification that our design forces:
 - If a drop would require displacing a pinned card, the drop is refused and the
   dragged card returns to its origin. Refusing is correct: the alternative is
   silently destroying a position the user deliberately chose.
+- **A chain that reaches the edge of the region re-seats the card it was
+  pushing, rather than refusing.** This was found by running the model against
+  a session-sized workload rather than by reasoning about it, and it matters:
+  in any region that is merely busy, every push chain eventually reaches an
+  edge, so refusing there meant that most ordinary drags did not work — while
+  the seat the dragged card had vacated sat empty. An unpinned card has no
+  position anybody chose, so the system may re-seat it exactly as it was free
+  to seed it there. Refusal stays reserved for what it was written for: a
+  position the user owns.
+
+### Capacity, and what a full region does
+
+A region holds what its extent and the minimum distance permit, which is the
+"tens" of §3. Three things happen in order when a card arrives at a full region,
+and the order is the design:
+
+1. **Seed into a free seat.** The ordinary case.
+2. **Evict the least recently used unpinned card**, dismissing it. This is §8
+   rather than an eviction policy bolted on: dismissal is free and lossless, the
+   Field holds what is in play, and a pinned card is never a candidate because
+   the user put it there. Exactly one card is traded out, so arriving at a full
+   region costs one dismissal and not a cleared board.
+3. **Grow the region.** Needed when every card is pinned, and — the case only a
+   real workload showed — when the freed seat is still covered by a card that
+   was dragged off the seeding lattice, so the region has room that no lattice
+   seat can reach. Growth is safe against §2 because the region level is scaled
+   to fit and cannot be panned, so a taller region still has no empty reachable
+   view.
+
+**Placement must never fail.** It is driven by navigation, and a browser that
+refuses to open a page because a canvas is untidy is not a browser. That is why
+step 3 has no exit other than success.
 
 ## 7. The card
 
@@ -251,6 +283,12 @@ Four properties, each falsifiable, each mapping to a decision above.
 3. **No two cards overlap, at any moment, including mid-drag.** (§6)
 4. **Dismiss and restore is lossless**, scroll position included, in one command.
    (§8)
+5. **Placement never fails and never refuses.** Navigating always produces a
+   card, whatever state the region is in. (§6, capacity)
+
+These live as `browser/components/fos/tests/unit/test_field.js`, run against a
+session-sized workload rather than a handful of cards, because both defects
+found so far were invisible at three cards and obvious at forty.
 
 ## 10. Open questions
 

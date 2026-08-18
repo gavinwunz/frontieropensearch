@@ -31,6 +31,13 @@ execution, not invention: all three pillars have a written design.
   Mozilla's Firefox Terms of Use. Telemetry genuinely off —
   `canRecordBase`/`canRecordExtended` both false. Relay, accounts, VPN/Monitor
   promos off. See `agent/reports/phase-1.md` for the full table.
+- **The Field's card and region model.** `FOSField.sys.mjs`: regions that are
+  trails, cards seeded by provenance, pinning on first move, the non-occlusion
+  push, capacity by eviction then growth, and the three-level overview with
+  nesting past nine trails. `FIELD.md` §9's five acceptance properties run as
+  xpcshell tests at session scale, plus 21 node tests.
+- **`./mach test` works again for browser components.** It never did in this
+  tree: see the appdir gotcha below.
 - **First Phase 2 code.** `browser/components/fos/` holds marks
   (`FOSMarks.sys.mjs`), the action table (`FOSGrammar.sys.mjs`), the parser
   (`FOSCommandParser.sys.mjs`) and the trail tree (`FOSTrailTree.sys.mjs`), 37
@@ -46,14 +53,21 @@ Nothing running. Tree fully pushed; `main`, `agent/dev` and both tags on origin.
 
 Phase 2 execution, in this order:
 
-1. **The Field's card and region model** (`design/FIELD.md`) — the last
-   pure-logic piece, so it can be built and tested the cheap way first. A region
-   is a trail, so it builds on `FOSTrailTree`.
-2. `PageThumbs` capture for cards; `nsISHEntry` for restoring a node's scroll and
-   form state; the command bar UI over the existing parser.
-3. Turn `FIELD.md` §9's four acceptance properties into browser-chrome tests
-   **as each piece lands, not after**.
-4. The voice path is **no longer blocked** — see the ASR entry in `IDEAS.md`.
+All the pure-logic pieces are now built and tested: marks, grammar, parser,
+trail tree, Field. What is left in Phase 2 all touches Gecko.
+
+1. **The command bar UI** over the existing parser — the single entry surface,
+   and the piece every other surface is reached through. Nothing else in the
+   phase demo works without it.
+2. **The trail rail**: render `FOSTrailTree` as the collapsible tree, and wire
+   `nsISHEntry` so clicking a node restores scroll and form state. `FIELD.md`
+   §10 says to settle what a region looks like for a deep tree *after* the rail
+   exists, so build the rail before touching the Field's rendering.
+3. **The Field's rendering**: `PageThumbs.captureToCanvas` for cards, reusing
+   the `tab-hover-preview.mjs` path; the model underneath is done and does not
+   need revisiting.
+4. Browser-chrome tests for each of the above **as it lands, not after**.
+5. The voice path is **no longer blocked** — see the ASR entry in `IDEAS.md`.
    Remaining unknowns are model size and latency on this hardware, not
    availability. Measure those; do not re-litigate whether ASR is possible.
 
@@ -104,6 +118,17 @@ None.
 - **Selecting a privileged context puts WebDriver in chrome mode**, and BiDi
   content navigation (`new_page`, `navigate_page`) then fails with "unknown
   error". Do content-side checks first, or `restart_firefox` to reset.
+- **`./mach test` silently broke for every browser xpcshell test the moment the
+  app was renamed, and it looked like a packaging fault.** The runner builds its
+  appdir manifest key as `mozInfo["appname"] + "-appdir"`, which became
+  `frontieropensearch-appdir`, while every in-tree manifest spells it
+  `firefox-appdir`. No match meant no `-a`, so `resource:///` never mapped and
+  each test died loading its own module; upstream's own tests failed too. Fixed
+  in `runxpcshelltests.py` by falling back to the upstream key. **The general
+  lesson is the one to keep: a rebrand changes strings that tooling matches on,
+  not only strings a user reads.** Look for others.
+- Running `xpcshell` by hand still works and is quicker for a one-off, but pass
+  `-a .../dist/bin/browser` — the same appdir the harness now gets right.
 - `./mach lint` crashes in three linters (`gecko-trace-lint`, `glean-parser`,
   `clang-format`) with `AssertionError` / "Unexpected result type" on
   multi-path invocations. These are infrastructure failures, not findings —
@@ -152,6 +177,21 @@ repeated failure even when each run has a new explanation for it.
 
 ## Decisions taken
 
+- 2026-08-18 — **A push chain that reaches a region edge re-seats the unpinned
+  card it was pushing instead of refusing the drag.** Refusing there made most
+  drags in a busy region fail while the vacated seat sat empty. An unpinned card
+  has no position the user chose, so re-seating it is as legitimate as seeding
+  it. Refusal is now only ever about a position the user owns.
+- 2026-08-18 — **Placement never fails.** A full region evicts one
+  least-recently-used *unpinned* card, and grows if that does not free a
+  reachable seat. Navigation drives placement, so it cannot be allowed to
+  refuse. Recorded in `FIELD.md` §6.
+- 2026-08-18 — **VPSC and the node-overlap-removal literature are rejected for
+  the drag path**, because they are batch and globally displacement-minimising
+  and so cannot give the mid-drag guarantee, and because they have no way to
+  express refusal. See `IDEAS.md`.
+- 2026-08-18 — **Field tests run at session scale (40+ cards), not at three.**
+  Both defects so far were density effects that a small case cannot reach.
 - 2026-08-18 — **Telemetry is switched off in `TelemetryPrefValue()`, not in a
   pref file.** `SetupTelemetryPref` locks the pref, so a branding pref line is
   silently ignored; leaving one in place would read as a guarantee it cannot
