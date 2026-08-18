@@ -636,3 +636,16 @@ generalised gotcha. Tests: 216 node, all green, up from 207. Lint clean
 (eslint + prettier) on everything touched. Nothing browser-side was run — the
 harness was held all run — but run 23's `build faster` at 22:34Z includes this
 change, and nothing in the browser imports `VoiceSession` yet.
+
+**Late in run 25**, both queued jobs finished while the run was still up.
+Run 23's FOS suite is **574 passed, 0 failed** — the acceptance gate for run
+23's transform-scaled overview and unseen mark passes, and what those two still
+owe is eyes rather than assertions. Run 25's ASR measurement **failed on its
+first timed line**: `Cu.now()` is not a function in a browser-chrome scope, and
+the test had been written the run before with the harness held and never run.
+Fixed to `ChromeUtils.now()` and requeued as `run26`, with a `build faster` in
+front because the runner had reported the test file up to date. The lesson is
+not "do not write code while the harness is held" — the pure work this run is
+the right shape — but that the part of such a change which touches Gecko APIs
+is the part to re-read before queueing it, since node cannot check it and the
+queue will not report it for hours.

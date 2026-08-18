@@ -390,17 +390,21 @@ same script waiting on `systemctl --user is-active`, not in a second unit that
 races it.
 
 - `fos-job-run22` — **finished OK at 22:34Z.** Both answers are below.
-- `fos-job-run23` — `agent/jobs/run23.sh`, log `agent/logs/run23.current`. Its
-  `build faster` ran at 22:34Z and **includes this run's changes**; the FOS
-  suite started at 22:34:09Z and is the acceptance gate for run 23's two
-  changes — the transform-scaled overview and the unseen mark. Read
-  `##### FOS SUITE EXIT` first thing.
-- `fos-job-run25` — `agent/jobs/run25.sh`, log `agent/logs/run25.current`.
-  Waits on run23, then runs the ASR measurement, which had been STATE's item 1
-  for two runs and blocked on nothing but harness contention. Read it with
-  `grep '##### ASR' agent/logs/run25.current`. It downloads ~75MB on its first
-  run. **The GPU line may well be absent — treat that as the result**: it means
-  the CPU numbers are the shipping numbers and the shell defaults to CPU.
+- `fos-job-run23` — **finished OK at 22:35Z: 574 passed, 0 failed.** That is the
+  acceptance gate for run 23's two changes — the transform-scaled overview and
+  the unseen mark — and it passes. What is still owed them is *eyes*, not
+  assertions: item 2 below.
+- `fos-job-run25` — **failed, and not on the question it was asking.** The
+  measurement died on its first timed line with `Cu.now is not a function`. The
+  tree's timer for chrome code is `ChromeUtils.now()`; the test was written last
+  run and never run. Fixed.
+- `fos-job-run26` — `agent/jobs/run26.sh`, log `agent/logs/run26.current`.
+  Started 22:36Z: `build faster` — the runner had reported "Skipping test file
+  installation (up to date)", so the fix has to reach `_tests` first — then the
+  measurement again. Read it with `grep '##### ASR' agent/logs/run26.current`.
+  It downloads ~75MB on its first run. **The GPU line may well be absent —
+  treat that as the result**: it means the CPU numbers are the shipping numbers
+  and the shell defaults to CPU.
 
 This run's change is pure and is as verified as it can be without a browser —
 216 node tests, lint clean. Nothing in the browser imports `VoiceSession` yet,
@@ -415,7 +419,8 @@ direction. Ordered by value. **Read `run25`'s log before choosing** — item 1 i
 already running and its answer changes item 2.
 
 1. **Read the ASR measurement, then write `FOSVoice.sys.mjs`.** The measurement
-   is queued as `run25` and needs nothing from a person. What it decides is
+   is running as `run26` and needs nothing from a person; `run25` was the same
+   measurement failing on `Cu.now`. What it decides is
    which backend the shell defaults to. The shell itself is the wiring: the
    key, `getUserMedia` in the chrome window, capture to a Float32Array at
    16kHz, `audioIsSpeech` before the model, `createEngine` on the device the
@@ -470,6 +475,17 @@ already running and its answer changes item 2.
    a defect.
 
 ## Found this run, not yet chased
+
+- **A test written and not run is not a test yet, and this one cost a whole
+  queued job.** `browser_zzvoicelatency.js` was written last run with the
+  harness held, and died on its *first* timed line: `Cu.now()` is not a
+  function in a browser-chrome scope, `ChromeUtils.now()` is. The measurement
+  had been item 1 for two runs, so the cost of the unrun line was two runs of
+  waiting plus a job. It does not change the standing rule — writing pure,
+  node-testable code while the harness is held is still right — but it does
+  sharpen it: **the part of a held-harness change that touches Gecko APIs is
+  the part to re-read before queueing it**, because that is the part node
+  cannot check and the queue will not tell you about until much later.
 
 - **Privilege removes the user-facing half of an API, not just the permission
   check.** The finding above generalises, and the fork will keep reaching for
@@ -1026,7 +1042,13 @@ only computed style in a real window can see it, which is what
 <!-- Task name → consecutive failures. At 3, stop retrying the same way, write the
      analysis below, and change approach or task. -->
 
-None active. The demo-flow flake was counted at three and is now closed by a
+ASR measurement: **1**. Attempt 1 (`run25`) failed on `Cu.now`, which is a
+distinct and identified cause with a fix, so attempt 2 (`run26`) is the same
+approach and that is correct. If attempt 2 fails on something else, the third
+does not get to be another one-line fix — take the measurement out of the
+mochitest harness and drive it from xpcshell instead.
+
+The demo-flow flake was counted at three and is now closed by a
 root cause rather than by a green run — the change of approach the rule asks
 for was "dump the tables instead of re-running", and it worked first time.
 

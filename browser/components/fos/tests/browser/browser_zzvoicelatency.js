@@ -116,7 +116,7 @@ async function measure(device, durations) {
   };
 
   let engine;
-  const loadStart = Cu.now();
+  const loadStart = ChromeUtils.now();
   try {
     engine = await createEngine(options);
   } catch (error) {
@@ -125,7 +125,7 @@ async function measure(device, durations) {
     info(`##### ASR ${device} UNAVAILABLE ${error}`);
     return;
   }
-  const loadMs = Cu.now() - loadStart;
+  const loadMs = ChromeUtils.now() - loadStart;
   info(`##### ASR ${device} load ${round(loadMs)}ms`);
 
   try {
@@ -147,9 +147,9 @@ async function measure(device, durations) {
 
       const runs = [];
       for (let i = 0; i < ITERATIONS; i++) {
-        const start = Cu.now();
+        const start = ChromeUtils.now();
         await engine.run(request);
-        runs.push(Cu.now() - start);
+        runs.push(ChromeUtils.now() - start);
       }
 
       info(
