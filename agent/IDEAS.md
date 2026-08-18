@@ -244,3 +244,85 @@ branch, bookmark graveyards. Real complaints beat invented personas.
   hands-free loop essentially free and is worth using regardless of how input resolves.
 - **Phase:** 2. The ASR spike gates the voice work; TTS for confirmations is independent
   of it and can land either way.
+
+### Cursorless hats: every target on screen carries a spoken name
+- **Found:** 2026-08-18, searching for hands-free command grammars — Talon's in-depth
+  review at handsfreecoding.org led to Cursorless, https://www.cursorless.org/docs/.
+- **What it is:** A VS Code voice-coding system that draws a small coloured mark — a "hat" —
+  over one character of every token on screen. A hat's spoken name is colour + shape +
+  character ("blue fox bat"), and every command is *action + target*: "chuck bat" deletes
+  the token wearing the hat on `b`. Hats attach to tokens rather than to screen positions,
+  so they survive the content moving.
+- **Verdict:** adopt the mechanism, under the name **marks**, as the addressing layer for
+  the whole UI.
+- **Why:** It answers the question the master prompt's hands-free requirement actually turns
+  on, which is not "how do I say the verb" but **"how do I name the thing"**. A keyboard user
+  names a target by pointing or by typing a substring; a voice user cannot point, so every
+  addressable object needs a short, stable, pronounceable name. Cursorless is the proof this
+  is tractable at the density of a code editor — the Field's card count and a trail rail's
+  node count are both far smaller.
+  The reason it is the right fit here rather than a bolt-on: a mark is not an accessibility
+  affordance painted over the UI, it is the object's *name*. `enter cap` typed into the
+  command bar and "enter cap" spoken resolve through one code path, which is what makes the
+  brief's "no separate accessibility mode" literally true rather than aspirational. It also
+  gives the command bar a grammar it otherwise lacks — without marks, "switch to that card"
+  has no way to say *which*.
+  Criterion 4 is the strong one: marks serve all three pillars at once rather than adding a
+  fourth. Field cards, trail nodes and contexts become nameable by the same rule.
+- **Risk to design against:** Cursorless's own hard problem is mark *stability* — when
+  content shifts, naive assignment reshuffles every name and muscle memory dies. Marks must
+  therefore be sticky per object for the lifetime of a session, not recomputed per render.
+  Assign on first appearance, keep until the object goes away.
+- **Phase:** 2. Marks land before the voice work, because they are just as useful to the
+  keyboard and they are what the ASR spike would otherwise have to invent.
+
+### "Show numbers" already ships — the mark claim has to be narrower
+- **Found:** 2026-08-18, checking the above for criterion 1 before adopting it. Apple's
+  Voice Control "item number overlays" (support.apple.com/guide/mac-help/mchl26854b08) and
+  the equivalent "show numbers" / "show grid" in Windows Voice Access.
+- **What it is:** Both operating systems already label interactive elements on demand and let
+  you speak the label — "Click 36" — with a numbered grid fallback for anything unlabelled.
+- **Verdict:** reject any claim that labelling targets for voice is novel. Keep marks, but
+  claim only what is actually unshipped.
+- **Why:** This is the sort of thing that would have been embarrassing to discover after
+  building. Labelling targets so they can be spoken is a solved, shipped, decades-old
+  accessibility idea, and the Field would not be the first browser surface to be driven that
+  way. What survives the check is narrow but real, and worth stating precisely:
+  1. **Numbers are positional and transient; marks are semantic and sticky.** "Click 36"
+     means a different thing every time the layout moves, so nothing can ever be learned.
+     A mark that stays attached to the same card all session becomes memorable, and a name
+     you remember can be spoken without looking — which is the whole point.
+  2. **Words work in both modalities; numbers and letter-hints each work in only one.**
+     Digits collide with typing digits, and Vimium-style letter hints ("VF", "VJ") are chosen
+     for alternating hands and are miserable to say aloud. A short word alphabet is the only
+     encoding that is simultaneously speakable and typeable, which is what lets one grammar
+     serve both.
+  3. **The OS is labelling guessed-at clickables; we label objects that mean something.**
+     Voice Control cannot know what a trail node or a context is. Marks on first-class
+     objects let the grammar talk about *browsing* — `graft cap`, `name cap` — rather than
+     about clicking pixels.
+  So the honest claim is not "voice can select things" but "one stable naming layer over
+  browsing objects, shared by keyboard and voice". Novelty lives in stickiness, the word
+  alphabet, and what gets marked — not in the overlay.
+- **Phase:** 2, as the constraint on the marks design. Not a separate feature.
+
+### Talon's grammar shape: action + target, and chaining in one utterance
+- **Found:** 2026-08-18, https://handsfreecoding.org/2021/12/12/talon-in-depth-review/.
+- **What it is:** Talon commands are verb-then-noun and chain freely — several commands in a
+  single utterance with no pause or separator, because the grammar is unambiguous enough to
+  segment. The review names mode-switching between dictation and commands as the single
+  biggest friction point in daily hands-free use.
+- **Verdict:** adopt the shape; treat the mode-switch warning as a design constraint.
+- **Why:** Action-first is the right order for our command bar for a reason specific to us —
+  the action narrows what can legally follow, so the bar can filter marks to the ones the verb
+  can actually apply to, and the same filtering gives keyboard users a live-narrowing list for
+  free. Chaining matters more than it looks: `enter cap` then `branch` then `name it gecko` as
+  one utterance is the difference between voice being a demo and voice being usable, and it
+  costs nothing at parse time if the grammar is kept regular.
+  The mode-switch warning is the part to take seriously, because our command bar has exactly
+  this hazard: it must accept both a *command* and a *search query*, which is dictation. If
+  the user has to declare which one they are doing, we have rebuilt the friction Talon's
+  heaviest users complain about. The resolution to design toward is that the command bar
+  parses action-first and treats anything not starting with a known verb as a query — so
+  search is the unmarked default and commands are the marked case, in both modalities.
+- **Phase:** 2C, as the command bar's grammar.
