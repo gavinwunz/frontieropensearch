@@ -338,13 +338,23 @@ one.
 
 ## In progress
 
-Nothing waits on a person. `fos-job-run22` is a chain — `agent/jobs/run22.sh`,
-log `agent/logs/run22.current`, one `#####` line per step — and its last step
-is the urlbar directory resumed with `--start-at
-browser-telemetry/browser_handoff.js`, which is about two hours. Grep the log
-for `#####` first; the steps before it are already answered below.
+Nothing waits on a person. **Two chains, and the second waits on the first.**
 
-`main` is at `phase-3`. `agent/dev` is pushed.
+- `fos-job-run22` — `agent/jobs/run22.sh`, log `agent/logs/run22.current`. Its
+  first three steps are answered below; the last is the urlbar directory
+  resumed with `--start-at browser-telemetry/browser_handoff.js`, started
+  21:54Z and about two hours. Grep the log for `#####` first.
+- `fos-job-run23` — `agent/jobs/run23.sh`, log `agent/logs/run23.current`.
+  Polls `systemctl --user is-active fos-job-run22` every minute, then does
+  `build faster` and the whole FOS directory. **That run is the acceptance gate
+  for both of run 23's changes** — the transform-scaled overview and the
+  unseen mark — because harness time was held by run 22 for the whole of the
+  run that wrote them. Read `##### FOS SUITE EXIT` first thing.
+
+Neither change has been run in a browser yet. Both lint clean. If the suite
+failed, the two are independent and the log will say which.
+
+`main` is at `phase-3`. `agent/dev` is pushed through `9b4174427e41`.
 
 ## Next task
 
@@ -359,29 +369,32 @@ direction. Ordered by value.
    with `services.sync.username` set, not more reading — same lesson as run
    21's selector list.
 
-2. **Which surface carries the background-tab signal.** Run 22 settled its
-   *form* from the literature and both ends of the obvious range are ruled out:
-   not motion at the margin, which captures attention involuntarily and so
-   fails the ambient bar, and not a slow fade, which slow change blindness says
-   is often no signal at all. What is left is a persistent binary state, read
-   on the next voluntary glance and cleared by opening the Field. Two candidate
-   surfaces survive and the choice turns on which is actually on screen in an
-   ordinary window — check it in a running browser. See `IDEAS.md` run 22.
+2. **Look at run 23's two changes, then finish them.** Both were written with
+   the harness held by run 22, so both are unverified in a browser. Once
+   `run23` reports:
 
-3. **Scale the overview with a transform instead of a write per card.** The
-   reposition path landed this run and took the synthetic resize burst from
-   7.6ms to 1ms, but a real window drag still costs ~31ms a frame more with
-   the Field open than without it, because one pass still writes four
-   declarations for each of 480 miniatures. A `transform: scale()` on each
-   tile's body, with miniatures positioned in unscaled field units, makes a
-   resize nine writes rather than 489. The nest needs a wrapper per region to
-   carry its own translate, which is the structural part. Numbers and the
-   reason it is faithful here and not at the region level: `IDEAS.md` run 22.
+   - **The unseen mark, with eyes on it.** `browser_zzscreenshots.js` gained a
+     `shot-unseen` step; run `agent/smoke.sh` and *look at the picture*. The
+     mark is a flex item in the address bar's input container, and whether an
+     8px accent dot beside the page actions reads at a glance without shouting
+     is the one thing no assertion in the suite can tell you.
+   - **The new resize numbers.** `browser_zzfieldperf.js` prints them.
+     `crowded-overview-resizing-frame` against `closed-field-resizing-frame` is
+     the pair that matters — the gap was ~31ms a frame — and
+     `resize-burst-of-10` should be flat, since it was already 1ms.
 
-4. **The embedding pass, `prune`, and the voice path.** Carried from Phase 2.
-   The embedding pass is what properly fixes the entity extractor's remaining
-   limitation; the voice path is the second half of the grammar's hands-free
-   promise, of which one end-to-end path exists.
+3. **The voice path.** The biggest remaining gap in the Phase 2 promise, and
+   run 23 finished its design so that the next run can build rather than read.
+   Push-to-talk first — a press, `whisper-tiny` q8 through the ML engine with
+   `device: "gpu"` and upstream's own CPU fallback, transcript echoed live into
+   the command bar input, the transcript handed to the same
+   `FOSCommandParser` the keyboard uses. The budget is ~1s from end of
+   utterance, 2s tolerable *because* of the echo. First step is a measurement,
+   not a design: `whisper-tiny` q8 on this hardware, both devices, timed from
+   end of utterance. See `IDEAS.md` run 23.
+
+4. **The embedding pass and `prune`.** Carried from Phase 2. The embedding pass
+   is what properly fixes the entity extractor's remaining limitation.
 
 5. **The active card can have no thumbnail**, and **closing the rail while the
    Field is open leaves Escape with nowhere to go.** Both narrow, both below.
@@ -935,6 +948,24 @@ three-strikes rule only works if the counter is actually kept**, so count a
 repeated failure even when each run has a new explanation for it.
 
 ## Decisions taken
+
+- 2026-08-18 — **The retired address bar carries the unseen state**, because it
+  is the only surface this fork keeps permanently on screen. The Field has no
+  chrome affordance at all — nothing in the component touches `CustomizableUI`
+  — and every FOS surface builds its DOM on first open, so the command bar has
+  no resting state either. The bar is the command bar at rest, which makes the
+  signal one press from the surface that acts on it. `IDEAS.md` run 23.
+- 2026-08-18 — **A page the user navigated to is never an arrival, and neither
+  is a restored one.** The state is set only for a card placed for a node that
+  is not the selected browser's *and* was created after this window started
+  watching. Without the second half every restart would light the mark, which
+  is how a badge teaches people to stop reading it.
+- 2026-08-18 — **The overview's miniatures are placed in field units under a
+  wrapper per region.** All of the scale lives in one `transform` per region,
+  so a resize writes about a dozen declarations rather than one per card, and
+  the reposition path's write per card became a read per card — the check that
+  what is drawn is still the model's, which is the only thing that makes
+  leaving the miniatures alone correct.
 
 - 2026-08-18 — **A resize repositions the overview and rebuilds the region.**
   The two levels are not the same problem: a miniature is a plain box that

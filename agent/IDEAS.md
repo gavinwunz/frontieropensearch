@@ -1677,3 +1677,92 @@ size as the tile shrinks — which is exactly the case where a transform is
 faithful rather than a shortcut. The region level is the opposite case, and is
 why it keeps its rebuild: its cards carry captions and marks whose size must
 *not* follow the scale.
+
+## Run 23 — the signal's surface, answered by the window itself
+
+**Not searched.** Run 22 left one question — which persistent surface carries
+the unseen state — and said explicitly that it turns on which surface is
+actually on screen, which is a thing to look at rather than to reason about.
+So this was answered by reading the chrome and by looking at a window this
+project has already photographed (`agent/reports/one-surface-rest.png`), not by
+another literature.
+
+Two candidates were live and exactly one of them exists:
+
+- **The Field's own affordance is not there.** Nothing in
+  `browser/components/fos/` touches `CustomizableUI` or creates a
+  `toolbarbutton`; the Field is reached by `F2` and by the `field` verb. There
+  is no persistent edge, no button, no strip. A surface with no pixels cannot
+  carry an ambient state.
+- **The command bar has no resting state either** — `FOSChrome`'s whole design
+  note is that every FOS surface builds its DOM on first open, so a window that
+  never opens one pays nothing for it. At rest the command bar is not hidden;
+  it does not exist.
+
+What *is* permanently on screen in an ordinary window is the retired address
+bar, and that is the command bar at rest in every sense that matters: it is
+what a mouse presses to open the command bar, and its placeholder already
+describes that press. So it takes the mark. **Adopt**, and it is a stronger
+answer than the one that was being looked for, because the surface that carries
+"something arrived" is one press away from the surface that acts on it.
+
+Drawn as a flex item in the input container rather than a dot positioned over
+it: the container ends with the page actions, and an absolutely positioned dot
+would sit on the bookmark star at some widths and not at others. As an item it
+makes its own room, and it takes none when the state is false — which is where
+a window spends nearly all of its life. The screen-reader half is
+`aria-description` and deliberately not a live region: a live region announces
+on arrival, which is the interruption the whole design is avoiding.
+
+### The voice path's budget, and the backend that decides whether it fits
+
+**Searched:** browser-side Whisper via Transformers.js and ONNX
+(<https://huggingface.co/onnx-community/whisper-tiny>,
+<https://senoritadeveloper.medium.com/whisper-webgpu-2b1cadfab897>,
+<https://offlinetts.com/blog/browser-speech-recognition-whisper-comparison/>);
+voice-interface latency thresholds
+(<https://www.gnani.ai/resources/blogs/latency-targets-for-feels-human-voice-budgets-measures-enforcement>,
+<https://hamming.ai/resources/voice-ai-latency/>, and the turn-taking numbers
+they rest on); push-to-talk against wake words
+(<https://picovoice.ai/blog/complete-guide-to-wake-word/>,
+<https://thehomesmarthome.com/home-assistant-push-to-talk-for-local-voice-commands/>).
+
+Run 15 settled that ASR is *available* — Whisper is vendored, and the engine's
+task check is a character pattern rather than an allowlist — and said the
+remaining unknowns were size and latency, to be measured rather than argued.
+This is the part that can be settled before the measurement: what the numbers
+have to beat, and which knob decides whether they can.
+
+**The budget.** A voice command is a turn, and the turn-taking literature the
+industry numbers rest on puts a natural response inside ~1s of the end of the
+utterance, tolerable to 2s, poor past 3s. The mitigation that buys the 1–2s
+band is specific and this fork already owns it: a **live transcript echo**.
+The command bar is a text surface with the parse in front of the user, so
+speech can be shown as it is recognised in the same field the keyboard writes
+into — the same grammar, the same feedback, no second surface. That is the
+"no separate accessibility mode" property falling out of the design rather
+than being bolted on.
+
+**The knob.** Published in-browser Whisper numbers are usually WASM: one
+commonly cited figure is 5.5s for 23.2s of audio (~4x real time) on
+`whisper-tiny` (~75MB), and WebGPU is repeatedly reported at roughly an order
+of magnitude faster. The tree already ships both — `ort.webgpu.mjs` is in
+`toolkit/components/ml/jar.mn`, `ONNXPipeline` takes `config.device`, and
+`ensurePipelineIsReady` calls `checkGPUSupport()` and falls back to CPU with a
+warning rather than failing. So the pipeline is asked for `device: "gpu"` and
+the fallback is upstream's, not ours. **Adopt.**
+
+A command utterance is 1–3s, not 23, so even the WASM path is plausibly inside
+the tolerable band — but "plausibly" is why the transcript echo is not
+optional. Measure `whisper-tiny` q8 on this hardware both ways before choosing
+a default, and measure from *end of utterance*, since that is the moment the
+user starts counting.
+
+**Push-to-talk first, wake word second, and not as a compromise.** A press
+eliminates false wakes outright and makes the microphone's on/off state a thing
+the user did rather than a thing they trust. The genuinely handless case needs
+a wake word and that is a second layer with its own always-on cost — but it
+sits on the same path, because in both cases what comes out is a transcript
+handed to `FOSCommandParser`. Building PTT first therefore costs the wake-word
+layer nothing, and it is the version that can be honestly shipped without
+promising an always-listening microphone this fork has not measured.

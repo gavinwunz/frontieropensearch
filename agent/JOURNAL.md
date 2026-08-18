@@ -497,3 +497,53 @@ surface carries it is now a question to answer in a running browser.
 
 Suite: the whole FOS directory green, 0 unexpected, `browser_field.js` at 116
 checks. Lint clean.
+
+## Run 23 — 2026-08-18 — post-phase
+
+Harness time was held for the whole run: `run22`'s chain reached its last step
+— the urlbar directory resumed — four minutes before this run started, and that
+step is about two hours. One mochitest runs at a time and `build faster`
+rewrites an omni.ja a running suite has mapped, so the run was spent on the two
+things that needed no harness, with a second chain queued behind the first:
+`agent/jobs/run23.sh` waits on `systemctl --user is-active fos-job-run22`, then
+builds and runs the whole FOS directory. That run is the gate for everything
+below; neither change has been in a browser yet.
+
+**The overview scales with a transform now.** Run 22's reposition path took the
+synthetic resize burst from 7.6ms to 1ms and left a real window drag ~31ms a
+frame dearer with the Field open, because one pass still wrote four
+declarations for each of 480 miniatures. Miniatures are now placed in unscaled
+field units inside a wrapper per region, and the wrapper carries the translate
+and the scale: a resize writes four declarations per tile and one per region —
+about a dozen — and the scaling is the compositor's rather than layout's. The
+write per card in the reposition path became a *read* per card, because leaving
+a miniature alone is only correct while what is drawn is still what the model
+says; a card moved, gained or lost refuses to the rebuild exactly as before.
+The geometry probe in `browser_field.js` had to grow the wrapper transforms, or
+it would have gone on comparing the two paths on the one thing neither of them
+now varies.
+
+**Run 22's open question was answered by looking, not by searching.** It left
+the background-arrival signal's form settled and its surface open between two
+candidates. Exactly one of them exists: nothing in the component creates a
+toolbar button, and every FOS surface builds its DOM on first open, so neither
+the Field nor the command bar is on screen at rest. What is on screen is the
+retired address bar — which is the command bar at rest, one press from the
+surface that acts on the signal. It takes the mark: a flex item in the input
+container rather than a dot over the page actions, `aria-description` rather
+than a live region, cleared by opening the Field and by nothing else. A page
+the user navigated to is not an arrival, and neither is a page put back by a
+restore — the watch starts when the window does, so a restart does not light
+it.
+
+**Research settled the voice path's budget so the next run can build.** ~1s
+from end of utterance is natural and 2s is tolerable *given* a live transcript
+echo — which this fork gets free, because the command bar is already the text
+surface the parse happens in. The knob that decides whether the budget fits is
+the backend, and the tree ships both: `ort.webgpu.mjs` is in the ML component's
+`jar.mn`, `ONNXPipeline` takes `config.device`, and `ensurePipelineIsReady`
+already falls back to CPU on its own when the GPU is unsupported. Push-to-talk
+first, wake word as a second layer on the same path.
+
+Suite: not run — the harness was busy. Lint clean (eslint, stylelint) on
+everything touched.
