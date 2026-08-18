@@ -260,3 +260,57 @@ same filter the voice grammar uses to constrain what may be said next.
 Liveness of a mark is checked only when the caller supplies the registry. The
 parser's own business is syntax; whether `cap` currently names anything is the
 registry's.
+
+---
+
+## 7. Rules the bar forced
+
+Three more, settled while building the surface itself. All three keep the split
+this file has held since §5: the grammar stays syntactic and modality-blind, and
+anything that cannot be is pushed out of it rather than into it.
+
+### URL or search is decided at execution, not in the grammar
+
+§3 settles command versus query. It does not settle what a *query* is, and a
+query covers both `gecko session history` and `example.org/docs`.
+
+That distinction is deliberately not a grammar rule. It depends on what schemes
+and hosts exist rather than on how the line is shaped, so it is not syntactic;
+and answering it in the parser would make the parser depend on Gecko, which
+would cost the grammar its node-speed test suite and give the transcript front
+end a second thing it has to agree with.
+
+So the parser returns a query and the executor decides, on `nsIURIFixup` — the
+same component the address bar uses, which already knows the scheme typos, the
+alternate-URI prefs and the keyword fallback, and which reports which of the two
+it chose. The bar reads that report to say either "Go to …" or "Search for …"
+before the user commits.
+
+### The bar opens showing every action
+
+The empty state is the whole action table, grouped by pillar.
+
+A palette that opens to a bare input is the most reported failure of the
+pattern, and it would be worse here than in an editor. The usual form of that
+critique — a palette must not withhold what the menus already expose — does not
+apply, because there are no menus. But that is not a reprieve: it means a user
+who does not know the twelve words has nowhere else to learn them. This is the
+one surface in the product that has to teach, and twelve is small enough to show
+entire.
+
+### A prefix is offered, never triggered
+
+§3 makes a half-typed action word prose: `fie` is a query and Enter searches for
+it. But showing nothing while the user types `fie` wastes the moment they are
+most likely reaching for `field`.
+
+So a single token lists the action words it prefixes, and <kbd>Tab</kbd>
+completes one. This changes what is **shown** and never what Enter **does** —
+the distinction the whole affordance rests on. Chrome reached the same gesture
+from the same direction when it stopped letting a bare keyword steal the line.
+
+Tab has no spoken form and does not need one. §5 requires that every *action* be
+reachable in both modalities; Tab reaches no action, it only shortens the path to
+one a voice user would say outright. A completion affordance is not a command —
+worth stating plainly, because "just add a keyboard-only shortcut" is exactly how
+the separate accessibility mode §5 forbids would get built by accident.

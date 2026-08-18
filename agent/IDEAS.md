@@ -643,3 +643,53 @@ confirm the specification.
   but not the condition. Field tests now run at session scale, and the two defects are
   regression tests at the size that produced them.
 - **Phase:** 2, standing.
+
+### Command palettes fail at discoverability, and ours inverts the usual critique
+- **Found:** 2026-08-18, surveying command-palette UX writing (UX Patterns' and
+  uxpatterns.dev's palette entries, Retool's write-up on designing theirs, Destiner's
+  "Designing a Command Palette").
+- **What it is:** The consistent complaints are not about parsing or speed. They are
+  (1) users never find the palette, (2) a palette that withholds what the menus expose
+  is worse than the menus, and (3) opening to a bare input — or to an alphabetical dump
+  of every command — teaches nothing. The recurring advice is to show useful suggestions
+  at the moment of opening.
+- **Verdict:** adopt (3), and note that (2) inverts here.
+- **Why:** (2) assumes the palette is an accelerator sitting beside menus. Ours is the
+  *only* entry surface, so there is nothing to be incomplete with respect to — but that
+  removes the safety net (2) is really describing. A user who does not know the twelve
+  action words has nowhere else to learn them, which makes the empty state the one screen
+  in the product that must teach. So the bar opens showing the whole action table grouped
+  by pillar: twelve is small enough to show entire, and the pillar grouping is what stops
+  it reading as the alphabetical dump the same sources warn against.
+
+  The follow-on problem is subtler and mattered more. GRAMMAR.md §3 makes a half-typed
+  action word prose — `fie` is a query and Enter must search for it — but showing nothing
+  while the user types `fie` wastes exactly the moment they are reaching for `field`. The
+  resolution is to separate what is *shown* from what Enter *does*: a single token lists
+  the action words it prefixes, Tab completes one, and the parse is untouched. Anything
+  stronger would be the mode §3 exists to prevent, arriving through the suggestion list
+  instead of through the grammar.
+
+  Tab needs no spoken form and this is not an exception to §5. The requirement is that
+  every *action* be reachable in both modalities; Tab reaches no action, it shortens the
+  path to one a voice user would simply say outright. A completion affordance is not a
+  command — worth stating because "add a keyboard-only shortcut" is precisely how a
+  separate accessibility mode gets built by accident.
+- **Phase:** 2, built.
+
+### URL-or-search is an execution question, not a grammar one
+- **Found:** 2026-08-18, while wiring the bar's execution path.
+- **What it is:** GRAMMAR.md §3 settles command versus query and stops there. But a query
+  covers both `gecko session history` and `example.org/docs`, and nothing in the grammar
+  distinguishes them.
+- **Verdict:** adopt — settle it at execution, on `nsIURIFixup`, and never in the parser.
+- **Why:** The answer depends on what schemes and hosts exist rather than on how the line
+  is shaped, so it is not a syntactic property and putting it in the grammar would make the
+  parser depend on Gecko — which would end the ability to test the grammar in node and, worse,
+  give the transcript front end a second thing to agree with. Gecko has owned this decision
+  for two decades: fixup knows the scheme typos, the alternate-URI prefs and the keyword
+  fallback, and it reports which of the two it chose, so reading its answer keeps the bar in
+  step with the address bar instead of drifting from it. A hand-rolled "does this look like a
+  URL" check is the kind that gets `localhost:8080` and `pack rat` wrong in opposite
+  directions.
+- **Phase:** 2, built.
