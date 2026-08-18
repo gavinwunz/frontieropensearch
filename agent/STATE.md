@@ -38,6 +38,15 @@ execution, not invention: all three pillars have a written design.
   xpcshell tests at session scale, plus 21 node tests.
 - **`./mach test` works again for browser components.** It never did in this
   tree: see the appdir gotcha below.
+- **The command bar, the one entry surface.** `FOSCommandBar.sys.mjs` (DOM
+  shell), `FOSCommandBarView.sys.mjs` (pure view model) and
+  `FOSActions.sys.mjs` (dispatcher + URL-or-search on `nsIURIFixup`).
+  `FOS:CommandBar` now owns accel+L, alt+D, accel+K and accel+E. Empty state
+  lists all twelve verbs grouped by pillar; a single token lists the verbs it
+  prefixes and Tab completes one, without changing what Enter does. Verbs whose
+  pillar has no UI report `NOT_WIRED` rather than falling through to a search.
+  36 browser-chrome checks, 11 node tests, verified by screenshot in dark and
+  light.
 - **First Phase 2 code.** `browser/components/fos/` holds marks
   (`FOSMarks.sys.mjs`), the action table (`FOSGrammar.sys.mjs`), the parser
   (`FOSCommandParser.sys.mjs`) and the trail tree (`FOSTrailTree.sys.mjs`), 37
@@ -56,18 +65,19 @@ Phase 2 execution, in this order:
 All the pure-logic pieces are now built and tested: marks, grammar, parser,
 trail tree, Field. What is left in Phase 2 all touches Gecko.
 
-1. **The command bar UI** over the existing parser — the single entry surface,
-   and the piece every other surface is reached through. Nothing else in the
-   phase demo works without it.
-2. **The trail rail**: render `FOSTrailTree` as the collapsible tree, and wire
+1. **The trail rail**: render `FOSTrailTree` as the collapsible tree, and wire
    `nsISHEntry` so clicking a node restores scroll and form state. `FIELD.md`
    §10 says to settle what a region looks like for a deep tree *after* the rail
    exists, so build the rail before touching the Field's rendering.
-3. **The Field's rendering**: `PageThumbs.captureToCanvas` for cards, reusing
+   **Plugging a pillar into the bar is now two calls**: register its objects on
+   `bar.marks` so they become addressable, and `bar.actions.register(verb, fn)`
+   for each of its verbs. `browser_commandbar.js` reports which verbs are still
+   unwired, so that list is the Phase 2 to-do.
+2. **The Field's rendering**: `PageThumbs.captureToCanvas` for cards, reusing
    the `tab-hover-preview.mjs` path; the model underneath is done and does not
    need revisiting.
-4. Browser-chrome tests for each of the above **as it lands, not after**.
-5. The voice path is **no longer blocked** — see the ASR entry in `IDEAS.md`.
+3. Browser-chrome tests for each of the above **as it lands, not after**.
+4. The voice path is **no longer blocked** — see the ASR entry in `IDEAS.md`.
    Remaining unknowns are model size and latency on this hardware, not
    availability. Measure those; do not re-litigate whether ASR is possible.
 
@@ -103,7 +113,43 @@ None.
 
 None.
 
+## Known staged state, not a defect
+
+The address bar and tab strip are **still visible and still work if clicked**.
+Only the keyboard gestures have been unified onto the command bar; removing the
+toolbar itself belongs with the Field, which replaces the tab strip. Until then
+the "one entry surface" claim is true of the keyboard and not yet of the mouse,
+and `agent/reports/cmdbar-*.png` shows exactly that. Do not describe Phase 2 as
+meeting the single-surface criterion before the toolbar goes.
+
 ## Gotchas worth not rediscovering
+
+- **A chrome overlay needs a very high z-index, not a plausible one.**
+  `navigator-toolbox` is a flex item carrying `z-index: 0`, which makes it a
+  stacking context that paints over anything lower no matter where in the
+  document the overlay is appended. At `z-index: 10` the command bar's backdrop
+  dimmed the content area only and left the chrome looking live while the bar
+  already held the keyboard. Geometry was correct the whole time —
+  `getBoundingClientRect` said full-window — so only a screenshot and
+  `elementFromPoint` over the toolbar showed it.
+- **`ChromeUtils.defineESModuleGetters(lazy, {Name: url})` binds `lazy.Name` to
+  the module's `Name` *export*, not to the module namespace.** So it is
+  `lazy.FOSCommandBar.forWindow(...)`, never `lazy.FOSCommandBar.FOSCommandBar`.
+- **Synthesised keys do not reach the chrome keyset while focus is in content.**
+  A browser-chrome test that opens with `EventUtils.synthesizeKey("l", {accelKey:
+  true})` silently does nothing, because focus starts in the remote browser.
+  Upstream's own tests use `document.getElementById("Browser:OpenLocation")
+  .doCommand()` for this reason. Assert the `command` attribute for the binding
+  and use `doCommand()` for the behaviour; synthesise a key only once something
+  in chrome already has focus.
+- **`stylelint-plugin-mozilla/use-design-tokens` rejects literal CSS values**,
+  and the token set is in
+  `toolkit/themes/shared/design-system/dist/tokens-*.css`. Worth reading before
+  writing chrome CSS rather than after: the tokens already carry dark mode, high
+  contrast and forced-colours mappings. Where no token honestly fits — a
+  viewport proportion, a measure — use
+  `/* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */`
+  with a reason, which is the in-tree convention.
 
 - **Inspect the running browser, not the tree.** The Phase 1 findings that
   mattered most — a network redirect and a locked pref — are invisible to
@@ -176,6 +222,24 @@ three-strikes rule only works if the counter is actually kept**, so count a
 repeated failure even when each run has a new explanation for it.
 
 ## Decisions taken
+
+- 2026-08-18 — **URL-or-search is decided at execution on `nsIURIFixup`, never
+  in the grammar.** It turns on what schemes and hosts exist rather than on how
+  the line is shaped, so it is not syntactic; putting it in the parser would
+  also cost the grammar its node test suite and give the transcript front end a
+  second thing to agree with. See `design/GRAMMAR.md` §7.
+- 2026-08-18 — **The bar opens showing all twelve verbs, grouped by pillar.**
+  The standard palette critique — do not withhold what the menus expose — does
+  not apply, because there are no menus; but that removes the safety net rather
+  than granting one, so this is the only surface that can teach the vocabulary.
+- 2026-08-18 — **A prefix is offered, never triggered.** A single token lists
+  the verbs it prefixes and Tab completes one; Enter still searches. Changing
+  what is *shown* is safe, changing what Enter *does* would be the mode §3
+  exists to prevent. Tab needs no spoken form because it reaches no action.
+- 2026-08-18 — **An unwired verb reports `NOT_WIRED` and stops the chain.** It
+  must not fall through to a web search — that is exactly the hijack the
+  fallback rule prevents — and it must not be skipped, because a later verb in
+  a chain usually depends on what an earlier one did.
 
 - 2026-08-18 — **A push chain that reaches a region edge re-seats the unpinned
   card it was pushing instead of refusing the drag.** Refusing there made most
