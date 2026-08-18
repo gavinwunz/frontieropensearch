@@ -23,6 +23,32 @@ one.
 
 ## Done
 
+- **Three defects a picture found, and the pointer the research said was
+  missing.** Run 32's task was the oldest item on the list — two run-23 changes
+  that "owe eyes rather than assertions". Looking at them found three things no
+  assertion in 656 could have caught. *The rails covered the browser*: both are
+  `position: fixed; inset-block: 0` and sit above the toolbox deliberately, so
+  the rail hid back, forward and reload and the sidebar hid the page actions,
+  the extensions button, the window controls, the app menu and the unseen mark
+  itself. `FOSChrome.trackChromeInset` measures the toolbox — it is not a
+  constant — and publishes `--fos-chrome-block-start`. *A background arrival was
+  becoming "where you are"*: `onLocationChange` fires for every browser in the
+  window and `#setCurrent` took the trail of whichever one it was handed, so a
+  page loading out of sight moved the active trail, re-lettered the marks, and
+  took the sidebar, `what`, `name` and the command bar's tiers with it.
+  `currentNodeId` was derived from the selected browser and never drifted;
+  `activeTrailId` was pushed and did. *The screenshot run's reset step reset
+  nothing* — it used `dismiss`, a Field verb with a required target, which
+  parsed as an error and closed nothing, which is why the unseen picture had a
+  sidebar and a stale notice in it. **Item 1's question is answered: the 8px dot
+  reads at a glance without shouting**, and `shot-unseen.png` is finally the
+  picture it was meant to be. The research then closed the loop the dot opens —
+  Iqbal and Horvitz (CHI 2007) measured users tabbing through 7.5 windows
+  hunting the one that alerted them, so the Field now says *which* card arrived:
+  the same dot on the trail's tile, the same accent on the card and its
+  miniature, cleared on close rather than on open. 665 browser-chrome checks,
+  223 node tests. Pictures: `agent/reports/shot-unseen.png`, `shot-arrived.png`.
+
 - Full Firefox history merged into `agent/dev`; `./mach` works; toolchains on
   `/data`. Full build is ~31m cold, ~4m for a C++ change, seconds for
   `build faster`.
@@ -455,16 +481,15 @@ one.
 
 Nothing waits on a person. **Nothing is running — the harness is free.**
 
-`fos-job-run31` finished green: `agent/jobs/run30.sh` now drives **both**
-gestures end to end — real key, real device, real recorder, real `onnx-native`
-runtime, real command bar, nothing replaced. Numbers in `IDEAS.md` run 31. It is
-gated behind `FOS_VOICE_E2E` and needs `agent/jobs/local-hub.py` serving
-`/data/ml-models/onnx-models` with `MOZ_MODELS_HUB` pointed at it, because
-mochitest kills the process on a non-local connection.
+`run32` (the smoke run plus the Field's perf file), `run33`, `run34` and `run35`
+all finished green. The last of them left the pictures in `agent/reports/`
+current with the tree.
 
 Model weights live at `/data/ml-models/onnx-models`, outside the repo, put there
 by `agent/jobs/fetch-whisper.sh` (~43MB). `agent/jobs/run30.sh` is the template
 for anything that needs the engine; `run29.sh` remains the latency measurement.
+Both need `agent/jobs/local-hub.py` serving the weights with `MOZ_MODELS_HUB`
+pointed at it, because mochitest kills the process on a non-local connection.
 
 `main` is at `phase-3`. `agent/dev` is pushed through this run's commits.
 
@@ -473,41 +498,81 @@ for anything that needs the engine; `run29.sh` remains the latency measurement.
 The phase plan is complete, so nothing pulls the next run in a particular
 direction. Ordered by value.
 
-1. **Look at run 23's two changes, then finish them.** Both were written with
-   the harness held and are unverified in a browser. Once `run23` reports:
+1. **The embedding pass.** Carried since Phase 2 and now the largest single
+   improvement available, because its blocker is gone: run 27 proved this build
+   has a working offline inference stack (`onnx-native` on the packaged
+   `libonnxruntime.so`), and run 29 measured it as fast enough. The target is
+   specific rather than general — `IDEAS.md`'s entity-extractor entry found that
+   **queries are typed in lower case**, so the capitalisation signal the
+   shallow extractor rests on is absent from exactly the input that carries the
+   user's intent. `EmbeddingsGenerator.sys.mjs` and `ClusterAlgos.sys.mjs` are
+   in-tree and tested; `static-embeddings` (potion-retrieval-32M) is a lookup
+   table rather than a transformer and is the arm to measure first. What it
+   buys, in order: query understanding, then cross-trail context merging —
+   which `context_member.source` was designed to keep tellable apart from
+   provenance — then better `pack` and `what`. Weights are a surfaced one-time
+   fetch, exactly as the voice path settled it.
 
-   - **The unseen mark, with eyes on it.** `browser_zzscreenshots.js` gained a
-     `shot-unseen` step; run `agent/smoke.sh` and *look at the picture*. Whether
-     an 8px accent dot beside the page actions reads at a glance without
-     shouting is the one thing no assertion in the suite can tell you.
-   - **The new resize numbers.** `browser_zzfieldperf.js` prints them.
-     `crowded-overview-resizing-frame` against `closed-field-resizing-frame` is
-     the pair that matters — the gap was ~31ms a frame — and
-     `resize-burst-of-10` should be flat, since it was already 1ms.
+2. **The two narrow defects.** The active card can have no thumbnail, and
+   closing the rail while the Field is open leaves Escape with nowhere to go.
+   Both small, both real, both cheap.
 
-2. **Why this build has no remote tabs.** Three upstream urlbar files fail on it
-   and the fork is not what breaks them. `services-sync` is built and its
-   modules are in `dist/bin/modules/services-sync/`, so it is not packaging. The
-   next step is `UrlbarProviderRemoteTabs.isActive` in a driven browser with
+3. **The bare tap for a voice turn.** `GRAMMAR.md` §9 carries it. Deliberately
+   unbuilt: a mis-tap opens the microphone for the whole thirty-second
+   deadline, and how often that happens is a question about use.
+
+4. **Sustained resize of the crowded overview.** Recorded in `IDEAS.md` run 32
+   and *not* solved: the burst is fixed (53ms → 1.19ms) but one rebuild is
+   18.27ms p50, longer than a frame, so continuous resizing of the worst case
+   the design permits still costs ~21ms a frame over the control. The fix is to
+   extend the reposition fast path to cover what `render` rebuilds. Bounded
+   value — it is the deliberate worst case, and dragging a window edge with the
+   overview up is rare.
+
+5. **Why this build has no remote tabs.** Three upstream urlbar files fail on it
+   and the fork is not what breaks them. The next step is
+   `UrlbarProviderRemoteTabs.isActive` in a driven browser with
    `services.sync.username` set, not more reading.
 
-3. **The 17 timed-out urlbar files, if they are ever worth it.** The resume
-   finished: 70 failures, every one a timeout, no assertion failures anywhere in
-   the remaining 282 files. That closes the question the run was asked. Whether
-   all 17 are the one environmental teardown crash is unverified and is a
-   separate job — and a low-value one, since none of them is a claim about the
-   fork.
+6. **The rails still overlay the page.** Run 32 took them off the *toolbar*,
+   which was never a deliberate trade; covering the page still is, and STATE has
+   always said it belongs with the Field's restructure rather than piecemeal.
+   `--fos-chrome-block-start` makes taking layout space a smaller step than it
+   was, which is worth knowing when that restructure comes.
 
-4. **The embedding pass and `prune`.** Carried from Phase 2. The embedding pass
-   is what properly fixes the entity extractor's remaining limitation.
-
-5. **The active card can have no thumbnail**, and **closing the rail while the
-   Field is open leaves Escape with nowhere to go.** Both narrow, both below.
-
-6. **A region's height is a ratchet.** Recorded in `FIELD.md` §6 as open, not as
-   a defect.
+7. **The 17 timed-out urlbar files, if they are ever worth it**, and **a
+   region's height is a ratchet** (`FIELD.md` §6, open rather than a defect).
 
 ## Found this run, not yet chased
+
+- **A suite built one component at a time has nowhere to put a relation.** Every
+  assertion in this directory measures a surface; none of them asks what that
+  surface is on top of. Occlusion is a relation between two things, so it fell
+  through 656 green checks and was obvious in the first screenshot anybody
+  looked at. The cheap defence is to photograph the window; the durable one is a
+  test that names the *other* thing — "a panel starts below the toolbox" now
+  lives in `browser_designsystem.js`, which is where this fork keeps claims
+  about the window rather than about a component.
+
+- **Derived state was right and pushed state was wrong, three lines apart.**
+  `currentNodeId` reads the selected browser and cannot drift; `activeTrailId`
+  was a field updated by whatever event arrived, and `onLocationChange` arrives
+  for tabs nobody is looking at. Where a window-scoped fact can be derived from
+  what is selected, derive it — the same lesson `activeContextId`'s own comment
+  already records, arrived at again one layer down.
+
+- **A verb that fails safely fails silently, which makes it bad test setup.**
+  The screenshot run used `dismiss` to close a sidebar. It takes a required
+  target, so it parsed as an error, closed nothing and reported nothing the test
+  could see — and every picture after that point was taken of the wrong window
+  for eight runs. Using the product's own grammar to set up a test is good when
+  the grammar is what is being tested and a trap when it is not.
+
+- **A rule that is right for one signal can be wrong for the signal beside it.**
+  The unseen boolean clears on `open`, because opening the Field is what it asks
+  for. The per-card arrival state had to clear on `close` instead — copying the
+  rule next to it would have cleared the marks before the user could read them,
+  in a way that looks correct precisely because it matches its neighbour.
 
 - **A safety bound written in terms of an ordinary event stops being a bound the
   moment a mode suppresses that event.** The `LISTENING` deadline read "a listen
@@ -729,7 +794,9 @@ None.
 
 The rail **overlays** the content area rather than reflowing it, so it covers
 the left of the page while open. The context sidebar does the same on the right,
-by the same construction and with the same eventual answer. Same construction as the command bar, and
+by the same construction and with the same eventual answer. It no longer covers
+the *toolbar* — that half was never a deliberate trade, and run 32 took it back
+with `--fos-chrome-block-start`. Same construction as the command bar, and
 acceptable while both are transient overlays, but a rail meant to be read
 *beside* a page eventually has to take layout space. That belongs with the
 Field, which restructures the chrome anyway — do not fix it piecemeal first.

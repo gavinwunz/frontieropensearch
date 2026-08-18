@@ -807,3 +807,78 @@ latched user to hold a key they were not holding.
 is what a user with one reliable finger would rather have. A mis-tap would open
 the microphone for the full deadline, and how often that happens is a question
 about use rather than about design.
+
+## Run 32 — three defects a picture found, and the pointer they pointed at
+
+**Phase:** post-plan. **Task:** item 1 — the two run-23 changes that owed eyes
+rather than assertions. **Tests:** 665 browser-chrome checks, 223 node tests,
+both green; smoke run green, pictures retaken.
+
+Item 1 had been the top of the list for eight runs and had never been done,
+because every one of those runs found something in the voice path more urgent.
+It was worth the wait only in the sense that it was still there: looking at two
+pictures found three defects, and none of them was findable by reading.
+
+**The rails covered the browser.** Both panels are `position: fixed;
+inset-block: 0` and sit above the toolbox on purpose — it carries `z-index: 0`
+and would otherwise paint over them — so they ran the full height of the window.
+With the rail open there was no back, forward or reload; with the sidebar open
+there was no app menu, no extensions button, no window controls, no page actions
+and no unseen mark, which is the fork's one permanent signal covered by the
+surface that answers it. Overlaying the page is a trade this project recorded
+and accepted. Overlaying the browser came along in the same declaration and
+nothing had ever distinguished the two. `FOSChrome.trackChromeInset` measures
+the toolbox rather than declaring it, because the height is not a constant: the
+bookmarks toolbar comes and goes, the nav-bar takes the titlebar here now the
+tab strip is gone, and full screen moves the toolbox *without resizing it* —
+which is why the content box below is observed as well.
+
+**A background arrival was quietly becoming "where you are".**
+`onLocationChange` fires for every browser in the window, and `#setCurrent` took
+the trail of whichever it was handed. So a page finishing in a background tab
+moved the active trail, `#syncMarks` re-lettered to it, and with the letters
+went the context sidebar, `what`, what `name` names and the tiers the command
+bar ranks by. It was visible in the picture as two surfaces disagreeing in one
+window: the sidebar describing "Unnamed context, 1 page" with `what`'s own
+sentence a few hundred pixels below it describing "memex research, 3 pages".
+`currentNodeId` was written correctly — derived from the selected browser, and
+it cannot drift. `activeTrailId` was a pushed field three lines away, and did.
+
+**The screenshot run's reset step reset nothing.** It closed the sidebar with
+`dismiss`, a Field verb with a required target, which parsed as an error and
+closed nothing at all. So the picture meant to show "an ordinary window doing
+nothing" had a sidebar over the toolbar and a stale notice over the page, and
+could not answer the question it was taken for. Eight runs of pictures were
+taken of the wrong window. Using the product's grammar as test setup is a trap
+when the grammar is not what is being tested: a verb that fails safely fails
+silently.
+
+**Item 1's actual question, answered: yes.** The 8px accent dot reads at a
+glance and does not shout. `shot-unseen.png` is now the picture it was meant to
+be, and the toolbar in it is whole.
+
+**And the research found what the dot was missing.** Weiser and Seely Brown's
+calm-technology frame is the one the signal was already built to, and confirmed
+it — a state read on a voluntary glance, not an event. What had no evidence
+behind it was the other half: what happens after the user looks. Iqbal and
+Horvitz's CHI 2007 field study measured it directly — 27% of alert-driven
+suspensions left the prior window unvisited for over two hours, and users who
+responded at once tabbed through **7.5 applications** hunting the one that had
+alerted them. Their guideline from that data is "easy access to suspended task
+context, as thumbnails of the suspended states", which is the Field, described
+by people who measured why it was needed and did not build it. The expensive
+half of coming back is the *search*, and a boolean that opens a canvas of
+identical cards hands the user exactly that search. So the Field now says which
+card arrived: the same dot on the trail's tile, the same accent on the card and
+its miniature. It clears on close rather than on open — the boolean's own rule
+would have cleared it before it could be read, in a way that looks right because
+it matches the rule beside it.
+
+**The resize numbers, and a claim they do not support.** The burst is fixed and
+comprehensively: ten resizes in a tick cost 1.19ms against 53ms before
+coalescing. Sustained resizing of the worst case the design permits is *not*
+fixed — 41ms a frame against a 20ms control — and the reason is that one
+`crowded-overview-render` is 18.27ms, longer than a frame on its own. Coalescing
+bounded the rebuilds per frame at one; it could not make one rebuild cheap.
+Recorded rather than chased, but recorded honestly: run 18's note reads as
+though the gap was closed, and what closed was the burst.
