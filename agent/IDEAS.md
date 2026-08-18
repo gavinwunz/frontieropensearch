@@ -1766,3 +1766,103 @@ sits on the same path, because in both cases what comes out is a transcript
 handed to `FOSCommandParser`. Building PTT first therefore costs the wake-word
 layer nothing, and it is the version that can be honestly shipped without
 promising an always-listening microphone this fork has not measured.
+
+---
+
+## Run 24 — silence is not a transcript, and the tree's own speech path is a cloud service
+
+**Searched:** Whisper's behaviour on silence and non-speech audio
+(<https://github.com/openai/whisper/discussions/1606>,
+<https://github.com/openai/whisper/discussions/679>,
+<https://arxiv.org/pdf/2501.11378> "Investigation of Whisper ASR Hallucinations
+Induced by Non-Speech Audio", <https://arxiv.org/html/2505.12969v1>
+"Calm-Whisper"); ASR transcript normalisation and how voice systems handle a
+misheard word (NVIDIA Riva's ASR customisation docs, Talon's community grammar
+and its homophones mechanism —
+<https://github.com/talonhub/community>,
+<https://github.com/seananderson/talon-config/blob/master/homophones.py>,
+<https://blakewatson.com/journal/speaking-in-code-hands-free-input-with-talon/>).
+Run 23 settled the budget and the backend; this is the run that built the
+adapter, and all three findings came out of building it.
+
+### Whisper answers silence with a confident sentence
+
+**What it is:** Given silence, room tone or a door slamming, Whisper does not
+return an empty string. It returns "thank you", "thanks for watching", or the
+Korean and Japanese equivalents — training-data artifacts of captioned video.
+The literature is unambiguous that its own defence is not enough: the model
+exposes `no_speech_prob` and `avg_logprob` for exactly this, and the
+hallucinations come out with *high* confidence and low no-speech probability,
+so the thresholds that would catch them also catch real speech.
+
+**Verdict: adopt, as two defences in a fixed order.** A recording that is too
+short, too quiet or too steady is never sent to the model at all
+(`audioIsSpeech`), and a transcript that is exactly a known artifact is refused
+after (`normaliseTranscript`). The second is not belt and braces. A short loud
+noise in a quiet room clears every audio gate a JS caller can apply and is
+precisely the input that gets answered with a sentence.
+
+**Why this fork should care more than most.** Everyone building on Whisper hits
+this and treats it as a wrong-output problem. Here it is a *storage* problem: a
+phantom utterance is not only a command that runs, it is a query the Context
+Engine records as one the user asked, and it will go on ranking that user's
+suggestions afterwards. A search that ran and looked odd is visible and
+forgettable; a context quietly poisoned by enquiries nobody made is neither.
+That asymmetry is what justifies refusing a marginal utterance rather than
+attempting it — the failure of refusing is one repeated press.
+
+**Phase:** built this run. `FOSVoiceTranscript.sys.mjs`, `GRAMMAR.md` §8.
+
+### The tree already has speech recognition, and it is disqualified twice over
+
+**What it is:** `dom/media/webspeech/recognition/` implements the Web Speech
+API, and `media.webspeech.recognition.enable` turns it on. It would have been
+the cheapest possible voice path.
+
+**Verdict: reject, and it is not close.** `OnlineSpeechRecognitionService.cpp`
+POSTs the audio to `https://speaktome-2.services.mozilla.com/`. That is a cloud
+service, which the Context Engine's "no cloud, ever" rule forbids on its own,
+and it is a Mozilla endpoint, which Phase 1 spent a run removing every other
+instance of. A browser that rebrands away from Firefox and then ships the
+user's voice to Mozilla would be the single worst thing in this tree. Whisper
+on the in-tree ML runtime stays the path.
+
+**Worth keeping from it anyway:** the directory also contains
+`energy_endpointer.cc` — an energy-based endpointer, upstream's answer to
+"where does the utterance end", sitting in the tree since the Chromium import.
+It cannot be called from JS without a binding, so it is not reusable, but it is
+independent evidence that gating on energy is the right shape for the problem
+rather than a heuristic invented here. Adopt the shape, not the code.
+
+### A misheard word is offered, not repaired — and the reason is structural
+
+**What it is:** Every voice system faces near-misses: `cab` for `cap`. The
+tempting fix is to snap a token onto the closest word in the grammar's
+vocabulary, which here is small and closed — twelve verbs and twenty-six
+alphabet words — so the usual objection that normalisation needs a model does
+not apply. It would be cheap.
+
+**Verdict: reject the repair; adopt Talon's answer instead.** Two reasons, and
+the second is the one that settles it.
+
+The weaker reason is precedent: Talon has more standing on this than anyone and
+*does not* snap. It pops a menu of homophones and lets the user pick, because a
+system that silently corrects is a system that silently corrupts, and a voice
+user has no cheap way to notice.
+
+The stronger reason is that a repair pass cannot be built here without breaking
+§5. `GRAMMAR.md` §6 makes free text terminal — `name` and `search` take the
+rest of the utterance verbatim — so repairing tokens requires knowing where
+free text begins, which is to say knowing the grammar. The input adapter is the
+one place the repair could live, and §5 forbids the adapter to know the
+grammar. The alternative, putting it in the parser, would give the parser a
+modality it is defined not to have.
+
+So the answer to a misheard word is the surface that already exists: §7's
+candidate list narrows live from the same parse, so a wrong word shows a wrong
+list, and the user says the word again. Normalisation stays what it can be
+safely — case, sentence punctuation, whitespace, all of which are harmless over
+free text — and stops there.
+
+**Phase:** decided this run and recorded in `GRAMMAR.md` §8 so it is not
+reconsidered in three runs' time.

@@ -336,9 +336,40 @@ one.
   the push settles, so a refused drag leaves the height alone. 185 node tests,
   546 browser-chrome checks.
 
+- **The voice path's pure half, which is most of it.**
+  `FOSVoiceTranscript.sys.mjs` is the input adapter GRAMMAR.md §5 requires —
+  it turns what an ASR model emits into the line the keyboard would have
+  produced and knows nothing about actions, marks or the parse — and
+  `FOSVoiceSession.sys.mjs` is the push-to-talk turn as a state machine with no
+  microphone in it, so every decision the voice path makes is testable under
+  `node --test`. **Silence gets two defences, not one**: a recording too short,
+  too quiet or too steady is never sent to the model, and a transcript that is
+  exactly a known Whisper artifact is refused after — because a short loud
+  noise clears every audio gate and is exactly what gets answered with a
+  sentence. The cost of getting that wrong is not a wrong command but a query
+  the Context Engine records as one the user asked. Cancel works from every
+  state including after the transcript arrives, a late transcript after a
+  cancel does nothing, and typing wins without deleting what was typed.
+  `GRAMMAR.md` §8 is the six rules this settled, including why a misheard word
+  is offered by the existing candidate list rather than repaired — a repair
+  pass would have to know where free text begins, and §5 forbids the adapter to
+  know the grammar. 207 node tests.
+
+- **The ASR measurement is written and gated.**
+  `browser_zzvoicelatency.js` loads `whisper-tiny` q8 on both backends, times a
+  command-length utterance and a grammar-length one against run 23's ~1s / 2s
+  budget, and reports a backend the machine refuses rather than failing on it.
+  It measures latency and not accuracy — the audio is synthetic, which is sound
+  because Whisper's encoder runs a fixed 30s window whatever it is handed and
+  `max_new_tokens` holds the part that does vary at a command's length. Off
+  unless `FOS_MEASURE_ASR` is set, since the first run downloads ~75MB.
+
 ## In progress
 
 Nothing waits on a person. **Two chains, and the second waits on the first.**
+Both were still running when run 24 ended, which is why run 24 did no harness
+work at all — one mochitest at a time, and no `build faster` across a running
+one.
 
 - `fos-job-run22` — `agent/jobs/run22.sh`, log `agent/logs/run22.current`. Its
   first three steps are answered below; the last is the urlbar directory
@@ -347,21 +378,46 @@ Nothing waits on a person. **Two chains, and the second waits on the first.**
 - `fos-job-run23` — `agent/jobs/run23.sh`, log `agent/logs/run23.current`.
   Polls `systemctl --user is-active fos-job-run22` every minute, then does
   `build faster` and the whole FOS directory. **That run is the acceptance gate
-  for both of run 23's changes** — the transform-scaled overview and the
-  unseen mark — because harness time was held by run 22 for the whole of the
-  run that wrote them. Read `##### FOS SUITE EXIT` first thing.
+  for run 23's two changes** — the transform-scaled overview and the unseen
+  mark. Read `##### FOS SUITE EXIT` first thing. Note that run 23's suite will
+  now also pick up run 24's `browser_zzvoicelatency.js`, which without
+  `FOS_MEASURE_ASR` set is one passing assertion and no download.
 
-Neither change has been run in a browser yet. Both lint clean. If the suite
-failed, the two are independent and the log will say which.
+Run 24's two modules are pure and are as verified as they can be without a
+browser — 207 node tests, lint clean. What is unverified is everything with a
+microphone or a model in it, and none of that is written yet.
 
-`main` is at `phase-3`. `agent/dev` is pushed through `9b4174427e41`.
+`main` is at `phase-3`. `agent/dev` is pushed through `579356131d2a`.
 
 ## Next task
 
 The phase plan is complete, so nothing pulls the next run in a particular
 direction. Ordered by value.
 
-1. **Why this build has no remote tabs.** Three upstream files fail on it and
+1. **Run the ASR measurement.** It is written, gated and one command, and it
+   decides two things nothing else can: whether the voice path fits run 23's
+   ~1s natural / 2s tolerable budget, and which backend this fork defaults to.
+
+   ```
+   FOS_MEASURE_ASR=1 ./mach mochitest --keep-open=false \
+     browser/components/fos/tests/browser/browser_zzvoicelatency.js
+   ```
+
+   Grep the log for `##### ASR`. It downloads ~75MB on the first run, so put it
+   in a background job rather than the foreground. Expect the GPU line to be
+   absent on this machine — `checkGPUSupport()` may well refuse — and treat
+   that as a result: it means the CPU numbers are the shipping numbers.
+
+2. **Then the shell that has a microphone in it.** `FOSVoice.sys.mjs`: the key,
+   `getUserMedia` in the chrome window, capture to a Float32Array at 16kHz,
+   `audioIsSpeech` before the model, `createEngine` with the device the
+   measurement chose, and the effects from `VoiceSession` applied to the
+   command bar's input. The shape is settled and the pure half is done, so this
+   is wiring — but it is the first FOS code to ask for a device permission, and
+   what a chrome-privileged `getUserMedia` actually prompts is worth finding
+   out by driving it rather than by reading.
+
+3. **Why this build has no remote tabs.** Three upstream files fail on it and
    the fork is not what breaks them (below), so the question left is what does.
    `services-sync` is built (`MOZ_SERVICES_SYNC=1` in `config.status`) and its
    modules are in `dist/bin/modules/services-sync/`, so it is not packaging.
@@ -369,7 +425,7 @@ direction. Ordered by value.
    with `services.sync.username` set, not more reading — same lesson as run
    21's selector list.
 
-2. **Look at run 23's two changes, then finish them.** Both were written with
+4. **Look at run 23's two changes, then finish them.** Both were written with
    the harness held by run 22, so both are unverified in a browser. Once
    `run23` reports:
 
@@ -383,23 +439,13 @@ direction. Ordered by value.
      the pair that matters — the gap was ~31ms a frame — and
      `resize-burst-of-10` should be flat, since it was already 1ms.
 
-3. **The voice path.** The biggest remaining gap in the Phase 2 promise, and
-   run 23 finished its design so that the next run can build rather than read.
-   Push-to-talk first — a press, `whisper-tiny` q8 through the ML engine with
-   `device: "gpu"` and upstream's own CPU fallback, transcript echoed live into
-   the command bar input, the transcript handed to the same
-   `FOSCommandParser` the keyboard uses. The budget is ~1s from end of
-   utterance, 2s tolerable *because* of the echo. First step is a measurement,
-   not a design: `whisper-tiny` q8 on this hardware, both devices, timed from
-   end of utterance. See `IDEAS.md` run 23.
-
-4. **The embedding pass and `prune`.** Carried from Phase 2. The embedding pass
+5. **The embedding pass and `prune`.** Carried from Phase 2. The embedding pass
    is what properly fixes the entity extractor's remaining limitation.
 
-5. **The active card can have no thumbnail**, and **closing the rail while the
+6. **The active card can have no thumbnail**, and **closing the rail while the
    Field is open leaves Escape with nowhere to go.** Both narrow, both below.
 
-6. **A region's height is a ratchet.** Growth is reachable from a drag as well
+7. **A region's height is a ratchet.** Growth is reachable from a drag as well
    as from placement, and nothing shrinks a region back. Making the height the
    smallest whole number of lattice rows containing every card would be tidier
    and cannot drift, but it is a derived quantity that changes mid-drag and
@@ -949,6 +995,18 @@ repeated failure even when each run has a new explanation for it.
 
 ## Decisions taken
 
+- 2026-08-18 — **The voice front end never repairs a misheard word.** A repair
+  pass would have to know where free text begins, since `name` and `search`
+  take the rest of the utterance verbatim, and that is grammar knowledge
+  `GRAMMAR.md` §5 forbids the input adapter to hold. The answer is the
+  candidate list the bar already narrows live, which is also what Talon does.
+  `IDEAS.md` run 24.
+- 2026-08-18 — **The in-tree Web Speech API is not the voice path.**
+  `OnlineSpeechRecognitionService.cpp` POSTs audio to
+  `speaktome-2.services.mozilla.com`: a cloud service, and a Mozilla endpoint,
+  either of which disqualifies it. Whisper on the in-tree ML runtime stays the
+  path. Its `energy_endpointer.cc` is kept as evidence for the shape of the
+  audio gate, not as code to call.
 - 2026-08-18 — **The retired address bar carries the unseen state**, because it
   is the only surface this fork keeps permanently on screen. The Field has no
   chrome affordance at all — nothing in the component touches `CustomizableUI`

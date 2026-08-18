@@ -547,3 +547,44 @@ first, wake word as a second layer on the same path.
 
 Suite: not run — the harness was busy. Lint clean (eslint, stylelint) on
 everything touched.
+
+## Run 24 — 2026-08-18T22:30Z — post-phase — the voice path's pure half
+
+Both of run 22's and run 23's jobs were still running for the whole of this
+run, and harness time is exclusive, so this run took the highest-value task
+that needs neither a mochitest nor a `build faster`: the voice front end's
+pure layer, which turns out to be most of it.
+
+`FOSVoiceTranscript.sys.mjs` is the input adapter GRAMMAR.md §5 has always
+required and never had — it turns what an ASR model emits into the line the
+keyboard would have produced, and knows nothing about actions, marks or the
+parse. `FOSVoiceSession.sys.mjs` is push-to-talk as a state machine with no
+microphone in it, so every decision the voice path makes is testable under
+`node --test`: cancel from every state including after the transcript lands, a
+late transcript after a cancel doing nothing, typing winning without deleting
+what was typed, auto-repeat unable to restart the turn.
+
+The finding that shaped both is that Whisper answers silence with a confident
+sentence rather than with nothing, and that its own defence is documented as
+insufficient because the hallucinations are confident. So silence gets two
+defences in a fixed order — an audio gate before the model, a phrase list after
+— and the second is load-bearing, since a door slamming in a quiet room clears
+every gate a JS caller can apply. The reason this matters more here than in
+most Whisper work is that a phantom utterance is not only a wrong command: the
+Context Engine records it as a query the user asked, and goes on ranking by it.
+
+Two things were decided and written down rather than built. A misheard word is
+offered by the candidate list, never repaired, because a repair pass would have
+to know where free text begins and §5 forbids the adapter to know the grammar.
+And the tree's own Web Speech API is out: it POSTs audio to a Mozilla endpoint,
+which is disqualified twice over in a fork that spent Phase 1 removing exactly
+that.
+
+`browser_zzvoicelatency.js` is the measurement the next run only has to launch:
+whisper-tiny q8 on both backends against run 23's ~1s / 2s budget, gated on
+FOS_MEASURE_ASR so the suite neither downloads 75MB nor waits for it.
+
+GRAMMAR.md gains §8, IDEAS.md gains run 24. Tests: 207 node, all green. The
+harness was held all run, so nothing browser-side was run; both new modules are
+Gecko-free by construction and the one file that is not is gated off by
+default. Lint clean (eslint) on everything touched.
