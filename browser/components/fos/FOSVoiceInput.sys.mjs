@@ -24,9 +24,22 @@
  * **The key is F4, held.** A press is the whole turn: the microphone is open
  * while the key is down and closes when it comes up. F4 is unbound in this
  * browser, which is the same reason F2 carries the Field, and it is a key that
- * produces no text, so a turn cannot begin by typing one. There is no toggle
- * and no wake word yet — `GRAMMAR.md` §8 has why push-to-talk comes first, and
- * a wake word arrives on this same path when it arrives.
+ * produces no text, so a turn cannot begin by typing one. There is no wake word
+ * yet — `GRAMMAR.md` §8 has why push-to-talk comes first, and a wake word
+ * arrives on this same path when it arrives.
+ *
+ * **Shift+F4 latches the same turn**, so it starts on one press and ends on the
+ * next with nothing held in between. This is a second gesture and not a second
+ * mode: it is one flag in `FOSVoiceSession`, it ends in the same transcript, and
+ * every other way a turn can end works unchanged. It exists because holding a
+ * key is exactly what tremor, arthritis, carpal tunnel and fatigue make
+ * expensive, and `GRAMMAR.md` §5 promises no separate accessibility mode — a
+ * promise a hands-free path with one hand-intensive gesture was not keeping. A
+ * modifier is the arm rather than a bare tap because a mis-tapped latch would
+ * open the microphone for the whole 30-second deadline, and a modifier is
+ * reachable one-fingered through the platform's own sticky keys, which is a
+ * mechanism these users already have turned on. `IDEAS.md` (run 30) has the
+ * sources and the candidate that was not taken.
  *
  * **The transcript writes the command bar.** The bar opens on the press if it
  * was closed, so the words land in the field the user would have typed them
@@ -66,7 +79,7 @@ import { ensureStylesheet } from "./FOSChrome.sys.mjs";
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const STYLESHEET = "chrome://browser/content/fos/fos-voice.css";
 
-/** The talk key. Held, not tapped. */
+/** The talk key. Held on its own; latched with shift. */
 export const TALK_KEY = "F4";
 
 /**
@@ -116,6 +129,23 @@ const STAGES = {
   [LISTENING]: "Listening",
   [TRANSCRIBING]: "Working on that…",
 };
+
+/**
+ * What a latched turn adds to the indicator, which is how to end it.
+ *
+ * A held turn needs no such line: the user's own finger is the answer to "how
+ * do I stop this". A latched turn has an open microphone with nobody touching
+ * anything, and this indicator is the only signal in the browser that it is
+ * open at all (see `#indicate`), so the gesture that closes it belongs here
+ * rather than in documentation nobody reads mid-utterance. Hands-free dictation
+ * surfaces that latch put the stop control on the same indicator for the same
+ * reason.
+ *
+ * It is one string and not per stage, and the stylesheet rather than this file
+ * decides when it is legible, because the indicator must not change size in the
+ * middle of a turn — the same reason the dot is quieted rather than hidden.
+ */
+const LATCHED_HINT = `— press ${TALK_KEY} to stop`;
 
 /** One voice front end per chrome window. */
 const byWindow = new WeakMap();
@@ -417,7 +447,6 @@ export class FOSVoiceInput {
         event.altKey ||
         event.ctrlKey ||
         event.metaKey ||
-        event.shiftKey ||
         // Auto-repeat is what holding a key produces, and holding the key is
         // the entire gesture. The session ignores a press during a turn as
         // well; this is the cheaper half of the same rule.
@@ -425,7 +454,11 @@ export class FOSVoiceInput {
       ) {
         return;
       }
-      this.#press();
+      // Shift is the latch, and it is only ever read at the start of a turn:
+      // the press that ends a latched turn ends it whether or not the modifier
+      // is down, so a user who latched with shift and reached back for a bare
+      // key still stops. The session owns that rule — see `VoiceSession.press`.
+      this.#press({ latch: event.shiftKey });
       return;
     }
     if (!this.#session.active) {
@@ -443,15 +476,19 @@ export class FOSVoiceInput {
     }
   }
 
-  #press() {
+  #press({ latch = false } = {}) {
     // The bar is the surface the words appear in, so it opens with the press
     // rather than when the transcript lands: a user has to be able to see that
-    // this window is listening before they have finished saying anything.
+    // this window is listening before they have finished saying anything. The
+    // press that *ends* a latched turn finds it already open and opens nothing,
+    // so it does not take ownership of a bar the first press already owns.
     if (!this.#bar.isOpen) {
       this.#bar.open();
       this.#openedBar = true;
     }
-    this.#apply(this.#session.press({ text: this.#bar.input?.value ?? "" }));
+    this.#apply(
+      this.#session.press({ text: this.#bar.input?.value ?? "", latch })
+    );
   }
 
   // ---- effects ------------------------------------------------------------
@@ -800,6 +837,7 @@ export class FOSVoiceInput {
     }
     this.#buildIndicator();
     this.#indicator.setAttribute("data-stage", state);
+    this.#indicator.toggleAttribute("data-latched", this.#session.latched);
     this.#stage.textContent = STAGES[state] ?? "";
     this.#indicator.hidden = false;
   }
@@ -826,7 +864,15 @@ export class FOSVoiceInput {
     const stage = doc.createElementNS(HTML_NS, "span");
     stage.className = "fos-voice-stage";
 
-    indicator.append(dot, stage);
+    // Always built, shown only for a latched turn, and kept out of the
+    // accessibility tree by the same `visibility` the stylesheet uses to hold
+    // its space — so a screen-reader user is never offered a control that is
+    // not there, and the box never resizes under a sighted one.
+    const stop = doc.createElementNS(HTML_NS, "span");
+    stop.className = "fos-voice-stop";
+    stop.textContent = LATCHED_HINT;
+
+    indicator.append(dot, stage, stop);
     doc.documentElement.appendChild(indicator);
 
     this.#indicator = indicator;

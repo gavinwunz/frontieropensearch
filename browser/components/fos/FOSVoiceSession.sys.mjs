@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /**
- * Push-to-talk, as a state machine with no microphone in it.
+ * A voice turn, as a state machine with no microphone in it.
  *
  * The surface this drives is the command bar, not a second window: speech is
  * echoed into the same input the keyboard writes into, is parsed by the same
@@ -40,6 +40,12 @@
  *   half-typed line is the more interesting mixed-modality behaviour, and is
  *   deliberately not guessed at before it has been used in a browser — see
  *   `GRAMMAR.md` §8.
+ *
+ *   *There are two gestures and one turn.* Push-to-talk is the default, and a
+ *   latched turn — started by a press and ended by the next one — is that same
+ *   turn with a different ending rather than a second mode with a second path.
+ *   The whole of the difference is a handful of lines in `press` and one in
+ *   `release`, which is the test of whether it really is one path.
  *
  *   *No stage may last forever, because nothing else will end it.* This is the
  *   one rule that comes from Gecko rather than from the interface. A chrome
@@ -140,6 +146,7 @@ export class VoiceSession {
   #echo = "";
   #notice = null;
   #restore = "";
+  #latched = false;
 
   /** @returns {string} One of IDLE, ARMING, LISTENING, TRANSCRIBING. */
   get state() {
@@ -164,6 +171,19 @@ export class VoiceSession {
   /** @returns {string} What the bar held when the turn began. */
   get restoreText() {
     return this.#restore;
+  }
+
+  /**
+   * Whether this turn is latched, and so is not holding a key down.
+   *
+   * The shell reads it to say how to stop — a latched microphone is open with
+   * nobody's finger on it, so the indicator that is the only signal it is open
+   * has to carry the gesture that closes it.
+   *
+   * @returns {boolean}
+   */
+  get latched() {
+    return this.#latched;
   }
 
   #effect({
@@ -192,26 +212,55 @@ export class VoiceSession {
   #reset() {
     this.#state = IDLE;
     this.#echo = "";
+    this.#latched = false;
   }
 
   /**
    * The talk key went down.
    *
-   * Ignored while a turn is already under way, which is not a nicety: holding a
-   * key produces auto-repeat, so a press that restarted the turn would make
-   * holding the key down — the entire gesture — impossible.
+   * `latch` is the second gesture, and it is a gesture rather than a second
+   * mode: a latched turn arms, listens, transcribes and runs down exactly this
+   * path, and the only thing that differs is which event ends it. Holding the
+   * key stays the default, because a held key makes the microphone's state
+   * something the user is continuously doing. But sustained pressure is
+   * precisely what tremor, arthritis, carpal tunnel and fatigue make expensive,
+   * and dictation tools written for those users converge on tap-to-start,
+   * tap-to-stop — so a voice path whose only gesture is a held key has quietly
+   * excluded part of the audience `GRAMMAR.md` §5's "no separate accessibility
+   * mode" was written for. `IDEAS.md` (run 30) carries the sources.
+   *
+   * A press during a turn is otherwise ignored, which is not a nicety: holding
+   * a key produces auto-repeat, so a press that restarted the turn would make
+   * holding the key down — the entire gesture — impossible. The exception is
+   * the latched turn, where the next press is the half of the gesture that ends
+   * it, and where *any* press ends it rather than only a latching one. That
+   * forgiveness is deliberate and asymmetric on purpose: a user who latched and
+   * then reached for the key without the modifier has asked to stop, ending a
+   * turn early costs one utterance, and failing to end one leaves a microphone
+   * open that nothing in the platform will draw an indicator for.
+   *
+   * Stopping a latched turn before the microphone ever opened is a cancel
+   * rather than a refusal. Nothing was recorded and the user chose to stop, so
+   * there is nothing to tell them — and "hold the key down while you speak" is
+   * advice about a gesture they deliberately did not use.
    *
    * @param {object} [options]
    * @param {string} [options.text] What the bar holds now, to be restored if
    *   the turn does not produce a usable transcript.
+   * @param {boolean} [options.latch] Start a latched turn, which the next
+   *   press ends rather than a key coming up.
    */
-  press({ text = "" } = {}) {
+  press({ text = "", latch = false } = {}) {
     if (this.active) {
+      if (this.#latched) {
+        return this.#state === ARMING ? this.cancel() : this.#finish();
+      }
       return this.#effect();
     }
     this.#restore = typeof text === "string" ? text : "";
     this.#echo = "";
     this.#notice = null;
+    this.#latched = !!latch;
     return this.#enter(ARMING, { capture: "start" });
   }
 
@@ -245,11 +294,33 @@ export class VoiceSession {
   /**
    * The talk key came up.
    *
-   * Coming up before the microphone opened is a tap rather than a turn — there
+   * A latched turn ignores it, and has to: the key that started the turn is
+   * released immediately, since not holding it is the entire point. What ends a
+   * latched turn is the next press, or one of the endings every turn already
+   * has — Escape, a lost focus, or the `LISTENING` deadline.
+   */
+  release() {
+    if (this.#latched) {
+      return this.#effect();
+    }
+    return this.#finish();
+  }
+
+  /**
+   * Stop recording, whatever asked for it.
+   *
+   * The key coming up, the second press of a latched turn and the listening
+   * deadline running out all mean one thing — no more audio — so they share
+   * this, and a way to end a turn added later cannot accidentally become a way
+   * to end it *differently*. The deadline in particular goes through here and
+   * not through `release`, because a latched turn ignores `release` and would
+   * otherwise be the one turn in the design that nothing bounded.
+   *
+   * Stopping before the microphone opened is a tap rather than a turn — there
    * is no audio to transcribe — and is refused with the same reason a recording
    * too short to be speech gets, because to the user it is the same mistake.
    */
-  release() {
+  #finish() {
     if (this.#state === ARMING) {
       this.#reset();
       this.#notice = NOTICE_TOO_SHORT;
@@ -398,6 +469,9 @@ export class VoiceSession {
    * was lost it is a room the user has stopped talking in — so it is
    * transcribed rather than discarded, and the two cases need no telling apart:
    * a long utterance transcribes, and a room does not clear the audio gate.
+   * This is the only bound a latched turn has, since a latched turn has no key
+   * coming up to end it, which is why it ends the recording directly rather
+   * than through `release`.
    *
    * An arm or a transcribe that runs out is the failure that stage reports
    * anyway. The device never opened, or the engine never answered; either way
@@ -406,7 +480,7 @@ export class VoiceSession {
    */
   expired() {
     if (this.#state === LISTENING) {
-      return this.release();
+      return this.#finish();
     }
     if (this.#state === ARMING || this.#state === TRANSCRIBING) {
       return this.failed();

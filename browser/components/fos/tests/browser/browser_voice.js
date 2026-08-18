@@ -152,6 +152,30 @@ async function holdTalkKey() {
   );
 }
 
+/**
+ * Latch a turn with shift, and let the key go.
+ *
+ * The key-up is sent immediately and deliberately, usually while the turn is
+ * still arming: a latched turn that could be killed by the release of the very
+ * key that started it would be no use to the users it exists for.
+ */
+async function latchTalkKey() {
+  EventUtils.synthesizeKey(
+    `KEY_${TALK_KEY}`,
+    { type: "keydown", shiftKey: true },
+    win
+  );
+  EventUtils.synthesizeKey(
+    `KEY_${TALK_KEY}`,
+    { type: "keyup", shiftKey: true },
+    win
+  );
+  await TestUtils.waitForCondition(
+    () => voice().state === LISTENING,
+    "the latched turn reaches listening"
+  );
+}
+
 /** Let it go, and wait until the turn is over. */
 async function releaseTalkKey() {
   talkKey("keyup");
@@ -215,6 +239,99 @@ add_task(async function test_the_key_is_bound_and_a_press_is_the_whole_turn() {
   Assert.deepEqual(ran, ["what"], "and the line it heard ran");
   Assert.ok(!bar().isOpen, "the bar closed behind the command");
   Assert.equal(indicator().hidden, true, "the indicator is gone");
+});
+
+add_task(async function test_shift_latches_a_turn_that_no_key_is_holding() {
+  // The second gesture, and the users it is for are the ones a held key
+  // excludes. It is the same turn — same device, same model, same line handed
+  // to the same parser — and the only difference is that the key comes up in
+  // the middle of it rather than ending it.
+  const mic = backend({ transcript: " what" });
+  const ran = [];
+  bar().actions.register("what", command => {
+    ran.push(command.action);
+    return true;
+  });
+
+  await latchTalkKey();
+
+  Assert.ok(mic.open, "the microphone is open with no key held down");
+  Assert.equal(mic.stopped, 0, "the key coming up stopped nothing");
+  Assert.equal(mic.aborted, 0, "and abandoned nothing");
+  Assert.equal(
+    indicator().getAttribute("data-stage"),
+    LISTENING,
+    "and the turn is listening, not over"
+  );
+
+  // A press without the modifier ends it. A user who latched with shift and
+  // then reached back for the key alone has asked to stop, and ending a turn
+  // early costs an utterance where failing to end one costs an open
+  // microphone that nothing in the platform will draw an indicator for.
+  talkKey("keydown");
+  await TestUtils.waitForCondition(
+    () => voice().state === IDLE,
+    "the second press ends the turn"
+  );
+
+  Assert.equal(mic.stopped, 1, "the second press closed the device");
+  Assert.ok(!mic.open);
+  Assert.equal(mic.requests.length, 1, "the model was asked once");
+  Assert.deepEqual(ran, ["what"], "and the line ran, as a held turn's does");
+  Assert.equal(indicator().hidden, true, "the indicator is gone");
+
+  talkKey("keyup");
+  Assert.equal(voice().state, IDLE, "that press's own key-up starts nothing");
+});
+
+add_task(async function test_a_latched_turn_says_how_to_stop() {
+  // A held turn's answer to "how do I stop this" is the finger already on the
+  // key. A latched turn has an open microphone that nobody is touching, and
+  // this indicator is the only thing in the browser that says so, so it is
+  // where the gesture that closes it has to be.
+  backend();
+  const stop = () => win.document.querySelector(".fos-voice-stop");
+
+  await holdTalkKey();
+  Assert.equal(
+    win.getComputedStyle(stop()).display,
+    "none",
+    "a held turn offers no stop line, because the key is the answer"
+  );
+  EventUtils.synthesizeKey("KEY_Escape", {}, win);
+  Assert.equal(voice().state, IDLE, "cancelled");
+
+  await latchTalkKey();
+  Assert.notEqual(
+    win.getComputedStyle(stop()).display,
+    "none",
+    "a latched turn offers one"
+  );
+  Assert.ok(
+    stop().textContent.includes(TALK_KEY),
+    "naming the key that ends it"
+  );
+
+  // Once the model is working a press would do nothing, so the line goes — but
+  // its space stays, or the indicator would resize under the eye that is
+  // reading it. Driven on the element rather than through a turn, because
+  // holding a real turn in `transcribing` needs a model that hangs.
+  const element = indicator();
+  const width = element.getBoundingClientRect().width;
+  element.setAttribute("data-stage", "transcribing");
+  Assert.equal(
+    win.getComputedStyle(stop()).visibility,
+    "hidden",
+    "the line goes when a press would do nothing"
+  );
+  Assert.equal(
+    element.getBoundingClientRect().width,
+    width,
+    "and its space does not, so the indicator holds still"
+  );
+
+  EventUtils.synthesizeKey("KEY_Escape", {}, win);
+  Assert.equal(voice().state, IDLE, "cancelled");
 });
 
 add_task(async function test_a_transcript_is_a_line_like_any_other() {

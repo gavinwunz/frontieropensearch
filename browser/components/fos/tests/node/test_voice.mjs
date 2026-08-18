@@ -242,6 +242,88 @@ test("auto-repeat cannot restart a turn, which is what makes holding a key the g
   assert.equal(session.restoreText, "half typed", "and so did the snapshot");
 });
 
+/*
+ * The latch. A second gesture on the same turn, not a second mode — so what
+ * these check is mostly that everything else is unchanged by it.
+ */
+
+test("a latched turn survives the key coming up, and the next press ends it", () => {
+  const session = new VoiceSession();
+  session.press({ text: "half typed", latch: true });
+  assert.equal(session.latched, true);
+  session.armed();
+
+  const up = session.release();
+  assert.equal(up.capture, null, "the key coming up does not close the device");
+  assert.equal(up.deadline, null, "and does not restart the clock");
+  assert.equal(session.state, LISTENING, "the turn is still listening");
+
+  const ended = session.press({ text: "half typed" });
+  assert.equal(ended.capture, "stop", "the next press closes it");
+  assert.equal(session.state, TRANSCRIBING);
+  assert.equal(session.final(" Enter cap.").run, "enter cap", "and it runs");
+  assert.equal(session.latched, false, "the latch does not outlive the turn");
+});
+
+test("any press ends a latched turn, not only a latching one", () => {
+  // Ending a turn early costs one utterance; failing to end one leaves a
+  // microphone open that nothing in the platform will draw an indicator for.
+  // So the press that stops is forgiving about the modifier that the press
+  // which started was not.
+  for (const latch of [false, true]) {
+    const session = new VoiceSession();
+    session.press({ text: "", latch: true });
+    session.armed();
+    const ended = session.press({ text: "", latch });
+    assert.equal(ended.capture, "stop", `a press with latch=${latch} stops it`);
+    assert.equal(session.state, TRANSCRIBING);
+  }
+});
+
+test("a held turn is not latched by a press that carries the modifier", () => {
+  const session = new VoiceSession();
+  session.press({ text: "kept" });
+  session.armed();
+
+  const again = session.press({ text: "kept", latch: true });
+  assert.equal(again.capture, null, "a press during a held turn is ignored");
+  assert.equal(session.latched, false, "and cannot latch it mid-utterance");
+  assert.equal(session.release().capture, "stop", "the key still ends it");
+});
+
+test("a latched turn stopped before the microphone opened complains about nothing", () => {
+  const session = new VoiceSession();
+  session.press({ text: "memex", latch: true });
+  assert.equal(session.state, ARMING);
+
+  const ended = session.press({ text: "memex" });
+  assert.equal(ended.state, IDLE, "the turn is over");
+  assert.equal(ended.capture, "stop", "and the device is closed");
+  assert.equal(ended.notice, null, "with nothing to tell the user");
+  assert.equal(ended.input, "memex", "and the line comes back");
+
+  // The same stage reached by the same event on a held turn *is* a mistake —
+  // the key came up before it could hear anything — and still says so.
+  const held = new VoiceSession();
+  held.press({ text: "memex" });
+  assert.equal(held.release().notice, NOTICE_TOO_SHORT);
+});
+
+test("the listening deadline bounds a latched turn, which has no key to end it", () => {
+  // The load-bearing one. A latched turn ignores `release`, so a deadline that
+  // ended a listen by way of `release` would bound every turn in the design
+  // except the only one with nobody's finger on the key.
+  const session = new VoiceSession();
+  session.press({ text: "", latch: true });
+  assert.equal(session.armed().deadline, LISTENING_DEADLINE_MS);
+
+  const out = session.expired();
+  assert.equal(out.capture, "stop", "the microphone closed");
+  assert.equal(session.state, TRANSCRIBING, "and what it heard is transcribed");
+  session.final("[BLANK_AUDIO]");
+  assert.equal(session.state, IDLE, "the turn ends");
+});
+
 test("a tap that never reaches the microphone is refused as too short", () => {
   const session = new VoiceSession();
   session.press({ text: "memex" });
@@ -364,15 +446,23 @@ test("events out of order are ignored rather than half-applied", () => {
  *
  * @param {string} stage
  * @param {string} [text] What the bar held when the turn began.
+ * @param {boolean} [latch] Reach the stage by the latched gesture instead.
  */
-function at(stage, text = "kept") {
+function at(stage, text = "kept", latch = false) {
   const session = new VoiceSession();
-  session.press({ text });
+  session.press({ text, latch });
   if (stage !== ARMING) {
     session.armed();
   }
   if (stage === TRANSCRIBING) {
-    session.release();
+    // Each gesture reaches the stage by its own means: a held turn by the key
+    // coming up, a latched one by the press that ends it, which is the whole
+    // of the difference between them.
+    if (latch) {
+      session.press({ text });
+    } else {
+      session.release();
+    }
   }
   assert.equal(session.state, stage);
   return session;
@@ -495,6 +585,10 @@ test("a transcript arriving after a blur does nothing, as after a cancel", () =>
  * every abandoning event from every stage is what makes it a property of the
  * machine.
  *
+ * It runs over both gestures, because a latched turn is the one that has no
+ * finger on a key and so is the one where a microphone left open would be least
+ * likely to be noticed.
+ *
  * These five are the events that mean "this turn is over" whenever they arrive.
  * `release` and `final` are deliberately not among them: they are the ordinary
  * progress of a turn and are only defined at the stage they belong to, which
@@ -510,26 +604,37 @@ test("every way out of every stage closes the microphone and lands on idle", () 
     expired: s => s.expired(),
   };
 
-  for (const stage of [ARMING, LISTENING, TRANSCRIBING]) {
-    for (const [event, end] of Object.entries(enders)) {
-      const session = at(stage);
-      const where = `${event} from ${stage}`;
+  for (const latch of [false, true]) {
+    for (const stage of [ARMING, LISTENING, TRANSCRIBING]) {
+      for (const [event, end] of Object.entries(enders)) {
+        const session = at(stage, "kept", latch);
+        const where = `${event} from ${stage}${latch ? " (latched)" : ""}`;
 
-      let effect = end(session);
-      // release and expired hand a listen on to be transcribed rather than
-      // ending the turn; the microphone must already have closed, and the one
-      // stage left has to end too.
-      if (session.state === TRANSCRIBING) {
-        assert.equal(effect.capture, "stop", `${where} closed the microphone`);
-        effect = session.final("[BLANK_AUDIO]");
+        let effect = end(session);
+        // release and expired hand a listen on to be transcribed rather than
+        // ending the turn; the microphone must already have closed, and the
+        // one stage left has to end too.
+        if (session.state === TRANSCRIBING) {
+          assert.equal(
+            effect.capture,
+            "stop",
+            `${where} closed the microphone`
+          );
+          effect = session.final("[BLANK_AUDIO]");
+        }
+
+        assert.equal(session.state, IDLE, `${where} reached idle`);
+        assert.equal(
+          session.active,
+          false,
+          `${where} left no timer for the shell to run`
+        );
+        assert.equal(
+          session.latched,
+          false,
+          `${where} left no latch behind either`
+        );
       }
-
-      assert.equal(session.state, IDLE, `${where} reached idle`);
-      assert.equal(
-        session.active,
-        false,
-        `${where} left no timer for the shell to run`
-      );
     }
   }
 });

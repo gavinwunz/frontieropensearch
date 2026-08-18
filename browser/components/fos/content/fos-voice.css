@@ -70,6 +70,31 @@
     font-weight: var(--fos-font-weight-emphasis);
   }
 
+  /* How to end a latched turn.
+   *
+   * A held turn needs no such line, because the finger holding the key is the
+   * answer; a latched turn has an open microphone that nobody is touching, and
+   * this element is the only thing in the browser that says so. It is quiet
+   * rather than emphasised: it is an instruction standing next to a statement
+   * about a live device, and the device is what has to be read first. */
+  .fos-voice-stop {
+    color: var(--fos-text-color-quiet);
+  }
+
+  .fos-voice-indicator:not([data-latched]) .fos-voice-stop {
+    display: none;
+  }
+
+  /* Once the model is working the microphone is already shut and a press would
+     do nothing, so the line goes — but its space does not. `visibility` rather
+     than `display` for exactly the reason the dot is quieted rather than
+     hidden: a latched turn's indicator must not change size under the eye that
+     is reading it. It leaves the accessibility tree too, which is the same
+     statement made to a screen reader. */
+  .fos-voice-indicator[data-latched][data-stage="transcribing"] .fos-voice-stop {
+    visibility: hidden;
+  }
+
   @keyframes fos-voice-pulse {
     0%,
     100% {
