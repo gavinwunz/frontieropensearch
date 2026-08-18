@@ -424,3 +424,76 @@ upstream suite must not be read as a fork defect before checking the file alone.
 
 Suite: 546 FOS browser-chrome checks green, 185 node tests green, 0 failures,
 lint clean.
+
+## Run 22 — 2026-08-18 — four failures that were not ours, and a resize that stopped rebuilding
+
+Run 21 left the whole urlbar directory running against the newly pinned
+manifests and said to read it first, because a real failure there would be a
+genuine incompatibility between this fork and a restored address bar. It had
+reached 115 of 397 files with four such failures — every other unexpected
+result was the teardown crash or the missing clipboard, both already known to
+be environmental.
+
+**All four turned out not to be the fork's, and the way that was established is
+the transferable part.** Each file was run twice, alone and with all three FOS
+surface prefs off, and the pair answers the question that a suite log cannot.
+`browser_autoselect.js` passes 40 of 40 alone, having produced ten unexpected
+failures inside the directory run. The other three want a *remote* tab —
+`test_remote_tab_result`, the `remote_tab` telemetry group, a SyncedTabs
+fixture — and fail identically with the fork switched out of the window, so
+whatever stops remote tabs appearing in this build, it is not these surfaces.
+That question is now the top of the standing list with its next step named:
+`services-sync` is built and its modules are in `dist/bin`, so the thing to do
+is ask `UrlbarProviderRemoteTabs.isActive` in a driven browser rather than read
+any more code.
+
+The pattern behind the fourth is worth more than the file. **Every one of the
+four failing files immediately followed a file that timed out**, and the
+timeouts are the environmental crash. A failure that follows a timeout in this
+suite is a claim about the harness until the file has been run alone — read the
+file list, not only the failure list.
+
+The directory run was then stopped at 115 files, deliberately and not because
+of anything it found. Harness time here is exclusive — one mochitest at a time,
+and `build faster` rewrites files the running browsers read — so it was going
+to hold everything for another two hours, and `--start-at` resumes it for
+nothing. It is resumed now, at the end of a chain that ran the triage and this
+run's change first. That ordering is the lesson: a job that has to follow
+another belongs in the same script waiting on the unit, not in a second unit
+racing it.
+
+**The overview stopped rebuilding itself on a resize.** Run 18 measured the
+Field and left one number standing — a crowded overview, twelve trails and 480
+cards, costs 17.6ms to render and does not fit in a frame however few times per
+frame it runs. The resize comment in the surface already said what a resize
+means here, nothing moves and the same arrangement is drawn at a different
+scale, and the region level already had `#applyPositions` for exactly that; the
+overview did not, so it went through the rebuild. It has a reposition path now,
+four declarations per element and the tree left alone, with every refusal being
+a difference between what is drawn and what the model says and all of them
+falling back to the rebuild. The writes are collected before any is applied,
+because a refusal found halfway would leave half the overview at each scale and
+the rebuild would then be repairing a surface this path had broken.
+
+`resize-burst-of-10` goes from 7.6ms to **p50 0.99ms**. The real gesture
+improved by much less — 50.4ms a frame against an 18.8ms control, where run 18
+saw 65 against 23 — and the two numbers disagree honestly: the burst coalesces
+ten events into one pass and a real drag delivers one pass per frame, so what
+is left is one reposition of 489 elements. The next rung is therefore a
+different idea rather than more of this one, and it is written up with numbers:
+a `transform: scale()` on each tile's body makes a resize nine writes instead
+of 489, and is faithful precisely where the region level's would not be, since
+a miniature is a plain box and a card carries a caption that must not scale.
+
+**Research settled the background-tab signal's form**, which run 16 left open
+with three candidates. Both ends of the obvious range are ruled out by
+evidence rather than taste: motion at the window margin captures attention
+involuntarily, which is the attention shift an ambient display is *defined* by
+not requiring, and a slow fade runs into slow change blindness, which survives
+the change being large, in full view and about something the observer cares
+about. What is left is a persistent binary state, read on the next voluntary
+glance and cleared by opening the Field — not an event and not a drift. Which
+surface carries it is now a question to answer in a running browser.
+
+Suite: the whole FOS directory green, 0 unexpected, `browser_field.js` at 116
+checks. Lint clean.

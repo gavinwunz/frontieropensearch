@@ -1589,3 +1589,91 @@ presses that control. Nothing in reading the list could have found it; one
 This is the same lesson as the UA-stylesheet ring in run 19 and
 `--font-size-small` before it, arriving a third time from a third direction:
 **the tree does not tell you what it does, and the running browser does.**
+
+## Run 22 — the background-tab signal, settled against itself
+
+**Searched:** attentional capture by motion onset (Franconeri & Simons and the
+Springer/APP literature that followed, <https://link.springer.com/article/10.3758/s13414-018-1548-1>
+and <https://link.springer.com/article/10.3758/BF03205298>); slow change
+blindness (<https://pmc.ncbi.nlm.nih.gov/articles/PMC11401121/>, and NN/g's
+version of it for interfaces, <https://www.nngroup.com/videos/change-blindness/>);
+animation in peripheral displays.
+
+Run 16 left the *channel* open with three candidates — the Field's own edge,
+the command bar's resting state, motion at the window margin — and said it
+wanted a design pass rather than a guess. This is the pass, and the two
+literatures settle it by ruling out both ends of the obvious range.
+
+**Reject: motion at the window margin.** Motion onset captures attention in a
+stimulus-driven way, whether or not the moving thing is task-relevant, and the
+periphery is where it works best. That is not a weak version of a notification;
+it is the strongest one available, and it is disqualified by the exact bar run
+16 adopted — an ambient display succeeds when it changes awareness *without
+requiring an attention shift*. Motion is the mechanism that forces the shift.
+A tab arriving in the background is by definition not what the user is doing,
+so a signal that seizes the eye is a worse interruption than the toast run 16
+already rejected, not a gentler one.
+
+**Reject the other end too, and this is the part that is not obvious: a slow
+fade.** The natural repair for "too attention-grabbing" is to make the change
+gradual, and gradual change is the one kind reliably not seen at all. Slow
+change blindness survives the change being large, in full view, centrally
+located, and about something the observer cares about. So a signal that eases
+in over a second is not a quieter signal; it is often no signal.
+
+**Adopt: a step change that persists, and is read on the next voluntary
+glance.** What is left when both an event and a drift are ruled out is a
+*state*. The arrival is not announced at all — it is recorded, discretely, and
+the record sits there until the Field is opened. The user is never interrupted,
+because nothing about the transition is designed to be caught; the question it
+answers is "has anything arrived since I last looked?", and it is answered at
+the moment they choose to ask.
+
+Two consequences fall out of that framing rather than out of taste:
+
+- **Binary, not a count.** The state is "something unseen", not "seven
+  unseen". Run 16 rejected a count badge for rebuilding the tab strip's worst
+  property — a number that grows and shames — and the glance framing rejects it
+  a second way: a count is only worth rendering if it is worth reading
+  precisely, and nobody reads a peripheral number precisely.
+- **Cleared by looking, not by dismissing.** Opening the Field is what the
+  state is for, so it is also what ends it. A signal with its own dismissal is
+  a second thing to do about a page you have not read yet.
+
+**Still open, and now a smaller question:** which persistent surface carries
+the state. Two candidates survive — the Field's own affordance and the command
+bar's resting state — and the choice turns on which one is actually on screen
+in the fork's ordinary window, which is a thing to check in a running browser
+rather than reason about. This is the same lesson as run 21's selector list.
+
+### The reposition path, measured, and what it leaves
+
+`resize-burst-of-10` — ten resize events in one tick, which is the gesture with
+the compositor's share taken out — goes **7.6ms → p50 0.99ms, p95 1.86ms**.
+Against the 53ms it cost before run 18's coalescing, that is the whole of the
+synthetic burst gone.
+
+The real gesture improved by much less: `crowded-overview-resizing-frame` p50
+50.4ms against a `closed-field-resizing-frame` control of 18.8ms, where run 18
+measured p95 65ms against 23ms. So the gap a real window drag opens is ~31ms
+per frame and was ~42ms. The two numbers disagree because they measure
+different things and both are honest: the burst coalesces ten events into one
+pass, and a real resize delivers one pass per frame, so what is left is the
+cost of *one* reposition of 489 elements — 480 miniatures and nine tiles.
+
+**The next rung, and it is a different idea rather than more of this one.** A
+reposition still writes four declarations per miniature, so it is O(cards) in
+style and in layout. Scaling is what a transform is for: if a tile's body
+carried `transform: scale(s)` with `transform-origin` at its top left and its
+miniatures were positioned in unscaled field units, a resize would be **one
+write per tile** — nine — instead of one per card, and the scaling itself would
+be the compositor's rather than layout's. The nest needs a wrapper per region
+to carry its own translate, which is the structural part and why this is its
+own task.
+
+Worth noting what makes this legitimate here and not everywhere: a miniature is
+a plain box with a background image and nothing about it should stay a fixed
+size as the tile shrinks — which is exactly the case where a transform is
+faithful rather than a shortcut. The region level is the opposite case, and is
+why it keeps its rebuild: its cards carry captions and marks whose size must
+*not* follow the scale.

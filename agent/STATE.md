@@ -338,69 +338,96 @@ one.
 
 ## In progress
 
-`fos-job-urlbarall.service` is running the whole of
-`browser/components/urlbar/tests/` against the newly pinned manifests —
-`agent/logs/urlbarall.current`. At 53 files it had **0 unexpected failures**
-and 7 timeouts, all of them environmental (see the crash note below). ~6 hours
-for 397 files, and it survives a restart, so read it at the start of the next
-run rather than starting it again. `main` is still at `phase-3`; `agent/dev` is
-three commits ahead and pushed.
+Nothing waits on a person. `fos-job-run22` is a chain — `agent/jobs/run22.sh`,
+log `agent/logs/run22.current`, one `#####` line per step — and its last step
+is the urlbar directory resumed with `--start-at
+browser-telemetry/browser_handoff.js`, which is about two hours. Grep the log
+for `#####` first; the steps before it are already answered below.
+
+`main` is at `phase-3`. `agent/dev` is pushed.
 
 ## Next task
 
-The phase plan is complete, so there is no criterion pulling the next run in a
-particular direction. The list below is ordered by value, not by urgency.
+The phase plan is complete, so nothing pulls the next run in a particular
+direction. Ordered by value.
 
-1. **Read `agent/logs/urlbarall.current` first.** If it finished, the number
-   that matters is unexpected *failures*, not timeouts — every timeout seen so
-   far is the teardown crash or a missing clipboard, both environmental and
-   both verified as such. Any real failure is a genuine incompatibility between
-   this fork and a restored address bar, and is the highest-value thing in the
-   tree.
+1. **Why this build has no remote tabs.** Three upstream files fail on it and
+   the fork is not what breaks them (below), so the question left is what does.
+   `services-sync` is built (`MOZ_SERVICES_SYNC=1` in `config.status`) and its
+   modules are in `dist/bin/modules/services-sync/`, so it is not packaging.
+   The next step is `UrlbarProviderRemoteTabs.isActive` in a driven browser
+   with `services.sync.username` set, not more reading — same lesson as run
+   21's selector list.
 
-2. **The overview's reposition-only path.** One crowded-overview rebuild is
-   17.6ms and does not fit in a frame. `IDEAS.md` run 18 has the numbers and
-   the shape of the fix. Not urgent — a level switch is one keystroke and one
-   dropped frame.
+2. **Which surface carries the background-tab signal.** Run 22 settled its
+   *form* from the literature and both ends of the obvious range are ruled out:
+   not motion at the margin, which captures attention involuntarily and so
+   fails the ambient bar, and not a slow fade, which slow change blindness says
+   is often no signal at all. What is left is a persistent binary state, read
+   on the next voluntary glance and cleared by opening the Field. Two candidate
+   surfaces survive and the choice turns on which is actually on screen in an
+   ordinary window — check it in a running browser. See `IDEAS.md` run 22.
 
-3. **A background tab still arrives with no signal at all.** Ambient-display
-   research is in `IDEAS.md`.
+3. **Scale the overview with a transform instead of a write per card.** The
+   reposition path landed this run and took the synthetic resize burst from
+   7.6ms to 1ms, but a real window drag still costs ~31ms a frame more with
+   the Field open than without it, because one pass still writes four
+   declarations for each of 480 miniatures. A `transform: scale()` on each
+   tile's body, with miniatures positioned in unscaled field units, makes a
+   resize nine writes rather than 489. The nest needs a wrapper per region to
+   carry its own translate, which is the structural part. Numbers and the
+   reason it is faithful here and not at the region level: `IDEAS.md` run 22.
 
-4. **The embedding pass, `prune`, and the voice path.** All carried over from
-   Phase 2. The embedding pass is what properly fixes the entity extractor's
-   remaining limitation; the voice path is the second half of the grammar's
-   hands-free promise, of which one end-to-end path exists.
+4. **The embedding pass, `prune`, and the voice path.** Carried from Phase 2.
+   The embedding pass is what properly fixes the entity extractor's remaining
+   limitation; the voice path is the second half of the grammar's hands-free
+   promise, of which one end-to-end path exists.
 
-5. **A region's height is a ratchet.** Growth is now reachable from a drag as
-   well as from placement, and nothing ever shrinks a region back. Making the
-   height the smallest whole number of lattice rows that contains every card
-   would be tidier and cannot drift, but it is a derived quantity that changes
-   mid-drag and could rescale the region twice in one gesture — a worse promise
-   to break than an untidy height. Recorded in `FIELD.md` §6 as open, not as a
-   defect.
-
-6. **The active card can have no thumbnail**, and **closing the rail while the
+5. **The active card can have no thumbnail**, and **closing the rail while the
    Field is open leaves Escape with nowhere to go.** Both narrow, both below.
+
+6. **A region's height is a ratchet.** Growth is reachable from a drag as well
+   as from placement, and nothing shrinks a region back. Making the height the
+   smallest whole number of lattice rows containing every card would be tidier
+   and cannot drift, but it is a derived quantity that changes mid-drag and
+   could rescale a region twice in one gesture — a worse promise to break than
+   an untidy height. Recorded in `FIELD.md` §6 as open, not as a defect.
 
 ## Found this run, not yet chased
 
-- **A content process crashes on `about:newtab` at the teardown of every test
-  file, and it is environmental.** Signal 11, "remote browser crashed while
-  on about:newtab", once per file. Previously recorded only for
-  `browser_bfcache_exemption_about_pages.js`; it is in fact universal to this
-  build — verified by running one upstream `tabbrowser` file and one FOS file
-  and counting the crash in both, while both passed. Most files survive it;
-  roughly one in eight escalates into a four-minute timeout, which is what
-  makes a 397-file upstream directory a six-hour job here. No stack is
-  available: the crash reporter is disabled at build time, `ulimit -c` is 0 and
-  apport owns `core_pattern`, so getting one is its own task. Do not read a
-  timeout in an upstream suite as a fork defect without first checking whether
-  the file passes alone.
+- **The four real failures in the urlbar directory are not this fork's.** Run
+  21 pinned the address-bar pref in all eighteen manifests and started the
+  directory; 115 files in, four failed for reasons that were neither the
+  teardown crash nor the missing clipboard. `agent/jobs/urlbar-triage.sh` ran
+  each one twice — alone, and with all three FOS surface prefs off — and the
+  pair is the whole answer:
 
-- **Some upstream timeouts are the sandbox, not the crash.**
-  `browser-editing/browser_clipboard.js` times out on
-  `testFormattingOfClipboardSuggestion` alone as well as in the suite. No
-  clipboard, so a second cause of timeout that also is not this fork's.
+  | file | alone | every FOS surface off |
+  | --- | --- | --- |
+  | `browser-results/browser_autoselect.js` | passes 40/40 | passes |
+  | `browser-searchMode/browser_excludeResults.js` | fails | fails identically |
+  | `browser-UrlbarView/browser_resultTypes_display.js` | fails | fails identically |
+  | `browser-engagementTelemetry/browser_glean_telemetry_abandonment_groups.js` | fails | fails identically |
+
+  Three of the four want a *remote* tab — `test_remote_tab_result`, the
+  `remote_tab` group, "We have three results — 1 == 3" on a SyncedTabs
+  fixture — and fail the same way with the fork switched out of the window.
+  That is item 1 above.
+
+- **The fourth was the suite, not the file.** `browser_autoselect.js` passes
+  alone and passed with the fork off, and in the directory run it produced ten
+  unexpected failures. Every one of the four failing files in that run
+  *immediately followed a file that timed out*, and the timeouts are the
+  environmental teardown crash. So a failure that follows a timeout in this
+  suite is a claim about the harness until it has been run alone. **Read the
+  file list, not only the failure list.**
+
+- **A whole-directory run holds the harness exclusively, and that is the real
+  cost.** One mochitest at a time — it binds 8888 — and `build faster` rewrites
+  files the running browsers read. The urlbar directory was stopped at 115 of
+  397 files for that reason and not because of anything it found:
+  `--start-at <file>` resumes it for nothing, so the two hours it was going to
+  hold were worth more spent on the triage and on this run's change.
 
 - **The entity extractor glues a sentence-initial capital to the name after
   it.** "Reading Project Xanadu" comes out as one phrase. Documented in the
@@ -475,12 +502,17 @@ build input is not.
 
 ## Background jobs
 
-`urlbarall` — the whole of `browser/components/urlbar/tests/` against the newly
-pinned manifests. Started with `./agent/bg.sh <name> <cmd>`; check with
-`./agent/bg-status.sh`. Read this one before starting anything.
-Each runs as its own transient systemd unit `fos-job-<name>.service`, in
-`app.slice` beside `fos.service` rather than inside it, which is what makes it
-survive a restart. `agent/logs/<name>.current` symlinks the live log.
+`run22` — the chain in `agent/jobs/run22.sh`. Started with
+`./agent/bg.sh <name> <cmd>`; check with `./agent/bg-status.sh`. Read this one
+before starting anything. Each runs as its own transient systemd unit
+`fos-job-<name>.service`, in `app.slice` beside `fos.service` rather than
+inside it, which is what makes it survive a restart. `agent/logs/<name>.current`
+symlinks the live log.
+
+**A chain, not four jobs**, because harness time is exclusive: one mochitest at
+a time and no `build faster` across a running one. A job that has to follow
+another one belongs in the same script, waiting on
+`systemctl --user is-active`, rather than in a second unit that races it.
 
 The upstream tab tests were run to completion this run: **193 of 194 pass**.
 The one failure, `browser_bfcache_exemption_about_pages.js`, crashes a content
@@ -903,6 +935,29 @@ three-strikes rule only works if the counter is actually kept**, so count a
 repeated failure even when each run has a new explanation for it.
 
 ## Decisions taken
+
+- 2026-08-18 — **A resize repositions the overview and rebuilds the region.**
+  The two levels are not the same problem: a miniature is a plain box that
+  should scale with its tile, and a card carries a caption and a mark that must
+  not. So the fast path is the overview's alone, and the region keeps the
+  rebuild rather than growing a second set of rules for what may follow the
+  scale.
+- 2026-08-18 — **The reposition path collects its writes before applying any.**
+  Every reason it refuses is a difference between what is drawn and what the
+  model says, and a refusal found halfway through would leave half the overview
+  at each scale — the rebuild that follows would then be repairing a surface
+  this path had broken rather than one it declined to touch.
+- 2026-08-18 — **The background-tab signal is a persistent binary state, not an
+  event and not a drift.** Motion onset captures attention involuntarily, which
+  is the attention shift an ambient display is defined by not requiring; a slow
+  fade is subject to slow change blindness and is often no signal at all. What
+  is left is a step change that persists and is read on the next voluntary
+  glance, cleared by opening the Field. See `IDEAS.md` run 22.
+- 2026-08-18 — **A failure that follows a timed-out file in an upstream suite
+  is a claim about the harness until the file has been run alone.**
+  `browser_autoselect.js` produced ten unexpected failures in the directory run
+  and passes 40/40 alone. All four of that run's real failures followed a
+  timeout.
 
 - 2026-08-18 — **What comes back after a restart is bounded by rank, not by a
   clock.** The twelve most recently updated trails return, whether that is
