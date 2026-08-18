@@ -130,36 +130,64 @@ execution, not invention: all three pillars have a written design.
   `agent/reports/restore-field-thumbs.png`. 128 node tests, 54 xpcshell checks,
   189 browser-chrome checks.
 
+- **Pillar C's second surface: the context sidebar.**
+  `FOSContextSidebarView.sys.mjs` is the pure arrangement — sections, rows,
+  relative times, the one-sentence summary and the arrow-key selection — and
+  `FOSContextSidebar.sys.mjs` renders it on the inline end, opposite the rail,
+  so both can be open at once. Every row re-enters the node it names, including
+  the row this surface exists for: **crossings**, the other trails that have
+  reached the page you are on, which `crossings(url)` had written and nothing
+  consumed. `what` opens it and still answers in a sentence — no verb was
+  added, and the sentence and the heading are one string with the label left
+  out of the shown half. SearchBar (CHI 2008) is the evidence base and settled
+  four design questions, including "no notes field"; see `IDEAS.md`.
+  Screenshot: `agent/reports/context-sidebar.png`.
+
+- **A surface's stylesheet now lands before its first frame.** All four chrome
+  surfaces appended a `<link>` on first open, which loads asynchronously, so
+  the first frame painted a fixed-position panel as a full-width block.
+  `FOSChrome.sys.mjs` loads the sheet with `loadSheetUsingURIString`, which is
+  synchronous. Found by a test that opened the rail and the sidebar together
+  and measured them.
+
+- **The page you are on is addressable on a trail longer than the alphabet.**
+  Marks are assigned at node creation, so first come, first served spent all
+  twenty-six letters on the pages opened first — the exact failure the Field's
+  eviction rule was written to prevent, arriving from the trail itself. The
+  active trail is now considered most recently visited first, and a page may
+  take a letter back from an *older page of its own trail* once no retained
+  letter is left, never from a page more recent than itself.
+
 ## In progress
 
-Nothing running. Tree fully pushed; `main`, `agent/dev` and both tags on origin.
+Nothing running. `agent/dev` pushed through the ranking-research commit;
+`main` and both tags unchanged on origin.
 
 ## Next task
 
-Pillar C records well and surfaces thinly; the Field is now whole across a
-restart. In rough order of value.
+Two of pillar C's three surfaces exist. In rough order of value.
 
-1. **The context sidebar** — `SCHEMA.md`'s second surface, "what you know so
-   far". `what` currently answers in one sentence, which is deliberately the
-   smaller thing and not a stand-in. `contextContents()` already returns
-   everything it needs, and `crossings(url)` is written and has no consumer at
-   all yet — "you have reached this page from three different trails" is the
-   memex's compounding effect and is the sidebar's best row.
-2. **Rank the command bar by active context.** The first of the three surfaces
-   in the phase plan and the only one with no code: the bar still has no
-   suggestion ranking of any kind. This is what "not global frecency" means and
-   it needs the store's read side, which is now there.
-3. **The embedding pass**, on `EmbeddingsGenerator` and `ClusterAlgos`. It now
+1. **Rank the command bar by active context.** The last of the three surfaces
+   with no code: the bar still has no suggestion ranking of any kind. This is
+   what "not global frecency" means, it needs the store's read side, which is
+   there, and this run's research settled what it should be — `IDEAS.md`,
+   "Ranking is tiers of provenance, not a score", which also has the number
+   that sets the bar (Mozilla optimised frecency's twenty-two weights across
+   723,581 users and bought 0.6 of a character, so the test is "the page is
+   offered at all", not "it moved up two places"). Candidates must come from
+   the **store**, not the window's tree, because ~60% of complex tasks continue
+   across sessions.
+2. **The embedding pass**, on `EmbeddingsGenerator` and `ClusterAlgos`. It now
    has a concrete target rather than a vague one: query understanding, because
    the shallow extractor gets nothing from a lower-case query. It should merge
    contexts across trails with `source = 'embedding'`, never replacing the
    provenance floor.
-4. **The tab strip still exists.** Unchanged and still the widest blast radius
+3. **The tab strip still exists.** Unchanged and still the widest blast radius
    in the phase; still wants its own run.
-5. **`prune`, and an export surface for trails** — still deferred, still a
+4. **`prune`, and an export surface for trails** — still deferred, still a
    considered grammar change. A surface for finding old trails is also what
    would let a *named* trail be pinned past the restore window (see below).
-6. **The voice path.** Unchanged: measure model size and latency; do not
+5. **The voice path.** Unchanged: measure model size and latency; do not
    re-litigate availability.
 
 **Test in Gecko, not only in node.** Two bugs this project has shipped were
@@ -204,7 +232,8 @@ None.
 ## Known staged state, not a defect
 
 The rail **overlays** the content area rather than reflowing it, so it covers
-the left of the page while open. Same construction as the command bar, and
+the left of the page while open. The context sidebar does the same on the right,
+by the same construction and with the same eventual answer. Same construction as the command bar, and
 acceptable while both are transient overlays, but a rail meant to be read
 *beside* a page eventually has to take layout space. That belongs with the
 Field, which restructures the chrome anyway — do not fix it piecemeal first.
@@ -244,6 +273,15 @@ is the one directly above it. It is deterministic and correct, and it does not
 read as "provenance" as strongly as a spread would. A tie-break change is a
 model change with tests at 40 cards behind it — do it deliberately or not at
 all.
+
+**Every file in `tests/browser/` shares one window, and they run in
+alphabetical order rather than manifest order.** So nodes, marks and contexts
+accumulate across files, and a lookup like `store.nodes().find(n => n.url ===
+PAGE_A)` finds the *oldest* match — a node from a trail the test never touched.
+Adding one test file re-ordered the suite and made a Field test fail for that
+reason alone. Scope a lookup to `activeTrailId` and take the most recent.
+This is also the harness that finds mark-pressure bugs: run the whole
+directory, never the one file you changed.
 
 **A named context can fail to get a mark under real mark pressure.** Contexts
 take letters only after being named, and only from what the active trail and
