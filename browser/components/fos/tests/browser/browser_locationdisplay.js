@@ -169,10 +169,39 @@ add_task(async function a_secondary_press_is_left_alone() {
   );
 });
 
+/**
+ * The bar no longer invites the typing it refuses.
+ *
+ * Upstream's placeholder is an instruction to type here, and this bar will not
+ * take a keystroke. It is also the one string a first run is guaranteed to
+ * see, since a placeholder shows only when there is no address.
+ */
+add_task(async function the_placeholder_describes_a_press() {
+  const input = gURLBar.inputField;
+  Assert.ok(
+    !input.hasAttribute("data-l10n-id"),
+    "Fluent no longer owns the placeholder, so it cannot put its own back"
+  );
+  Assert.equal(
+    input.getAttribute("placeholder"),
+    "Press to search or run a command",
+    "and it describes what a press does rather than what typing would"
+  );
+  Assert.ok(
+    !input.getAttribute("placeholder").includes("enter address"),
+    "nothing left that asks for typing this bar refuses"
+  );
+});
+
 add_task(async function unwiring_gives_the_address_bar_back() {
   display().unwire();
   Assert.ok(!display().isWired, "unwired");
   Assert.ok(!gURLBar.readOnly, "and typable again");
+  Assert.equal(
+    gURLBar.inputField.getAttribute("data-l10n-id"),
+    "urlbar-placeholder",
+    "and Fluent owns the placeholder again"
+  );
 
   bar().close();
   EventUtils.synthesizeMouseAtCenter(gURLBar.inputField, {}, window);
