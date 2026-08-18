@@ -32,6 +32,41 @@ rather than `embedding`. A card the user dragged next to another is weak
 evidence that they belong to the same context, and it is evidence the user
 never had to articulate.
 
+**The live session-history entry wins.** `scroll_x`/`scroll_y`/`form_state`
+duplicate state that Gecko already keeps: `nsISHEntry` carries a
+`layoutHistoryState` holding scroll position *and* form values, which is how
+bfcache restores a page. Two sources of truth drift, so the rule is that the
+live entry is authoritative whenever the node still has one, and these columns
+are the fallback for when it does not — after a restart, or once the docshell
+has been discarded. Write them on navigation away and on dismissal; read them
+only when `nsISHEntry` cannot supply the state. A trail node therefore
+references a session-history entry and caches its state, rather than being a
+bare URL with scroll numbers bolted on.
+
+## Growth and pruning
+
+A history tree only grows. Nyxt's `history-tree` names this as its main
+limitation — nodes are freed only when their owner disappears, so the structure
+expands without bound (`agent/IDEAS.md`). Soft dismissal via `dismissed_at`
+makes this *worse* here, because nothing is ever deleted by normal use. That is
+the right default for a browser whose entire promise is not losing things, but
+it needs a stated policy rather than silence:
+
+- **Nothing is pruned automatically in Phase 2.** Correctness first. A tree of a
+  few hundred thousand nodes is well within SQLite's comfort, and guessing at an
+  eviction rule before there is real usage data is how you delete the one page
+  the user wanted.
+- **`form_state` is the size risk, not the row count.** Rows are tens of bytes;
+  a session-store blob is not. Cap the stored blob, and drop it first when a
+  node is archived — scroll position is small and worth keeping far longer.
+- **Archival, when it comes, is by trail and not by node.** Pruning individual
+  nodes tears holes in a tree and orphans children. A whole trail that has not
+  been touched in months can be rolled into a compact archived form; a node in
+  the middle of a live trail cannot.
+- **Never prune a node a context still references.** `context_member` and
+  `entity_mention` point at nodes; the Context Engine's value is the long tail,
+  so a node cited by a saved context outlives any age rule.
+
 ## Migrations
 
 Versioned and forward-only. `PRAGMA user_version` holds the applied version;
