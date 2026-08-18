@@ -109,14 +109,17 @@ add_task(async function test_the_panel_shows_what_was_browsed() {
   );
   ok(titles.includes(PAGE_B), "the page just visited is one of them");
 
-  // The heading is the same sentence `what` speaks: one claim, one string.
+  // The panel and `what` make one claim from one string: the spoken sentence
+  // names the context because speech has no heading, the shown one does not
+  // because the heading above it is the name.
   const summary = panel.body.ownerDocument.querySelector(
     ".fos-sidebar-summary"
   );
-  is(
-    summary.textContent,
-    await engine().summarise(),
-    "the heading is the sentence the engine reports"
+  const spoken = await engine().summarise();
+  ok(
+    spoken.endsWith(summary.textContent),
+    `the panel shows the sentence the engine reports, less its label ` +
+      `(spoken "${spoken}", shown "${summary.textContent}")`
   );
 
   panel.close();

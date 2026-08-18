@@ -120,12 +120,21 @@ export function dwellLabel(ms) {
  * are the same claim, and two of them would eventually disagree — the same
  * argument that put `contextContents` behind both `what` and `pack`.
  *
+ * The label is part of the sentence when it is spoken and is left out when the
+ * surface showing it has already put the label at the top: a panel headed
+ * "Unnamed context" whose first line begins "an unnamed context:" says the same
+ * thing twice, which a screenshot showed before anything else did.
+ *
  * @param {?object} contents From `FOSContextStore.contextContents`.
+ * @param {object} [options]
+ * @param {boolean} [options.withLabel] Name the context in the sentence.
  * @returns {string}
  */
-export function summariseContents(contents) {
+export function summariseContents(contents, { withLabel = true } = {}) {
   if (!contents) {
-    return "No context yet — browse or search and one will start.";
+    return withLabel
+      ? "No context yet — browse or search and one will start."
+      : "Browse or search and one will start.";
   }
   const { context, queries, pages, entities } = contents;
   const label = context.label?.trim() || "an unnamed context";
@@ -136,10 +145,10 @@ export function summariseContents(contents) {
     .filter(entity => entity.weight >= ENTITY_FLOOR)
     .slice(0, 5)
     .map(entity => entity.name);
-  const parts = [
-    `${label}: ${plural(queries.length, "question")}, ` +
-      `${plural(pages.length, "page")}, ${read} read`,
-  ];
+  const counts =
+    `${plural(queries.length, "question")}, ` +
+    `${plural(pages.length, "page")}, ${read} read`;
+  const parts = [withLabel ? `${label}: ${counts}` : counts];
   if (topics.length) {
     parts.push(`about ${topics.join(", ")}`);
   }
@@ -221,9 +230,11 @@ export function sidebarFor(
       title: "No context yet",
       named: false,
       mark: null,
-      summary: summariseContents(null),
+      summary: summariseContents(null, { withLabel: false }),
       sections: [],
-      empty: "Browse or search and a context starts here.",
+      // The summary line already says what to do, and a panel that says it
+      // twice in three lines reads as a surface with nothing to say.
+      empty: null,
     };
   }
 
@@ -323,7 +334,8 @@ export function sidebarFor(
     named: !!label,
     mark,
     markWord: mark ? markWord(mark) : null,
-    summary: summariseContents(contents),
+    // Without the label: the heading above it is the label.
+    summary: summariseContents(contents, { withLabel: false }),
     sections,
     empty: sections.length
       ? null

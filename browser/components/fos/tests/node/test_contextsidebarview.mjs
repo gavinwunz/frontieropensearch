@@ -96,8 +96,23 @@ test("summariseContents lists only entities above the noise floor", () => {
   assert.match(summary, /about Bush$/);
 });
 
+test("the panel's summary does not repeat the heading's label", () => {
+  const named = {
+    context: { label: "memex research" },
+    queries: [{ id: 1 }],
+    pages: [{ outcome: "read" }],
+    entities: [],
+  };
+  const spoken = summariseContents(named);
+  const shown = summariseContents(named, { withLabel: false });
+  assert.match(spoken, /^memex research: /);
+  assert.ok(!shown.includes("memex research"));
+  assert.match(shown, /^1 question, 1 page, 1 read/);
+});
+
 test("summariseContents answers before there is a context at all", () => {
   assert.match(summariseContents(null), /^No context yet/);
+  assert.match(summariseContents(null, { withLabel: false }), /^Browse/);
 });
 
 // ---- times and durations --------------------------------------------------
@@ -167,7 +182,7 @@ test("crossingRows names an unnamed trail for what it is", () => {
 test("sidebarFor says what to do when there is no context", () => {
   const view = sidebarFor(null);
   assert.equal(view.sections.length, 0);
-  assert.match(view.empty, /Browse or search/);
+  assert.match(view.summary, /Browse or search/);
 });
 
 test("sidebarFor leads with crossings, because they are the surprise", () => {
