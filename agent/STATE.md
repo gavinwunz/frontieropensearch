@@ -364,80 +364,101 @@ one.
   `max_new_tokens` holds the part that does vary at a command's length. Off
   unless `FOS_MEASURE_ASR` is set, since the first run downloads ~75MB.
 
+- **A voice turn can no longer leave a microphone open, which turned out to
+  matter more than it sounds.** A chrome window's `getUserMedia` is
+  `CallerType::System`, so `MediaManager` sets `privileged` and `askPermission`
+  is false — **it never prompts** — and the sharing indicator does not cover it
+  either, because `recording-device-events` is observed only by
+  `BrowserProcessChild`, a process actor registered without `includeParent` and
+  therefore never instantiated in the parent process that holds the microphone.
+  No prompt, no indicator, no row in the permissions UI. `VoiceSession` is
+  consequently the only thing that can close a microphone it opened: every
+  active stage now hands the shell a `deadline`, `blurred()` ends a turn because
+  losing focus while holding a key is the ordinary way a key-up goes missing,
+  and `expired()` invents no new ending — a listen that runs out is a key that
+  came up. `listening`'s cap is Whisper's own 30-second window, so it can only
+  end turns whose tail the model was going to discard. The load-bearing test is
+  a property rather than a path: every abandoning event from every stage closes
+  the microphone and lands on idle. `GRAMMAR.md` §8's seventh rule, `IDEAS.md`
+  run 25. 216 node tests.
+
 ## In progress
 
-Nothing waits on a person. **Two chains, and the second waits on the first.**
-Both were still running when run 24 ended, which is why run 24 did no harness
-work at all — one mochitest at a time, and no `build faster` across a running
-one.
+Nothing waits on a person. **One chain left, and the queue is the whole point:**
+harness time is exclusive, so a job that has to follow another belongs in the
+same script waiting on `systemctl --user is-active`, not in a second unit that
+races it.
 
-- `fos-job-run22` — `agent/jobs/run22.sh`, log `agent/logs/run22.current`. Its
-  first three steps are answered below; the last is the urlbar directory
-  resumed with `--start-at browser-telemetry/browser_handoff.js`, started
-  21:54Z and about two hours. Grep the log for `#####` first.
-- `fos-job-run23` — `agent/jobs/run23.sh`, log `agent/logs/run23.current`.
-  Polls `systemctl --user is-active fos-job-run22` every minute, then does
-  `build faster` and the whole FOS directory. **That run is the acceptance gate
-  for run 23's two changes** — the transform-scaled overview and the unseen
-  mark. Read `##### FOS SUITE EXIT` first thing. Note that run 23's suite will
-  now also pick up run 24's `browser_zzvoicelatency.js`, which without
-  `FOS_MEASURE_ASR` set is one passing assertion and no download.
+- `fos-job-run22` — **finished OK at 22:34Z.** Both answers are below.
+- `fos-job-run23` — `agent/jobs/run23.sh`, log `agent/logs/run23.current`. Its
+  `build faster` ran at 22:34Z and **includes this run's changes**; the FOS
+  suite started at 22:34:09Z and is the acceptance gate for run 23's two
+  changes — the transform-scaled overview and the unseen mark. Read
+  `##### FOS SUITE EXIT` first thing.
+- `fos-job-run25` — `agent/jobs/run25.sh`, log `agent/logs/run25.current`.
+  Waits on run23, then runs the ASR measurement, which had been STATE's item 1
+  for two runs and blocked on nothing but harness contention. Read it with
+  `grep '##### ASR' agent/logs/run25.current`. It downloads ~75MB on its first
+  run. **The GPU line may well be absent — treat that as the result**: it means
+  the CPU numbers are the shipping numbers and the shell defaults to CPU.
 
-Run 24's two modules are pure and are as verified as they can be without a
-browser — 207 node tests, lint clean. What is unverified is everything with a
-microphone or a model in it, and none of that is written yet.
+This run's change is pure and is as verified as it can be without a browser —
+216 node tests, lint clean. Nothing in the browser imports `VoiceSession` yet,
+so the FOS suite cannot tell it is there.
 
-`main` is at `phase-3`. `agent/dev` is pushed through `579356131d2a`.
+`main` is at `phase-3`. `agent/dev` is pushed through `b194d5ea7f07`.
 
 ## Next task
 
 The phase plan is complete, so nothing pulls the next run in a particular
-direction. Ordered by value.
+direction. Ordered by value. **Read `run25`'s log before choosing** — item 1 is
+already running and its answer changes item 2.
 
-1. **Run the ASR measurement.** It is written, gated and one command, and it
-   decides two things nothing else can: whether the voice path fits run 23's
-   ~1s natural / 2s tolerable budget, and which backend this fork defaults to.
-
-   ```
-   FOS_MEASURE_ASR=1 ./mach mochitest --keep-open=false \
-     browser/components/fos/tests/browser/browser_zzvoicelatency.js
-   ```
-
-   Grep the log for `##### ASR`. It downloads ~75MB on the first run, so put it
-   in a background job rather than the foreground. Expect the GPU line to be
-   absent on this machine — `checkGPUSupport()` may well refuse — and treat
-   that as a result: it means the CPU numbers are the shipping numbers.
-
-2. **Then the shell that has a microphone in it.** `FOSVoice.sys.mjs`: the key,
-   `getUserMedia` in the chrome window, capture to a Float32Array at 16kHz,
-   `audioIsSpeech` before the model, `createEngine` with the device the
+1. **Read the ASR measurement, then write `FOSVoice.sys.mjs`.** The measurement
+   is queued as `run25` and needs nothing from a person. What it decides is
+   which backend the shell defaults to. The shell itself is the wiring: the
+   key, `getUserMedia` in the chrome window, capture to a Float32Array at
+   16kHz, `audioIsSpeech` before the model, `createEngine` on the device the
    measurement chose, and the effects from `VoiceSession` applied to the
-   command bar's input. The shape is settled and the pure half is done, so this
-   is wiring — but it is the first FOS code to ask for a device permission, and
-   what a chrome-privileged `getUserMedia` actually prompts is worth finding
-   out by driving it rather than by reading.
+   command bar's input.
 
-3. **Why this build has no remote tabs.** Three upstream files fail on it and
-   the fork is not what breaks them (below), so the question left is what does.
-   `services-sync` is built (`MOZ_SERVICES_SYNC=1` in `config.status`) and its
-   modules are in `dist/bin/modules/services-sync/`, so it is not packaging.
-   The next step is `UrlbarProviderRemoteTabs.isActive` in a driven browser
-   with `services.sync.username` set, not more reading — same lesson as run
-   21's selector list.
+   **Two things about it are settled now and were not last run**, and both come
+   from this run's finding (below). The shell owns a timer: it arms one whenever
+   an effect carries a non-null `deadline`, leaves it alone on null, and clears
+   it whenever `state` is `idle`. And the shell owns an indicator, because
+   nothing in the platform draws one for this path — the stage was always going
+   to be visible, but it is now carrying weight rather than answering a
+   question.
 
-4. **Look at run 23's two changes, then finish them.** Both were written with
-   the harness held by run 22, so both are unverified in a browser. Once
-   `run23` reports:
+   The permission question that was going to be answered by driving is answered:
+   it does not prompt. So the first driven session should check the *opposite*
+   thing — that the microphone actually closes — by holding the key, switching
+   window, and confirming the device is released.
+
+2. **Look at run 23's two changes, then finish them.** Both were written with
+   the harness held and are unverified in a browser. Once `run23` reports:
 
    - **The unseen mark, with eyes on it.** `browser_zzscreenshots.js` gained a
-     `shot-unseen` step; run `agent/smoke.sh` and *look at the picture*. The
-     mark is a flex item in the address bar's input container, and whether an
-     8px accent dot beside the page actions reads at a glance without shouting
-     is the one thing no assertion in the suite can tell you.
+     `shot-unseen` step; run `agent/smoke.sh` and *look at the picture*. Whether
+     an 8px accent dot beside the page actions reads at a glance without
+     shouting is the one thing no assertion in the suite can tell you.
    - **The new resize numbers.** `browser_zzfieldperf.js` prints them.
      `crowded-overview-resizing-frame` against `closed-field-resizing-frame` is
      the pair that matters — the gap was ~31ms a frame — and
      `resize-burst-of-10` should be flat, since it was already 1ms.
+
+3. **Why this build has no remote tabs.** Three upstream urlbar files fail on it
+   and the fork is not what breaks them. `services-sync` is built and its
+   modules are in `dist/bin/modules/services-sync/`, so it is not packaging. The
+   next step is `UrlbarProviderRemoteTabs.isActive` in a driven browser with
+   `services.sync.username` set, not more reading.
+
+4. **The 17 timed-out urlbar files, if they are ever worth it.** The resume
+   finished: 70 failures, every one a timeout, no assertion failures anywhere in
+   the remaining 282 files. That closes the question the run was asked. Whether
+   all 17 are the one environmental teardown crash is unverified and is a
+   separate job — and a low-value one, since none of them is a claim about the
+   fork.
 
 5. **The embedding pass and `prune`.** Carried from Phase 2. The embedding pass
    is what properly fixes the entity extractor's remaining limitation.
@@ -445,14 +466,27 @@ direction. Ordered by value.
 6. **The active card can have no thumbnail**, and **closing the rail while the
    Field is open leaves Escape with nowhere to go.** Both narrow, both below.
 
-7. **A region's height is a ratchet.** Growth is reachable from a drag as well
-   as from placement, and nothing shrinks a region back. Making the height the
-   smallest whole number of lattice rows containing every card would be tidier
-   and cannot drift, but it is a derived quantity that changes mid-drag and
-   could rescale a region twice in one gesture — a worse promise to break than
-   an untidy height. Recorded in `FIELD.md` §6 as open, not as a defect.
+7. **A region's height is a ratchet.** Recorded in `FIELD.md` §6 as open, not as
+   a defect.
 
 ## Found this run, not yet chased
+
+- **Privilege removes the user-facing half of an API, not just the permission
+  check.** The finding above generalises, and the fork will keep reaching for
+  privileged APIs. The question to ask of the next one is not "am I allowed to
+  call this" but "who was going to tell the user I did, and are they still
+  there". In this case the answer was a process actor that does not exist in the
+  process doing the recording — which no amount of reading the JS would have
+  shown, because the JS is correct and simply never runs.
+
+- **The urlbar directory is finished, and the fork is clear.** The resume ran
+  the remaining ~282 files: **51799 passed, 70 failed, and every one of the 70
+  is a timeout** — there is not a single assertion failure in the resumed
+  portion, across 17 distinct files. So the only non-timeout failures the whole
+  directory has are the four from the first 115 files, three of which want a
+  remote tab and fail identically with the fork switched out. Item 3 above is
+  the last open question the directory raised.
+
 
 - **The four real failures in the urlbar directory are not this fork's.** Run
   21 pinned the address-bar pref in all eighteen manifests and started the
@@ -561,8 +595,8 @@ build input is not.
 
 ## Background jobs
 
-`run22` — the chain in `agent/jobs/run22.sh`. Started with
-`./agent/bg.sh <name> <cmd>`; check with `./agent/bg-status.sh`. Read this one
+`run23` then `run25` — the live chain. Started with
+`./agent/bg.sh <name> <cmd>`; check with `./agent/bg-status.sh`. Read these
 before starting anything. Each runs as its own transient systemd unit
 `fos-job-<name>.service`, in `app.slice` beside `fos.service` rather than
 inside it, which is what makes it survive a restart. `agent/logs/<name>.current`
@@ -726,6 +760,16 @@ stall browsing. So the database is a very good record and not a guaranteed one;
 do not build anything that assumes a row must exist.
 
 ## Gotchas worth not rediscovering
+
+**A privileged caller loses the user-facing half of an API too.** A chrome
+window's `getUserMedia` does not prompt (`privileged = isChrome` in
+`MediaManager.cpp`) *and* lights no sharing indicator, because the indicator is
+driven by `recording-device-events` and its only observer,
+`BrowserProcessChild`, is a JSProcessActor registered without `includeParent` —
+so it never exists in the parent process, which is the process recording. The
+general form: when the fork calls a privileged API, ask who was going to tell
+the user, and check that they are still in the room. Reading the JS will not
+show it, because the JS is correct and simply never runs.
 
 **A selector list is a claim about a document, and it fails silently.** Two of
 `FOSLocationDisplay`'s seven passthrough selectors matched nothing —

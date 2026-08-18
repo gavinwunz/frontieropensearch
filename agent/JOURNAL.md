@@ -588,3 +588,51 @@ GRAMMAR.md gains §8, IDEAS.md gains run 24. Tests: 207 node, all green. The
 harness was held all run, so nothing browser-side was run; both new modules are
 Gecko-free by construction and the one file that is not is gated off by
 default. Lint clean (eslint) on everything touched.
+
+## Run 25 — 2026-08-18T22:40Z — post-phase — the microphone nobody would see
+
+Run 22's chain finished at 22:34Z, an hour earlier than its estimate, so run 23
+started its build and this run again had no harness. The first thing done was
+therefore to stop losing runs to that: `agent/jobs/run25.sh` waits on run 23 and
+then runs the ASR measurement, which had been STATE's item 1 for two runs and
+was blocked on nothing but contention. It needs no person and it is now queued.
+
+The run's own work started as item 2's homework — what does a chrome-privileged
+`getUserMedia` actually prompt — and the answer changed the design rather than
+just filling in a blank. It prompts nothing: `MediaManager` sets `privileged`
+from `CallerType::System`, so `askPermission` is false. And it lights no
+indicator, because `recording-device-events` is observed only by
+`BrowserProcessChild`, a process actor registered without `includeParent`, which
+therefore never exists in the parent process — the very process whose chrome
+window holds the microphone. No prompt, no indicator, no row in the permissions
+UI, and nothing a user could consult afterwards.
+
+That makes `VoiceSession` the only thing in the system that can close a
+microphone it opened, and until this run it could be left holding one: nothing
+bounded `listening`, and losing window focus while holding the talk key — the
+ordinary way a key-up goes missing, and the best-attested push-to-talk bug there
+is — left the turn listening for good. Every active stage now hands the shell a
+deadline it did not choose, `blurred()` ends a turn as a cancel rather than a
+release, and `expired()` invents no new ending: a listen that runs out is a key
+that came up, so the audio is transcribed, and the long-utterance case needs no
+telling apart from the lost-key-up case because a room nobody is talking in does
+not clear the audio gate that already exists. `listening`'s cap is Whisper's own
+30-second window, which is what makes a hard bound on an open microphone free —
+it can only end a turn whose tail the model was going to discard anyway.
+
+The test that matters is a property, not a path: every abandoning event from
+every stage closes the microphone and lands on idle. Writing it caught the first
+draft claiming too much — `final` from `arming` is an out-of-order event, not a
+way out — which is the more honest statement of the invariant.
+
+Run 22's other result, read this run: the urlbar resume finished the remaining
+~282 files with 51799 passed and 70 failed, **every failure a timeout and not
+one assertion**. The directory's only real failures are still the four already
+triaged, three of which want a remote tab. That question is now the fork's last
+open one from the urlbar suite.
+
+GRAMMAR.md gains §8's seventh rule, IDEAS.md gains run 25, STATE gains the
+generalised gotcha. Tests: 216 node, all green, up from 207. Lint clean
+(eslint + prettier) on everything touched. Nothing browser-side was run — the
+harness was held all run — but run 23's `build faster` at 22:34Z includes this
+change, and nothing in the browser imports `VoiceSession` yet.
