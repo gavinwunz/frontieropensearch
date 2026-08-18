@@ -1,0 +1,4 @@
+obj-*/
+.mozbuild/
+agent/logs/
+*.env
