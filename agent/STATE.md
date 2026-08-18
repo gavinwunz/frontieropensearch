@@ -31,6 +31,52 @@ execution, not invention: all three pillars have a written design.
   Mozilla's Firefox Terms of Use. Telemetry genuinely off —
   `canRecordBase`/`canRecordExtended` both false. Relay, accounts, VPN/Monitor
   promos off. See `agent/reports/phase-1.md` for the full table.
+- **The Field's card and region model.** `FOSField.sys.mjs`: regions that are
+  trails, cards seeded by provenance, pinning on first move, the non-occlusion
+  push, capacity by eviction then growth, and the three-level overview with
+  nesting past nine trails. `FIELD.md` §9's five acceptance properties run as
+  xpcshell tests at session scale, plus 21 node tests.
+- **`./mach test` works again for browser components.** It never did in this
+  tree: see the appdir gotcha below.
+- **The command bar, the one entry surface.** `FOSCommandBar.sys.mjs` (DOM
+  shell), `FOSCommandBarView.sys.mjs` (pure view model) and
+  `FOSActions.sys.mjs` (dispatcher + URL-or-search on `nsIURIFixup`).
+  `FOS:CommandBar` now owns accel+L, alt+D, accel+K and accel+E. Empty state
+  lists all twelve verbs grouped by pillar; a single token lists the verbs it
+  prefixes and Tab completes one, without changing what Enter does. Verbs whose
+  pillar has no UI report `NOT_WIRED` rather than falling through to a search.
+  36 browser-chrome checks, 11 node tests, verified by screenshot in dark and
+  light.
+- **The trail rail, and pillar B end to end.** `FOSTrailSession.sys.mjs`
+  captures every top-level navigation as a child node, re-enters any node by
+  replaying the SessionStore blob it stored (so scroll and form values come
+  back), marks the active trail's nodes, and registers `up`, `back`, `branch`,
+  `graft` and `name`. `FOSTrailRailView.sys.mjs` is the pure flattening —
+  collapse, hoist, spine, selection — and `FOSTrailRail.sys.mjs` renders it on
+  the design tokens. The history-sidebar shortcut now opens the rail.
+  **Pillar B's promise is verified in a real browser, not only in node**:
+  re-entering the root and navigating a second way leaves the first branch whole
+  as a sibling, with no duplicate node from the restore. 70 browser-chrome
+  checks, 83 node tests.
+
+- **The Field, and pillar A end to end.** `FOSFieldSurface.sys.mjs` renders the
+  overview, the region level and the page over the card model, which needed no
+  revisiting. `FOSFieldView.sys.mjs` is the pure layout — scale-to-fit at both
+  levels, spatial arrow-key movement, lineage — and is tested in node.
+  Thumbnails come from `PageThumbs.captureTabPreviewThumbnail`, the tab-preview
+  path, taken at the moment a page is departed. A drag calls `moveCard` on every
+  pointer move, so mid-drag state is drop state. **F2 toggles page and Field**,
+  and `Browser:ShowAllTabs` points at it too. `enter`, `field` and `dismiss` are
+  wired; `context`, `pack` and `what` are what remain unwired. 121 browser-chrome
+  checks, 96 node tests, verified by screenshot — `agent/reports/field-*.png`.
+
+- **`FIELD.md` §10's deep-tree question is answered, in a new §11.** Lineage is
+  transient and shown on focus, not a tree drawn inside every region. PadPrints
+  is the evidence for showing hierarchy at all (61.2% of the time on revisitation
+  tasks, and *no* time difference on general browsing), the spatial-hypertext
+  literature is the evidence against drawing it persistently, and the rail
+  already renders the tree properly.
+
 - **First Phase 2 code.** `browser/components/fos/` holds marks
   (`FOSMarks.sys.mjs`), the action table (`FOSGrammar.sys.mjs`), the parser
   (`FOSCommandParser.sys.mjs`) and the trail tree (`FOSTrailTree.sys.mjs`), 37
@@ -38,24 +84,162 @@ execution, not invention: all three pillars have a written design.
   `browser/components/fos/tests/node/run.sh`. Wired into
   `browser/components/moz.build`.
 
+- **The Context Engine, and pillar C's data layer end to end.**
+  `context-engine/migrations/001-initial.sql` is the schema as a versioned
+  migration, packaged into the browser jar and read over `chrome://` at open.
+  `FOSContextStore.sys.mjs` opens `context-engine.sqlite` in the profile and
+  records trails, nodes, queries, visits, entities, contexts and placements;
+  `FOSContextSignals.sys.mjs` holds the three pure derivations (normalised
+  intent, entities, outcome) and `FOSContextPack.sys.mjs` the markdown export.
+  `FOSContextEngine.sys.mjs` reconciles the in-memory tree into the database
+  off the trail session, times visits with the clock stopped while the window
+  is unfocused, and wires `context`, `pack` and `what`. **All twelve verbs in
+  the action table are now wired** — `actions.unwired()` returns empty, and a
+  test asserts it. 121 node tests, 39 xpcshell checks, 174 browser-chrome
+  checks. Screenshot in `agent/reports/context-what.png`.
+
+- **Trails survive a restart, so pillar B's promise is no longer session-only.**
+  `TrailStore.hydrate` adopts `trail` and `trail_node` rows keeping their ids,
+  links children in a second pass so a grafted node survives any ordering, and
+  validates before it writes so a refused set leaves the store empty rather
+  than half loaded; `fromJSON` delegates to it, since an exported trail and a
+  database row are the same shape by design. `FOSContextStore.restorable()` is
+  the read side and `FOSContextEngine.#hydrate` the caller: it seeds the id
+  maps from what it read, which is what stops the next reconciliation writing
+  those rows a second time and doubling the tree at every launch. Reconciliation
+  also stopped rewriting nodes it has already written, which mattered once the
+  session-store blob joined the columns it writes. **Verified in a real browser
+  across an actual restart** — `agent/reports/restore-*.png`: the named trail,
+  its tree, its titles, its marks and its context all come back, `enter <mark>`
+  puts the page up, and the database still holds exactly the rows it started
+  with. 128 node tests, 54 xpcshell checks, 184 browser-chrome checks.
+
+- **A restored card is a picture again, so the restore is worth looking at.**
+  Departing a page also writes it to Gecko's own thumbnail store, and a card
+  with no snapshot of its own paints the stored one over `moz-page-thumb://`.
+  Going through `PageThumbs` rather than persisting our own images is what
+  gets private windows, about: pages, error responses and uncacheable documents
+  refused for free, and `PageThumbs.init()` — which nothing else in this build
+  calls — is what makes clearing history clear these too. Driving the built
+  browser found the capture itself was the real problem: at departure the
+  browser has usually already been swapped, so the picture was of `about:blank`
+  or of nothing, and pillar B now also announces a page that has *settled*, one
+  second after load, which is where the reliable capture happens. **Verified
+  across a real restart**: four pages browsed with the Field never opened, all
+  four in the store, and after a restart every restored card painted from it —
+  `agent/reports/restore-field-thumbs.png`. 128 node tests, 54 xpcshell checks,
+  189 browser-chrome checks.
+
+- **Pillar C's second surface: the context sidebar.**
+  `FOSContextSidebarView.sys.mjs` is the pure arrangement — sections, rows,
+  relative times, the one-sentence summary and the arrow-key selection — and
+  `FOSContextSidebar.sys.mjs` renders it on the inline end, opposite the rail,
+  so both can be open at once. Every row re-enters the node it names, including
+  the row this surface exists for: **crossings**, the other trails that have
+  reached the page you are on, which `crossings(url)` had written and nothing
+  consumed. `what` opens it and still answers in a sentence — no verb was
+  added, and the sentence and the heading are one string with the label left
+  out of the shown half. SearchBar (CHI 2008) is the evidence base and settled
+  four design questions, including "no notes field"; see `IDEAS.md`.
+  Screenshot: `agent/reports/context-sidebar.png`.
+
+- **Pillar C's third surface: the command bar ranks by active context.**
+  `FOSSuggest.sys.mjs` is the ordering and is pure — five tiers, each boundary
+  a fact rather than a coefficient: a mark typed as a mark, then the active
+  context (best outcome first, in the order `contextContents` already
+  justified), then the active trail, then crossings, then Places frecency as
+  the floor. `FOSPlacesFloor.sys.mjs` is that last tier, reading Places' own
+  read-only connection and its own current ranking column. Two new store reads
+  feed the middle: `trailPages` and `contextCrossings`, the second being the
+  tier no other browser could offer — what *another* trail found after reaching
+  a page this context also reached. `FOSContextEngine.suggest` gathers the five
+  and `activate` decides what accepting one means: a page still on a live trail
+  is re-entered, so scroll and form state come back, and a page that is only a
+  row is loaded. `FOSActions.openURL` is new and exists so that picking a page
+  off a list is not recorded as a query. Every tier heading is printed, so the
+  ranking explains itself in the surface. 179 node tests, 279 browser-chrome
+  checks, 64 xpcshell checks. Verified by screenshot in light and dark —
+  `agent/reports/suggest-tiers*.png`.
+
+- **A surface's stylesheet now lands before its first frame.** All four chrome
+  surfaces appended a `<link>` on first open, which loads asynchronously, so
+  the first frame painted a fixed-position panel as a full-width block.
+  `FOSChrome.sys.mjs` loads the sheet with `loadSheetUsingURIString`, which is
+  synchronous. Found by a test that opened the rail and the sidebar together
+  and measured them.
+
+- **The page you are on is addressable on a trail longer than the alphabet.**
+  Marks are assigned at node creation, so first come, first served spent all
+  twenty-six letters on the pages opened first — the exact failure the Field's
+  eviction rule was written to prevent, arriving from the trail itself. The
+  active trail is now considered most recently visited first, and a page may
+  take a letter back from an *older page of its own trail* once no retained
+  letter is left, never from a page more recent than itself.
+
+- **One entry surface, and it is now true of the mouse.** Two surfaces went.
+  The tab strip: `TabBarVisibility` already hides it when "tabs are displayed
+  elsewhere" — that is the clause vertical tabs stands on — so this is one more
+  condition on the same rule and not a second way to collapse a toolbar. The
+  tabs themselves are untouched, and `browser.fos.field.replacesTabStrip=false`
+  brings the strip back. The address bar: `FOSLocationDisplay.sys.mjs` sets
+  `readOnly` and hands its click to the command bar. It is deliberately *not*
+  deleted — origin display is a security boundary, Zen shipped an
+  origin-spoofing advisory for hiding it, and the eTLD+1 emphasis, punycode
+  handling, certificate state and granted permissions all live in that element.
+  Entry moves, display stays. `readOnly` is the supported path: popups and
+  taskbar tabs have shipped exactly this for years, so every anchor and panel
+  keeps working. With the strip gone the nav-bar takes the titlebar, which
+  upstream already handles. Verified end to end: a mouse presses the address
+  bar, gets the grammar, runs `field`, and the Field opens. 298 browser-chrome
+  checks. Screenshots in `agent/reports/no-tab-strip.png` and
+  `one-surface-{rest,rest-dark,open}.png`.
+
 ## In progress
 
-Nothing running. Tree fully pushed; `main`, `agent/dev` and both tags on origin.
+`tabtests5` is running the 193 remaining upstream tab tests — see Background
+jobs. `agent/dev` pushed through the single-surface commits; `main` and both
+tags unchanged on origin.
 
 ## Next task
 
-Phase 2 execution, in this order:
+The single-surface gap is closed, and with it the last item that was blocking
+the phase's own acceptance criterion. In rough order of value.
 
-1. **The Field's card and region model** (`design/FIELD.md`) — the last
-   pure-logic piece, so it can be built and tested the cheap way first. A region
-   is a trail, so it builds on `FOSTrailTree`.
-2. `PageThumbs` capture for cards; `nsISHEntry` for restoring a node's scroll and
-   form state; the command bar UI over the existing parser.
-3. Turn `FIELD.md` §9's four acceptance properties into browser-chrome tests
-   **as each piece lands, not after**.
-4. The voice path is **no longer blocked** — see the ASR entry in `IDEAS.md`.
-   Remaining unknowns are model size and latency on this hardware, not
-   availability. Measure those; do not re-litigate whether ASR is possible.
+1. **Drive the demo flow end to end, in one test.** This is Phase 2's "done
+   when" verbatim — search, branch three ways, zoom out to the Field, switch
+   context, export a context pack — and every piece of it now exists and is
+   separately tested. Nothing has ever run them as one sequence, so the honest
+   answer to "is Phase 2 finished" is currently unknown rather than yes. Do
+   this before building anything else: it either closes the phase or it names
+   exactly what is missing, and both outcomes are worth more than another
+   feature. Name the file so it sorts **last** in
+   `browser/components/fos/tests/browser/` — the directory shares one window
+   and runs alphabetically, and a flow test that seeds a trail early would
+   change what every later file sees. If it passes: merge to `main`, tag,
+   write `agent/reports/phase-2.md` with the screenshots, and notify. That is
+   the only notification this phase gets.
+2. **A background tab arrives with no signal at all.** Surfaced by removing the
+   strip and the first thing a real session would notice: a `target=_blank`
+   load, or anything opened behind the page in front, is now invisible until
+   the Field is opened. The strip was doing that job incidentally. This is not
+   an argument for the strip — it is that the Field needs an ambient way to say
+   "something arrived", and the card model already knows which card is new.
+   Cheapest honest answer first; do not build a notification system.
+3. **The embedding pass**, on `EmbeddingsGenerator` and `ClusterAlgos`. Target
+   unchanged: query understanding, because the shallow extractor gets nothing
+   from a lower-case query. Merge contexts across trails with
+   `source = 'embedding'`, never replacing the provenance floor. It would also
+   give the ranking a sixth signal without giving it a sixth tier — a merged
+   context is still tier 2.
+4. **`prune`, and an export surface for trails.** Deferred again, and this run
+   strengthened the case: a page on an old trail whose Places record has been
+   cleared is reachable by no tier, and the honest answer is that an old trail
+   should be findable *as a trail* rather than that the ranking should grow a
+   tier holding the whole database. Also what would let a *named* trail be
+   pinned past the restore window.
+5. **The voice path.** Unchanged: measure model size and latency; do not
+   re-litigate availability. Note that `suggest` already resolves a spoken mark
+   word, so the addressing half of this surface is done.
 
 **Test in Gecko, not only in node.** Two bugs this project has shipped were
 invisible to green node tests: a grammar bug found in one minute once the modules
@@ -71,6 +255,13 @@ LD_LIBRARY_PATH=$PWD/obj-x86_64-pc-linux-gnu/dist/bin \
 The `-a` is what maps `resource:///`; without it every browser module fails to
 load and it looks like a packaging fault.
 
+**Reading a chrome error from a driven browser: use a pref, not the console.**
+`Services.console.getMessageArray()` is capped, and a page like Wikipedia floods
+it with referrer-policy warnings, so chrome `console.error` from a module is
+gone before it can be read; `dump()` needs an output file the harness was not
+started with. Appending to a `CharPref` and reading it back over Marionette is
+the channel that actually worked, and it cost an hour to find out.
+
 Rule that keeps holding: while a full build is in flight, do not touch anything
 the build reads. New, unreferenced files under `browser/` are safe — an
 unreferenced `moz.build` is inert — but editing an existing `moz.build` or any
@@ -83,14 +274,258 @@ Each runs as its own transient systemd unit `fos-job-<name>.service`, in
 `app.slice` beside `fos.service` rather than inside it, which is what makes it
 survive a restart. `agent/logs/<name>.current` symlinks the live log.
 
-None.
+`tabtests6` — the upstream tab tests, minus the three files below, from the
+list in `agent/tabtests-rest.txt`:
+
+```bash
+./mach test $(tr '\n' ' ' < agent/tabtests-rest.txt)
+```
+
+Started 2026-08-18T18:15Z. Read the tail for `Unexpected results`. Anything
+there is fallout from the strip going and wants the manifest pref rather than a
+code change — but check first, because two of the three excluded files were
+**not** ours.
 
 ## Blockers
 
 None.
 
+## Known staged state, not a defect
+
+The rail **overlays** the content area rather than reflowing it, so it covers
+the left of the page while open. The context sidebar does the same on the right,
+by the same construction and with the same eventual answer. Same construction as the command bar, and
+acceptable while both are transient overlays, but a rail meant to be read
+*beside* a page eventually has to take layout space. That belongs with the
+Field, which restructures the chrome anyway — do not fix it piecemeal first.
+
+`browser_aboutKeyboard.js`'s `testInit` **times out, and did so before this
+run's changes** — verified by reverting `browser-sets.inc.xhtml` to its
+pre-rail version and re-running, which failed identically. So it is not the
+trail rail taking `key_gotoHistory`. It may well be fallout from run 9 moving
+`focusURLBar`, `key_search` and friends onto `FOS:CommandBar`, which is worth
+checking: if the command bar broke a shipped surface, that is a real
+regression rather than an accepted staged state.
+
+
+**The nav-bar is still there, and that is the claim's real boundary.** What
+went is the tab strip and the address bar's *input*. Back, forward, reload, the
+extensions button and the app menu are all still in the toolbar, and the app
+menu is still the only route to settings, downloads and add-ons. So "one entry
+surface" is a claim about **entry** — there is exactly one place text is typed
+and one grammar that reaches every verb — and not a claim that the chrome is
+gone. Do not describe it as the latter. Hiding the toolbar outright is a much
+bigger change than it looks: permission prompts, download notifications and the
+identity panels all anchor on elements inside it, and a hidden anchor is a
+prompt that appears at the corner of the window or not at all. That wants its
+own run and an answer for the app menu first.
+
+**Three upstream tab tests are excluded, and only one of them was ours.**
+`browser_1936752_lock_tab_sizing.js` was a real regression — it measures tab
+widths that are now zero — and the manifest pref fixed it, so it is excluded
+only because it is now covered there. `browser_addAdjacentNewTab.js` and
+`browser_audioTabIcon.js` both time out **with both FOS surface prefs off**,
+and the first was checked against the pre-run tree by checking it out,
+rebuilding and re-running: it fails identically. One right-clicks a tab for its
+context menu and one plays audio, and this manifest already skips several files
+for `os_version == '24.04' && display == 'x11'`, which is this box. Treat them
+as that family and do not spend a run on them.
+
+This matters operationally, not just bookkeeping: **a timeout aborts the whole
+directory**, so `./mach test browser/components/tabbrowser/test/browser/tabs/`
+stops at the first one and reports almost nothing. `agent/tabtests-rest.txt` is
+the file list without them.
+
+**A surface this fork replaces needs its upstream tests pinned, not deleted.**
+`browser.fos.field.replacesTabStrip=false` is set in the `tabs/` and `dragdrop/`
+manifests. Those files are the coverage that keeps the strip working for the
+pref that restores it, and the strip-less window has its own tests. Reach for
+the same pattern for the next replaced surface rather than annotating files one
+at a time.
+
+**A region is mostly empty until a trail is large.** A region seats 56 cards and
+a three-page trail therefore renders as a short column in the middle of a lot of
+nothing — visible in `agent/reports/field-region.png`. This is a small-N artefact
+and not the desert fog of §2: the region level is scaled to fit and cannot be
+panned, so there is no empty view to get lost in, and Data Mountain's subjects
+were working with 100 pages. Scaling the region to its *content* instead would
+move cards whenever an unrelated card arrived, which is exactly the invariant
+§4 exists to protect. Leave it; revisit only with a real session's worth of
+pages in front of you.
+
+**Cards seed in a vertical column growing upward.** `#firstFreeSeat` sorts by
+distance from the anchor then row-major, and the nearest free seat to a parent
+is the one directly above it. It is deterministic and correct, and it does not
+read as "provenance" as strongly as a spread would. A tie-break change is a
+model change with tests at 40 cards behind it — do it deliberately or not at
+all.
+
+**Every file in `tests/browser/` shares one window, and they run in
+alphabetical order rather than manifest order.** So nodes, marks and contexts
+accumulate across files, and a lookup like `store.nodes().find(n => n.url ===
+PAGE_A)` finds the *oldest* match — a node from a trail the test never touched.
+Adding one test file re-ordered the suite and made a Field test fail for that
+reason alone. Scope a lookup to `activeTrailId` and take the most recent.
+This is also the harness that finds mark-pressure bugs: run the whole
+directory, never the one file you changed.
+
+**A page reachable by no tier is a page whose history was cleared.** Tiers 2
+to 4 each have a precondition and tier 5 is Places, so a row that is on an old
+trail, outside the active context, and gone from Places is offered by nothing.
+Narrow, and the answer is not a sixth tier holding the whole database — it is
+that an old trail should be findable *as a trail*, which is the surface already
+deferred below. See `IDEAS.md`.
+
+**The bar re-renders wholesale, so the selection is re-anchored by row id.**
+A suggestion read lands after the keystroke that asked for it, and the user may
+already have arrowed down. The id of the selected row is read out of the DOM
+before the rebuild and looked up again after; a row that has gone takes the
+selection back to the typed line rather than handing it to whatever replaced
+it. Do not "optimise" this into an index.
+
+**A named context can fail to get a mark under real mark pressure.** Contexts
+take letters only after being named, and only from what the active trail and
+the Field's retained cards have left. That is the right priority — pages are
+where addressing actually happens — but it means that in the session where
+switching context matters most, a Field holding forty cards, `context <mark>`
+may have no mark to offer. Caught by a test that passed alone and failed in the
+full suite. The candidate fix is to reserve a small number of letters for named
+contexts on the argument that the user named them deliberately and there are
+few of them; that is a budget change with cross-pillar blast radius and it
+wants a decision, not a patch. Search by name is the other answer and is what
+`GRAMMAR.md` §2 already specifies for going past 26.
+
+**Restoration is bounded by rank, and only one window gets it.** The twelve
+most recently updated trails come back, whole or not at all; a named trail is
+not privileged, because naming touches `updated_at` and so a name is recent by
+construction on the day it is given and ages out afterwards. Pinning names past
+that wants a surface for finding old trails first — restoring them into the
+Field forever is how a bookmark graveyard is built. The claim to restore lives
+on the store, so the first window to open gets the past and the rest open as
+they always did: two windows each holding a copy of one trail would put it on
+two Fields and have both reconcile onto the same rows.
+
+**A load that ends where the browser already is adds no node.** That is what
+stops a reload growing the tree, and it is what stops a restore's process
+switch duplicating the node it just put back. Its cost is real and small: a
+form posted to the URL it is already on re-renders a genuinely different page
+and now gets no node of its own. Do not narrow this rule back to the restore
+path without also solving the reload.
+
+**A query is attached to the next node created after it.** That is right in the
+ordinary case — you search, a page opens — and it is a guess if several nodes
+are written in one reconciliation pass. Nothing better is available without
+matching a search URL against its query, which is engine-specific and brittle.
+
+**Recording is fire-and-forget by design.** A failed write is logged and the row
+is dropped rather than retried, because the alternative is a queue that can
+stall browsing. So the database is a very good record and not a guaranteed one;
+do not build anything that assumes a row must exist.
+
 ## Gotchas worth not rediscovering
 
+- **`source agent/env.sh` before any `mach build`.** Without it configure dies
+  with `Cannot find ccache`, which reads like a missing toolchain and is only
+  an unset `MOZBUILD_STATE_PATH`. `mach test` and `mach lint` do not need it.
+- **The devtools MCP forgets `profilePath` on the first restart after a
+  restart**, and silently falls back to the objdir profile — which it then
+  warns looks like a real profile. Send the full configuration again and the
+  second call takes it. Check the warning text before believing a browser came
+  up empty.
+
+- **A screenshot of the chrome, without touching the real display.** The X-grab
+  route is forbidden (there is no Xvfb on this box, and `:10.0` is Gavin's own
+  desktop). The safe route is a scratch browser-chrome test that draws the
+  window into a canvas and writes the PNG:
+  `ctx.drawWindow(window, 0, 0, w, h, "white")` on a canvas scaled by
+  `devicePixelRatio`, then `IOUtils.write` the decoded data URL. Add the file to
+  `tests/browser/browser.toml`, run it, read the PNG, and delete both again.
+  Every visual defect this project has shipped was found this way and by no
+  other means.
+
+- **A test that passes alone and fails in the suite is usually telling you
+  something true.** Three separate failures this run only appeared when the
+  whole component suite ran in one window, and none was a test-isolation
+  nuisance: unnamed contexts were eating the letters pages needed, the active
+  context never moved off the first trail, and a global row lookup was finding
+  an earlier task's nodes. Run `./mach test browser/components/fos/` before
+  believing a green single file.
+- **A derived value that could drift will drift.** `activeContextId` was a
+  field set once when the first trail appeared, and it silently filed every
+  later tab's work under the first tab's topic. It is a getter now, computed
+  from the trail the user is on. Same lesson as reconciling the tree by walking
+  it rather than mirroring events: if it can be recomputed, recompute it.
+- **`PRAGMA user_version` is not transactional in SQLite.** Set it outside the
+  transaction that applies a migration, or a rollback leaves the database
+  claiming a version it does not have.
+- **A single-letter word at the start of free text parses as a mark.** `name a
+  research context` set no name, because `a` was read as the optional target.
+  Real behaviour of the grammar rather than a bug, and a trap when writing
+  tests.
+- **An invariant about what the user sees has to be asserted against what is
+  drawn.** `FieldModel.overlaps()` was green while the rendered cards overlapped,
+  because the caption hung below the box the invariant was checked against. The
+  browser test now compares `getBoundingClientRect` between every pair of cards.
+  The general form: a model-level invariant tests the model, not the surface.
+
+- **Marks are a budget of 26 shared by every pillar.** A card and its trail node
+  are one page and must not take a letter each. Anything that registers marks
+  for a new kind of object has to say what it gives up. `FOSTrailSession.retain`
+  is how a surface claims letters for pages outside the active trail, and the
+  active trail can take one back — retention is a claim, not a guarantee.
+
+- **A chrome overlay needs a very high z-index, not a plausible one.**
+  `navigator-toolbox` is a flex item carrying `z-index: 0`, which makes it a
+  stacking context that paints over anything lower no matter where in the
+  document the overlay is appended. At `z-index: 10` the command bar's backdrop
+  dimmed the content area only and left the chrome looking live while the bar
+  already held the keyboard. Geometry was correct the whole time —
+  `getBoundingClientRect` said full-window — so only a screenshot and
+  `elementFromPoint` over the toolbar showed it.
+- **`ChromeUtils.defineESModuleGetters(lazy, {Name: url})` binds `lazy.Name` to
+  the module's `Name` *export*, not to the module namespace.** So it is
+  `lazy.FOSCommandBar.forWindow(...)`, never `lazy.FOSCommandBar.FOSCommandBar`.
+- **Synthesised keys do not reach the chrome keyset while focus is in content.**
+  A browser-chrome test that opens with `EventUtils.synthesizeKey("l", {accelKey:
+  true})` silently does nothing, because focus starts in the remote browser.
+  Upstream's own tests use `document.getElementById("Browser:OpenLocation")
+  .doCommand()` for this reason. Assert the `command` attribute for the binding
+  and use `doCommand()` for the behaviour; synthesise a key only once something
+  in chrome already has focus.
+- **`stylelint-plugin-mozilla/use-design-tokens` rejects literal CSS values**,
+  and the token set is in
+  `toolkit/themes/shared/design-system/dist/tokens-*.css`. Worth reading before
+  writing chrome CSS rather than after: the tokens already carry dark mode, high
+  contrast and forced-colours mappings. Where no token honestly fits — a
+  viewport proportion, a measure — use
+  `/* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */`
+  with a reason, which is the in-tree convention.
+
+- **A restore is a navigation, and every listener will treat it as one.**
+  `enter` puts a page back with `setTabState`, which fires exactly the progress
+  notifications a click fires. Left alone it spawned a child of the node just
+  re-entered, so going back quietly grew a duplicate spine. Anything that
+  synthesises a load has to mark it as its own before starting it — the flag is
+  set *before* `setTabState`, not after, because the load can begin
+  synchronously.
+- **A tab's label describes the page it is about to show, not the one it is
+  showing.** It flips to a placeholder when the next load starts, which is
+  before the location change that creates the next node — so backfilling a
+  title from `tab.label` on trust wrote each page's name onto its predecessor
+  and shifted the whole trail by one. Check `browser.currentURI` against the
+  node's own URL before believing any tab attribute.
+- **`getTabState` lags content, and at the start of a load it is often empty.**
+  `{"entries":[]}` is the normal reading for the outgoing page at the instant
+  the next load begins. Do not add a retry: read the entry *behind* the current
+  page from session history once the new page has settled, where it is complete
+  and where waiting costs nothing. The scroll offset is in `entry.presState`,
+  **not** the top-level `scroll` key, which only exists while that entry is
+  current.
+- **A stylesheet appended in the same turn as the measurement has not applied
+  yet.** The rail measured 1280x104 — full width, content height — immediately
+  after `#build()` appended its `<link>`, and 294x750 a moment later. Nothing
+  was wrong. Before diagnosing a layout fault in a surface that builds its own
+  DOM, measure again rather than reading the first number.
 - **Inspect the running browser, not the tree.** The Phase 1 findings that
   mattered most — a network redirect and a locked pref — are invisible to
   grepping for strings. The harness is the `firefox-devtools` MCP: launch with
@@ -104,6 +539,17 @@ None.
 - **Selecting a privileged context puts WebDriver in chrome mode**, and BiDi
   content navigation (`new_page`, `navigate_page`) then fails with "unknown
   error". Do content-side checks first, or `restart_firefox` to reset.
+- **`./mach test` silently broke for every browser xpcshell test the moment the
+  app was renamed, and it looked like a packaging fault.** The runner builds its
+  appdir manifest key as `mozInfo["appname"] + "-appdir"`, which became
+  `frontieropensearch-appdir`, while every in-tree manifest spells it
+  `firefox-appdir`. No match meant no `-a`, so `resource:///` never mapped and
+  each test died loading its own module; upstream's own tests failed too. Fixed
+  in `runxpcshelltests.py` by falling back to the upstream key. **The general
+  lesson is the one to keep: a rebrand changes strings that tooling matches on,
+  not only strings a user reads.** Look for others.
+- Running `xpcshell` by hand still works and is quicker for a one-off, but pass
+  `-a .../dist/bin/browser` — the same appdir the harness now gets right.
 - `./mach lint` crashes in three linters (`gecko-trace-lint`, `glean-parser`,
   `clang-format`) with `AssertionError` / "Unexpected result type" on
   multi-path invocations. These are infrastructure failures, not findings —
@@ -152,6 +598,107 @@ repeated failure even when each run has a new explanation for it.
 
 ## Decisions taken
 
+- 2026-08-18 — **What comes back after a restart is bounded by rank, not by a
+  clock.** The twelve most recently updated trails return, whether that is
+  yesterday's work or last month's. A time window was the alternative and it
+  decides the same question worse: it makes a fortnight away from the machine
+  indistinguishable from having finished. Nothing is deleted either way — an
+  older trail waits in the database for a surface that asks for it.
+- 2026-08-18 — **A trail comes back whole or not at all.** The node budget
+  drops whole trails from the tail of the ordering rather than truncating one,
+  because a trail missing its middle draws a tree nobody browsed.
+- 2026-08-18 — **A load that ends where the browser already is is not a new
+  page.** One rule for a reload and for the second half of a process switch,
+  rather than a special case for restores.
+
+- 2026-08-18 — **A context is seeded by provenance, never by a clock.** A
+  recency window is the obvious implementation and is wrong most of the time it
+  matters: around 75% of queries are issued while multi-tasking, and
+  timeout-based task-boundary detection tops out near 70% precision. Which
+  trail a page is on is a statement the user made by opening a tab, not an
+  inference. `context <mark>` is the override, and it pins.
+- 2026-08-18 — **The active context is derived, not stored.** Computed from the
+  trail you are on each time it is asked for. Held as a field it was set once
+  at the first trail and never moved.
+- 2026-08-18 — **A context earns a mark by being named.** An unnamed context is
+  the trail you are already on, so there is nothing to switch to and the letter
+  would buy nothing. This is also what stops contexts spending the alphabet
+  pages need — it was found by a node on example.com being addressed as `t`.
+- 2026-08-18 — **Migrations stay `.sql` files, packaged and read at runtime.**
+  A shipped migration is immutable, and a numbered file that is only ever added
+  to is what makes that auditable; it also means the schema can be applied by
+  hand with `sqlite3` when something has gone wrong.
+- 2026-08-18 — **Recording never blocks browsing.** Every write is queued and
+  nothing on the navigation path awaits it; a failed write is dropped rather
+  than retried. A lost row is a far smaller harm than a stalled page load.
+- 2026-08-18 — **The context pack neutralises markdown from page titles and
+  says it vouches for nothing.** Its consumer is a language model and its input
+  is page-controlled, so it is an injection surface even though the component
+  has no network access at all.
+- 2026-08-18 — **The rail may not hide where you are.** Collapse is honoured
+  everywhere except on the *ancestors* of the current node, which always render
+  open; the stored state is untouched and takes effect again once the user moves
+  away. The current node itself may be collapsed, since its children are forward
+  branches. See `FOSTrailRailView`'s header, rule 1.
+- 2026-08-18 — **Depth is bounded by hoisting, not by truncation**, and hoisting
+  is deliberately the same gesture as the Field's zoom so the two pillars share
+  one answer to scale. It is a view operation, so it gets no verb and needs no
+  spoken form.
+- 2026-08-18 — **Marks go to the whole active trail, not to the visible rows.**
+  `GRAMMAR.md` §2 makes stickiness the rule that gives marks their value, and a
+  letter that changed when a subtree collapsed would be a positional label with
+  extra steps. A trail is bounded, so this is within 26 in the ordinary case;
+  past that `assign` returns null and those nodes are reached by search, which
+  §2 already specifies.
+- 2026-08-18 — **Re-entry replays a stored SessionStore blob; it never calls
+  `gotoIndex`.** Session history truncates every forward entry the moment you go
+  back and navigate elsewhere, which is precisely the destruction pillar B
+  exists to prevent. Restoring through it would have destroyed the branch the
+  rail is there to show.
+- 2026-08-18 — **`back` is time, `up` is structure.** The node you were on a
+  moment ago and the node above you in the tree are different questions with
+  different answers after a branch, so they keep separate verbs.
+- 2026-08-18 — **Each tab opens its own trail.** A tab is already the user's own
+  statement that this is a separate line of enquiry; inferring trails from
+  navigation timing would guess at something they have said outright.
+- 2026-08-18 — **A same-document navigation updates the current node rather than
+  adding one.** Provisional, and flagged as such in the code: an application
+  that navigates entirely by `pushState` collapses to a single node, and if that
+  matters the fix is to compare paths rather than to record every fragment.
+
+- 2026-08-18 — **URL-or-search is decided at execution on `nsIURIFixup`, never
+  in the grammar.** It turns on what schemes and hosts exist rather than on how
+  the line is shaped, so it is not syntactic; putting it in the parser would
+  also cost the grammar its node test suite and give the transcript front end a
+  second thing to agree with. See `design/GRAMMAR.md` §7.
+- 2026-08-18 — **The bar opens showing all twelve verbs, grouped by pillar.**
+  The standard palette critique — do not withhold what the menus expose — does
+  not apply, because there are no menus; but that removes the safety net rather
+  than granting one, so this is the only surface that can teach the vocabulary.
+- 2026-08-18 — **A prefix is offered, never triggered.** A single token lists
+  the verbs it prefixes and Tab completes one; Enter still searches. Changing
+  what is *shown* is safe, changing what Enter *does* would be the mode §3
+  exists to prevent. Tab needs no spoken form because it reaches no action.
+- 2026-08-18 — **An unwired verb reports `NOT_WIRED` and stops the chain.** It
+  must not fall through to a web search — that is exactly the hijack the
+  fallback rule prevents — and it must not be skipped, because a later verb in
+  a chain usually depends on what an earlier one did.
+
+- 2026-08-18 — **A push chain that reaches a region edge re-seats the unpinned
+  card it was pushing instead of refusing the drag.** Refusing there made most
+  drags in a busy region fail while the vacated seat sat empty. An unpinned card
+  has no position the user chose, so re-seating it is as legitimate as seeding
+  it. Refusal is now only ever about a position the user owns.
+- 2026-08-18 — **Placement never fails.** A full region evicts one
+  least-recently-used *unpinned* card, and grows if that does not free a
+  reachable seat. Navigation drives placement, so it cannot be allowed to
+  refuse. Recorded in `FIELD.md` §6.
+- 2026-08-18 — **VPSC and the node-overlap-removal literature are rejected for
+  the drag path**, because they are batch and globally displacement-minimising
+  and so cannot give the mid-drag guarantee, and because they have no way to
+  express refusal. See `IDEAS.md`.
+- 2026-08-18 — **Field tests run at session scale (40+ cards), not at three.**
+  Both defects so far were density effects that a small case cannot reach.
 - 2026-08-18 — **Telemetry is switched off in `TelemetryPrefValue()`, not in a
   pref file.** `SetupTelemetryPref` locks the pref, so a branding pref line is
   silently ignored; leaving one in place would read as a guarantee it cannot
@@ -164,6 +711,16 @@ repeated failure even when each run has a new explanation for it.
 - 2026-08-18 — **Mozilla services are switched off, not rebranded.** Relay,
   Firefox Accounts, VPN and Monitor promos each carry a network path to Mozilla,
   and the fork has no account system. Renaming them would have been a lie.
+- 2026-08-18 — **A page carries one mark, and it belongs to its trail node.**
+  A card is that page's presence on the Field, not a second object to address,
+  so `enter` and `dismiss` take a node. Giving cards their own letters spent two
+  of the twenty-six on every page, and the rail lost its marks in a session of
+  ordinary size. It also makes `FIELD.md` §8 sayable: the mark survives the
+  dismissal that removes the card, so `enter <mark>` is what brings it back.
+- 2026-08-18 — **The overview lays out the slots that hold something**, not all
+  nine. Sizing for nine left two thirds of the window empty at three trails.
+  `§5`'s landmark property is carried by the model's permanent slot indices — a
+  region never reorders against another — rather than by the grid's shape.
 - 2026-08-18 — **A line is a command only if every token parses as one.** Eight
   of the twelve action words are ordinary English, so `what is a memex` returned
   a syntax error. Syntactic failure now falls back to a query; semantic failure

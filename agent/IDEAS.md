@@ -600,3 +600,686 @@ confirm the specification.
   hardware, not availability — measure those, do not re-litigate whether ASR is possible.
 - **Lesson:** run 2's claim came from a capability table; this one came from the dispatch
   code. When a feature looks blocked, check the code that would do the blocking.
+
+### Node overlap removal (VPSC) is the wrong shape for a drag
+- **Found:** 2026-08-18, Dwyer, Marriott and Stuckey, "Fast Node Overlap Removal", GD 2005
+  (people.eng.unimelb.edu.au/pstuckey/papers/gd2005b.pdf); Gansner and Hu, "Efficient,
+  Proximity-Preserving Node Overlap Removal", JGAA 2010 (graphviz.org/documentation/GH10.pdf).
+- **What it is:** The graph-drawing literature's answer to exactly our problem — adjust a
+  layout so equal or unequal rectangles do not overlap while staying as close as possible to
+  where they started. VPSC generates a linear number of separation constraints and solves
+  them per axis, a horizontal pass then a vertical one, minimising total displacement.
+- **Verdict:** reject for the drag path; keep in mind for a future batch reflow.
+- **Why:** Two mismatches, and the first is fatal. It is a *batch* method that minimises
+  displacement *globally*, so re-running it each frame of a drag can flip between optima and
+  move a card the user is not touching a long way for a small pointer movement. FIELD.md §6
+  promises the opposite — that what is on screen mid-drag is exactly what a drop commits,
+  which is what removes the settle animation. Second, VPSC has no notion of refusing:
+  pinned cards enter as hard constraints and the problem simply becomes infeasible, whereas
+  our design needs "this drop is not possible, nothing moved" as a first-class outcome.
+
+  Our case is also strictly easier than the one the papers solve, which is worth saying so
+  nobody reaches for the heavy tool again. Only one card moves at a time and every other
+  card was already legal, so it is a single-source incremental problem: a push front
+  spreading from the moved card, each overlap resolved along its axis of least penetration,
+  propagating only through unpinned cards. That is also what Data Mountain describes, and it
+  is O(cards touched) rather than O(all cards).
+
+  It would be the right tool for a batch reflow — importing a trail, or a region whose
+  extent changed — if that ever needs to preserve relative arrangement. Nothing needs it yet.
+- **Phase:** 2A, decided and built.
+
+### A session-sized workload is a different test from a correct one
+- **Found:** 2026-08-18, from this project's own defects rather than from a source.
+- **What it is:** Both Field defects — a busy region refusing ordinary drags, and placement
+  throwing once a card sat off the seeding lattice — passed a full unit suite and appeared
+  the first time the model saw forty cards in a real runtime.
+- **Verdict:** adopt as a testing rule.
+- **Why:** Neither was a logic error that a smaller case would have exposed; both were
+  *density* effects. At three cards a push chain never reaches a region edge and the lattice
+  is never fragmented, so the invariant tests were all true and all uninformative. This is
+  the third time on this project that a green suite hid a live bug, after the grammar bug and
+  the truncated wordmark, and the pattern is the same each time: the test exercised the code
+  but not the condition. Field tests now run at session scale, and the two defects are
+  regression tests at the size that produced them.
+- **Phase:** 2, standing.
+
+### Command palettes fail at discoverability, and ours inverts the usual critique
+- **Found:** 2026-08-18, surveying command-palette UX writing (UX Patterns' and
+  uxpatterns.dev's palette entries, Retool's write-up on designing theirs, Destiner's
+  "Designing a Command Palette").
+- **What it is:** The consistent complaints are not about parsing or speed. They are
+  (1) users never find the palette, (2) a palette that withholds what the menus expose
+  is worse than the menus, and (3) opening to a bare input — or to an alphabetical dump
+  of every command — teaches nothing. The recurring advice is to show useful suggestions
+  at the moment of opening.
+- **Verdict:** adopt (3), and note that (2) inverts here.
+- **Why:** (2) assumes the palette is an accelerator sitting beside menus. Ours is the
+  *only* entry surface, so there is nothing to be incomplete with respect to — but that
+  removes the safety net (2) is really describing. A user who does not know the twelve
+  action words has nowhere else to learn them, which makes the empty state the one screen
+  in the product that must teach. So the bar opens showing the whole action table grouped
+  by pillar: twelve is small enough to show entire, and the pillar grouping is what stops
+  it reading as the alphabetical dump the same sources warn against.
+
+  The follow-on problem is subtler and mattered more. GRAMMAR.md §3 makes a half-typed
+  action word prose — `fie` is a query and Enter must search for it — but showing nothing
+  while the user types `fie` wastes exactly the moment they are reaching for `field`. The
+  resolution is to separate what is *shown* from what Enter *does*: a single token lists
+  the action words it prefixes, Tab completes one, and the parse is untouched. Anything
+  stronger would be the mode §3 exists to prevent, arriving through the suggestion list
+  instead of through the grammar.
+
+  Tab needs no spoken form and this is not an exception to §5. The requirement is that
+  every *action* be reachable in both modalities; Tab reaches no action, it shortens the
+  path to one a voice user would simply say outright. A completion affordance is not a
+  command — worth stating because "add a keyboard-only shortcut" is precisely how a
+  separate accessibility mode gets built by accident.
+- **Phase:** 2, built.
+
+### URL-or-search is an execution question, not a grammar one
+- **Found:** 2026-08-18, while wiring the bar's execution path.
+- **What it is:** GRAMMAR.md §3 settles command versus query and stops there. But a query
+  covers both `gecko session history` and `example.org/docs`, and nothing in the grammar
+  distinguishes them.
+- **Verdict:** adopt — settle it at execution, on `nsIURIFixup`, and never in the parser.
+- **Why:** The answer depends on what schemes and hosts exist rather than on how the line
+  is shaped, so it is not a syntactic property and putting it in the grammar would make the
+  parser depend on Gecko — which would end the ability to test the grammar in node and, worse,
+  give the transcript front end a second thing to agree with. Gecko has owned this decision
+  for two decades: fixup knows the scheme typos, the alternate-URI prefs and the keyword
+  fallback, and it reports which of the two it chose, so reading its answer keeps the bar in
+  step with the address bar instead of drifting from it. A hand-rolled "does this look like a
+  URL" check is the kind that gets `localhost:8080` and `pack rat` wrong in opposite
+  directions.
+- **Phase:** 2, built.
+
+### Hoisting: outliners bound tree depth by re-rooting, not by squeezing indent
+- **Found:** 2026-08-18, searching outliner navigation technique; Dynalist's
+  "Outliner 101" (help.dynalist.io/article/129-outliner-101), molodtsov.me
+  "The Evolution of Outliners", and Workflowy's zoom-by-bullet.
+- **What it is:** Outliners distinguish *collapsing*, which hides part of the
+  current outline, from *hoisting* (Workflowy calls it zoom), which changes the
+  root: the chosen node becomes the whole view and its ancestors become a
+  breadcrumb. MORE shipped this in the 1980s and every serious outliner since
+  has it.
+- **Verdict:** adopt for the trail rail.
+- **Why:** Criterion 2 — it names the specific failure it fixes. A rail is a few
+  hundred pixels wide and a real trail runs deep, so indentation runs out; the
+  obvious answers are all bad (shrink the indent until the tree stops reading as
+  a tree, truncate with an ellipsis, or scroll horizontally). Hoisting spends no
+  horizontal space at all, because depth becomes zero again at the new root.
+  Criterion 4 is what makes it the right choice rather than merely a workable
+  one: it is the *same gesture* as the Field's zoom into a region — "this part,
+  larger" — so the two pillars share one idea instead of each inventing a way to
+  handle scale. It is also honest about what it is: a view operation that moves
+  nothing and runs no action, so it needs no verb in the action table and no
+  spoken form, by the same argument that keeps Tab out of the grammar.
+- **Phase:** 2B, built — `FOSTrailRailView.railFor`'s `hoistRoot`, `z` and
+  Backspace in the rail.
+
+### A mark derived from a URL is derived from "https"
+- **Found:** 2026-08-18, looking at the rail's first screenshot in a real build.
+- **What it is:** Marks are assigned when an object first becomes addressable.
+  For a trail node that is the moment it is created, which is *before* the page
+  reports a title — so the only label available was the URL, and
+  `preferenceOrder` walks the label's distinct letters in order. Every URL
+  begins `https://`, so the first four nodes of every session took h, t, p, s.
+- **Verdict:** adopt the fix — derive the mark from the rail's display label
+  (title, else host) rather than the raw URL.
+- **Why:** Worth recording because the bug is not in the mark allocator, which
+  did exactly what it was designed to do, nor in stickiness, which correctly
+  refused to change the letters afterwards. It is in what was handed in as the
+  label, and the two correct rules combined to make a bad outcome permanent.
+  The general lesson: **stickiness makes the quality of the first label matter
+  much more than it looks**, because a mark assigned from a poor label is not
+  merely unhelpful once, it is unhelpful for the object's whole lifetime. Any
+  future pillar registering marks — cards, contexts — has to ask what its label
+  looks like at *creation* time, not at steady state.
+- **Phase:** 2B, fixed.
+
+### Capture the page you left from history, not at the moment you leave
+- **Found:** 2026-08-18, instrumenting `SessionStore.getTabState` during a real
+  navigation after the scroll assertion failed.
+- **What it is:** The intuitive capture point for "where was the user on the page
+  they just left" is the start of the next load. In practice the parent process's
+  collected state at that instant is routinely `{"entries":[]}` — the content
+  process has not reported yet — so most ordinary forward navigations captured
+  nothing. Once the *next* page settles, session history holds the previous entry
+  complete, with the scroll offset in its `presState`.
+- **Verdict:** adopt: capture after the fact from session history, guarded by a
+  URL check.
+- **Why:** Criterion 3, and it also corrects the earlier in-tree reading. The
+  `nsISHEntry` entry in this file said scroll and form state already exist per
+  entry, which is true, but implied they could be read at will; the missing half
+  is *when* they are populated. Two further details worth keeping: the offset
+  lives in `entry.presState`, not the top-level `scroll` key, which only appears
+  while the entry is current and the live collector has reported it; and waiting
+  is affordable here precisely because the entry being read is the one *behind*
+  the current page, so nothing more is going to change it. A flush at departure
+  would resolve after the tab had already moved on and would faithfully record
+  the wrong document.
+- **Phase:** 2B, built — `FOSTrailSession.#backfillPrevious`.
+
+### PadPrints: a thumbnail hierarchy pays at revisitation, and only there
+
+**Searched:** PadPrints zoomable graphical history evaluation; Hightower, Ring,
+Helfman, Bederson, Hollan, *Graphical Multiscale Web Histories: A Study of
+PadPrints*, Hypertext '98.
+<https://research.cs.vt.edu/ns/cs5724papers/6.theoriesofuse.distcog.hightower.padprints.pdf>
+
+**Found:** the closest measured relative of the Field, and one this project had
+only met second-hand through Data Mountain's dismissal of it. PadPrints builds a
+left-to-right hierarchy of thumbnails as you browse, in a zooming UI, beside an
+unmodified Netscape. Two experiments, and the split between them is the finding:
+
+- Experiment 1, general navigation over two site collections, 37 subjects:
+  significantly *fewer pages accessed* (p = .0002) but **no** difference in task
+  time (p = .34). Satisfaction was significantly higher on every QUIS section
+  that moved.
+- Experiment 2, tasks explicitly requiring returns to prior pages: users
+  finished in **61.2% of the time** taken without it.
+
+Its own framing of the problem is still exactly right thirty years on, and is
+worth quoting against the fork's own premise: 0.1% of page accesses went through
+the history list while 42% went through the Back button — "pages are revisited
+with a high frequency, [but] the history list is largely unused", because it is
+incomplete (branches vanish), textual, and buried behind a menu.
+
+**Verdict: adopt, narrowly — and the narrowness is the useful part.** Hierarchy
+is not a constant benefit that earns constant screen space; it is a benefit at
+the moment you are trying to get back to something. That is the argument for
+showing lineage *transiently*, on focus, rather than drawing the tree inside
+every region — and it settles `FIELD.md` §10, now written up as §11. It also
+corrects an impression this project had taken from Data Mountain's related work:
+PadPrints is cited there as automatic layout "for short term use", which is true
+and is why the Field seeds rather than arranges, but it is not evidence that
+showing hierarchy failed. It did not fail. It was measured, and it won where the
+task was revisitation.
+
+### Users reach for proximity and leave the explicit links alone
+
+**Searched:** spatial hypertext implicit structure versus explicit node-link
+overlay; Shipman & Marshall on spatial hypertext; Storyspace's map view; VKB.
+<https://dl.acm.org/doi/pdf/10.1145/3720553.3746683>,
+<https://scispace.com/pdf/spatial-hypertext-designing-for-change-3532t615lt.pdf>
+
+**Found:** systems that offered both an implicit spatial arrangement and an
+explicit link overlay in the same view — Storyspace's map, the Visual Knowledge
+Builder — consistently saw users express relationships through proximity and
+visual attributes and avoid the explicit linking mechanism. Implicit structure
+is not the poor relation of explicit structure in these tools; it is what people
+actually used.
+
+**Verdict: adopt as the argument against a persistent overlay.** Combined with
+the PadPrints entry it gives the Field a coherent answer rather than a
+compromise: the structure is real and worth showing, and the way to show it is
+not a drawn graph. It matters more here than in the systems studied, because the
+Field invites dragging — any edge set drawn over an arrangement people rearrange
+becomes spaghetti within a session. Lineage is derived on focus, so there is
+nothing to maintain and nothing to tangle.
+
+
+### The 30-second dwell threshold, and why it is a floor rather than a fact
+- **Found:** 2026-08-18, the click-satisfaction and dwell-time literature (Kim, Hassan,
+  White et al., *Modeling Dwell Time to Predict Click-level Satisfaction*, WSDM 2014, and
+  the industrial practice it describes).
+- **What it is:** Industrial search systems treat a click with 30s or more of dwell as a
+  "satisfied click", and use it as the implicit relevance signal where no human judgement
+  exists.
+- **Verdict:** adopt the number, adopt the caveat with it.
+- **Why:** `SCHEMA.md` needs `visit.outcome` to be `bounced | read | saved` and the
+  boundary had to come from somewhere. 30s is the only number in this area with a large
+  body of evidence behind it, so inventing one would have been strictly worse. But the
+  same literature is clear that a single fixed threshold is crude: the satisfying duration
+  moves with the document, peaking near 30s at a medium reading level and past 50s at a
+  difficult one. So this will call a skimmed reference page bounced and a slowly-read hard
+  page bounced too. It is written down as `READ_DWELL_MS` with the limitation in the
+  comment and an override on the function, so the day there is per-page evidence the fix
+  is a parameter rather than an excavation.
+- **Phase:** 2C, done. Improving it needs real usage data, which is exactly what the
+  engine is now collecting.
+
+### Task boundaries cannot be found with a clock — which is why a context is provenance
+- **Found:** 2026-08-18, the search-task-extraction literature: Lucchese, Orlando, Perego,
+  Silvestri and Tolomei, *Identifying Task-based Sessions in Search Engine Query Logs*
+  (WSDM 2011), and the session-boundary work it surveys.
+- **What it is:** Three families of session-boundary detection — time-based, content-based
+  and heuristic. The measured result that matters: timeouts, whatever their length, are of
+  limited utility for *task* boundaries, topping out around 70% precision, and about 75% of
+  submitted queries are issued while the user is multi-tasking.
+- **Verdict:** adopt, as the argument against the obvious design.
+- **Why:** This is the run's most useful finding because it killed the thing I would
+  otherwise have built. "The active context is whatever you have been doing for the last
+  N minutes" is the natural first implementation, it is what a recency window gives you
+  almost for free, and it is wrong most of the time it matters — if three quarters of
+  queries are interleaved with another task, a single clock-derived context is mislabelling
+  the majority of them. What the browser has that a query log does not is provenance: the
+  user already partitioned their work by opening a tab, and that is a statement rather than
+  an inference. So a trail is a context, membership is attributed `provenance`, and the
+  explicit `context <mark>` is how the user overrides it. Embedding-based merging across
+  trails is a real improvement to make later, and it rests on this floor instead of
+  replacing it — `context_member.source` is what keeps the two tellable apart afterwards.
+- **Phase:** 2C, done as the seeding rule.
+
+### A shallow entity extractor earns its keep on titles, not on queries
+- **Found:** 2026-08-18, building `FOSContextSignals` and then watching it run on real
+  queries in a browser window.
+- **What it is:** Without a model, the only entity evidence in plain text is punctuation
+  and capitalisation: quoted phrases, runs of capitals, and everything else.
+- **Verdict:** adopt as the floor, with the limit stated.
+- **Why:** It ranks salience honestly and refuses to guess `kind`, which matters because
+  the context pack is built to be read by a language model and a column of confidently
+  wrong `person`/`org` labels is worse than no column. But the limit found by running it
+  is sharper than the one I designed for: **queries are typed in lower case**, so the
+  capitalisation signal is absent from exactly the input that carries the user's intent,
+  and "vannevar bush memex" yields three plain words rather than a name. Page titles are
+  capitalised and are where it currently earns its keep. This is the strongest argument
+  yet for the embedding pass, and it is a specific one: the gap is query understanding,
+  not page understanding.
+- **Phase:** 2C for the floor; the embedding pass is the next step and now has a concrete
+  target.
+
+### A context pack is an untrusted-input surface, even with no network
+- **Found:** 2026-08-18, writing the export and asking who reads it.
+- **What it is:** The pack's consumer is a language model, and its content is page titles
+  and page-supplied text — which the page controls.
+- **Verdict:** adopt as a rule for anything the engine exports.
+- **Why:** A page can call itself `[click here](http://elsewhere)` or append an
+  instruction, and a brief built by pasting titles straight through would carry both into a
+  model's context as though the engine had vouched for them. It costs nothing to neutralise
+  markdown at the boundary and to state plainly in the footer that a page appearing in the
+  brief means it was open, not that it was right. Worth recording as a general shape: this
+  component has no network access at all, and it still has an injection surface, because
+  the untrusted input arrived through the browser and leaves through the clipboard.
+- **Phase:** 2C, done, with a test that a forged link does not render as a link.
+
+### Nyxt's history persists but nobody solved how much of it to reopen
+
+Searched: Nyxt global history tree persistence, restore across restarts,
+unbounded growth. https://nyxt.atlas.engineer/article/global-history-tree.org
+and atlas-engineer/nyxt#1007. Nyxt saves the whole global tree to a file and
+restores it, and the project's own thread worries about how fast a 10,000-entry
+history flattens and where it slows the browser; the suggestion floated was to
+chunk history to a running 30-day window. Nothing was implemented, and the
+crash-restore path is buggy enough to have its own issue (#1560, "owner with
+identifier does not exist").
+
+Verdict: **adapt, and reject the window.** The finding worth having is that the
+question is unsolved rather than that Nyxt solved it — a persistent navigation
+tree needs a policy for what to *reopen*, which is a different question from
+what to *keep*. A 30-day window answers it badly: this project already decided
+a clock is a poor judge of what a user is still working on (task boundaries top
+out near 70% precision), and a fortnight away from the machine would read as
+having finished. Bounding by rank instead — the K most recently updated trails,
+whole or not at all — gives the same protection against unbounded reopening
+without pretending to know what recency means. Nothing is deleted; an older
+trail waits for a surface that asks for it. Shipped this run.
+
+### A restart is revisitation, which is exactly where thumbnails pay
+
+Follows from the PadPrints entry above rather than from a new search, and
+recorded because restoring made it concrete. PadPrints' result was that a
+thumbnail hierarchy pays at revisitation and nowhere else — no time difference
+on general browsing, 61.2% on revisitation tasks. Reopening yesterday's session
+is revisitation by definition, and it is the moment the Field has the least to
+show: snapshots live in memory, so every restored card is a grey rectangle with
+a caption (`agent/reports/restore-field.png`). So the thumbnail work that would
+be a nice-to-have on a live session is load-bearing on a restored one, which
+moves it to the top of the queue rather than leaving it as polish.
+
+Verdict: **adopt as the next task.** Gecko keeps a thumbnail disk cache in the
+profile and `PageThumbs.getThumbnailURL(url)` hands back a `moz-page-thumb://`
+URL that chrome can use directly; the Field currently captures through
+`captureTabPreviewThumbnail`, which does not populate it. Store on departure,
+fall back to the stored image when a card has no live snapshot. Verify the disk
+cache is enabled in this build first.
+
+### Departure is the wrong moment for a picture, for the same reason it was wrong for scroll
+
+Measured on this build rather than searched for, and it is the second time this
+project has learned the same lesson. Run 10 found that reading the scroll offset
+at departure returns nothing, because the content process has not reported yet,
+and fixed it by reading session history once the *next* page settles. The
+thumbnail has the same fault and cannot take the same fix: instrumenting
+`captureTabPreviewThumbnail` at departure showed it called with the browser's
+URI already reading `about:blank` on a cross-process navigation, and more often
+returning false outright, because the browser has been swapped before the
+listener runs. Pixels, unlike scroll offsets, are not recorded anywhere after
+the fact, so there is nothing to backfill from.
+
+Verdict: **capture when a page settles, and keep the departure capture as well.**
+They answer different questions and both are worth having — the settle capture
+is reliable and is a picture of the page as published, the departure capture is
+a picture of the page as you left it, scrolled to what you were reading. So the
+settle capture is the floor and the departure capture is the improvement on it
+when it wins the race. The delay before the settle capture is one second, which
+is what Firefox itself waits before capturing a top site, and for the reason its
+own comment gives: a page that has just fired `load` is often still laying out.
+
+The cost is one extra `drawSnapshot` per page load. Firefox already pays that on
+every top-site load, and it buys the thing this browser could not otherwise
+claim: a session restored tomorrow whose cards are pictures rather than grey
+rectangles, without asking the network for anything.
+
+### Refilling a missing thumbnail by re-fetching the page — rejected
+
+`BackgroundPageThumbs.captureIfMissing(url)` is in the tree and is what newtab
+uses to get a picture of a page nobody has open. It would fill in every restored
+card whose page predates this work.
+
+Verdict: **reject.** It re-fetches the page over the network, invisibly, for a
+page the user is not looking at — which is a browser phoning out on its own
+initiative for cosmetics, and this fork's whole premise is that it does not do
+that. A card with no picture is honest about never having been seen; a card
+holding a *freshly fetched* picture of a page as it looks now is a lie about
+what you visited. Recorded so it is not reconsidered as an obvious win.
+
+### SearchBar: a persistent task sidebar, and the numbers that settle its design
+
+- **Found:** searching for prior art on "what you know so far" surfaces before
+  building the context sidebar — D. Morris, M. R. Morris and G. Venolia,
+  *SearchBar: A Search-Centric Web History for Task Resumption and Information
+  Re-finding*, CHI 2008. https://cs.stanford.edu/~merrie/papers/searchbar.pdf
+- **What it is:** a permanent browser side pane that passively captures queries
+  and the pages visited after them, grouped into user-named topics, with a
+  per-topic summary page, a "thumbs up" to promote a page, and free-text notes.
+  Deployed in a 16-participant two-session study with a week between sessions.
+- **Verdict:** **adopt**, as the evidence base for pillar C's second surface —
+  and it settles four design questions I would otherwise have guessed at.
+- **Phase:** 2C, built this run as `FOSContextSidebar`.
+
+This is the closest thing to the context sidebar anyone has actually evaluated,
+and almost every number in it is directly usable.
+
+**A third of re-navigation went through the pane, so its rows must be live.**
+Participants used SearchBar for 31.7% of re-querying actions and 31.5% of
+re-navigation actions, rising to 42.2% of re-navigations in week two. That is
+the same argument the rail already won on its own terms — a tree you can only
+look at is a curiosity — but with a measurement behind it. Every row in the
+sidebar re-enters its node.
+
+**Its value appears at resumption, not in the session.** Rated only moderately
+useful in week one (median 3.5) and then 5 in week two (z = -1.91, p = .05):
+"highly valued for resuming longer-term suspended tasks where it was not
+possible to maintain context via unchanging browser state." The consequence for
+this project is a testing discipline, not a feature — the sidebar will look
+thin when driven for ten minutes on a fresh profile, and that is exactly what
+the paper predicts. Judge it across a restart, which this build now survives.
+
+**Persistent context replaced tabs, measurably.** In week one all sixteen
+participants opened a new tab to hold the state of an interrupted task. In week
+two that behaviour was six of eight in the control group and *one* of eight
+with SearchBar (z = -2.44, p < .02). The authors read it as the pane's
+persistent state making the extra tabs unnecessary. This is the strongest
+external evidence this project has that tabs are a workaround for context the
+browser fails to keep, rather than a thing users want — see "Tabs are unfinished
+work, not bookmarks". It is from 2008, and no shipping browser acted on it.
+
+**Manual topics were its one real failure, and we already avoid it.** "It was
+difficult to remember to create a new topic" scored a median 4.0 both weeks;
+three of eight participants created no topics at all, and the mean was 2.0
+topics against a larger number of tasks. The paper's own future work: "Automatic
+creation of new topics based on lexical, semantic, or temporal relationships
+among queries remains as future work." Contexts here are seeded by provenance
+and never asked for, which is that future work answered — and answered without
+the clock, which the search-log literature says would be wrong most of the time
+it mattered. Retrospective support for a decision already made, so nothing
+changes; it is recorded because it is the strongest reason not to revisit it.
+
+**Notes are the feature to leave out.** Note-taking was the lowest-rated part of
+the tool, 3.0 in both weeks, against 4.0/4.5 for topic organisation and 4.0 for
+the per-topic summaries. A context sidebar is under constant temptation to grow
+a notes field; the one study that shipped one found it was the part nobody
+wanted. Not building it, and this is the reason.
+
+**Screen real estate was not resented**, median 2.0 ("took up too much space")
+in both weeks, even in the week it was barely used. So a sidebar meant to be
+stayed in can be persistent, and does not have to apologise for its width.
+
+Two further numbers worth keeping for the README's motivation section: Obendorf
+et al. found browser history initiated **0.2% of all actions** despite revisits
+being 44% of page views, and in SearchBar's own survey (n = 170) only 7.6% of
+people named browser history as a resumption strategy against 36% who named
+*memory* and 14% who named leaving the browser open. In the study itself five
+participants used history and three could not find it — two resorted to the
+help facility. That is the surface this fork is replacing, quantified.
+
+### A sidebar's live rows are its own re-navigation, not a second Field
+
+- **Found:** falls out of the SearchBar adoption above, plus this tree's own
+  rule that marks are a budget of 26 shared by every pillar.
+- **What it is:** the temptation, once the sidebar lists pages, to give those
+  rows marks of their own so `enter <mark>` reaches them.
+- **Verdict:** **reject.**
+- **Why:** a page already has exactly one letter, claimed by its card or its
+  rail row, and a sidebar row is a third presence of the same page. Giving it
+  its own letter spends the alphabet on duplicates — the same argument that
+  stopped `enter` taking a separate "card" kind. The sidebar's rows are
+  clickable and arrow-navigable, and a row for a page that *does* hold a mark
+  shows the letter it already has. Recorded so the "make it addressable"
+  instinct does not spend the budget in three runs' time.
+
+### Frecency is a well-optimised answer to a question this fork is not asking
+
+- **Found:** looking for what the command bar should rank by before building
+  the first of `SCHEMA.md`'s three surfaces. Hartmann et al., *Federated
+  Learning for Ranking Browser History Suggestions*, and Mozilla's own write-up
+  of the shipped experiment. https://arxiv.org/abs/1911.11807 and
+  https://florian.github.io/federated-learning-firefox/
+- **What it is:** Mozilla replacing the awesomebar's handcrafted frecency
+  weights with weights learned on-device, across 723,581 users — 360,518
+  training, 306,200 in the evaluation.
+- **Verdict:** **adopt** as the motivation for context ranking; **reject** any
+  attempt to learn weights here.
+- **Phase:** 2C, the next task.
+
+Two numbers matter. First, Mozilla says plainly that "the weights in the
+algorithm were not decided on in a data-driven way. Essentially, they are
+similar to magic numbers in software engineering" — twenty-two of them, over
+time buckets and visit types, in the ranking every Firefox user has depended on
+for fifteen years. Second, optimising all twenty-two at that scale moved the
+characters typed before selection from 4.26 to 3.67. Just over half a
+character.
+
+That is the strongest possible argument for changing the *signal* rather than
+the weights. Half a character is what a decade of global frecency has left on
+the table; the gap this fork is aiming at is the suggestion list being about
+your whole life rather than about the thing you are doing, and no reweighting
+of a global counter closes it. It also sets the honest bar for judging the
+result: if ranking by active context is worth building, it must beat frecency
+by more than the entire remaining headroom of frecency itself, which means the
+test is "the page I want is offered at all", not "it moved up two places".
+
+The rejection is as important. This build has one profile, no telemetry, no
+cloud, and no population to learn from — federated learning needs 360,000
+users. A local model fitted to one person's clicks would be a magic-number
+generator with worse provenance than Mozilla's.
+
+### Cross-session resumption is the case the command bar exists for
+
+- **Found:** Kotov, Bennett, White, Dumais and Teevan, *Modeling and Analysis
+  of Cross-Session Search Tasks*, SIGIR 2011.
+  https://dl.acm.org/doi/10.1145/2009916.2009922
+- **What it is:** log analysis of search tasks that span more than one session,
+  with models for predicting whether a task will continue and whether a query
+  belongs to a task seen before.
+- **Verdict:** **adopt** the framing. Reported figure, taken from the paper's
+  abstract rather than from the full text (the PDF host refused three fetches):
+  close to **60% of complex information-gathering tasks continue across
+  sessions**.
+- **Phase:** 2C.
+
+This is the same finding as SearchBar's week-two effect from the other side —
+one measured on sixteen people's behaviour, one on a query log — and together
+they say the surface is judged on resumption. The consequence for the ranking
+is concrete and it is not a weighting: candidates must come from the **store**,
+across sessions and across trails, not from the window's in-memory tree. A bar
+that can only rank what this session has already loaded is a bar that works
+exactly when you did not need it.
+
+### Ranking is tiers of provenance, not a score
+
+- **Found:** falls out of the two entries above, plus this tree's existing rule
+  that the store's rows are provenance.
+- **Verdict:** **adopt** as the design for the command bar's ranking.
+- **Phase:** 2C, next run.
+
+One score mixing context membership, recency, outcome and frecency would be
+twenty-two magic numbers again, invented by one person in an afternoon instead
+of by Mozilla over fifteen years. Tiers instead, each one a fact rather than a
+coefficient, ordered by how strong a claim it makes that this is the thing you
+meant:
+
+1. a **mark** typed as a mark — an address, not a guess;
+2. pages **in the active context**, best outcome first — `contextContents`
+   already returns them in that order and the bar must not re-sort;
+3. pages on the **active trail** that the context has not claimed;
+4. **crossings** — pages this context reached from another trail;
+5. everything else, by **Places frecency**, which stays as the floor because a
+   browser that cannot find a page you visited once last year is worse than
+   Firefox and this fork's claim is not that history should be lost.
+
+A tier is explainable in one line to the user, which frecency has never been,
+and a tier boundary is falsifiable: either the page is in the context or it is
+not. Only the last tier holds a score, and it is one this project did not
+invent.
+
+### A late suggestion list must not renumber under the selection
+
+- **Found:** in this tree, not on the web — `UrlbarView.mjs` and
+  `UrlbarChildController.mjs`. Two rules, both shipped for fifteen years and
+  neither written down anywhere as advice.
+- **Verdict:** **adopt** both, in the bar's own terms.
+- **Phase:** 2C, this run.
+
+The first: results are only auto-selected when nothing is selected already
+(`if (!this.#selectedElement …)`), and typing resets the selection to none.
+The second: rows from the previous query are held on screen while the next one
+runs and are only dropped once it returns something —
+`browser.urlbar.removeStaleRowsTimeout`, 400ms. The first is a correctness
+rule and the second is a legibility one, and together they are the whole answer
+to "the read lands after the keystroke that asked for it".
+
+The bar re-renders wholesale rather than diffing rows, so "do not move the
+selection" had to become "re-anchor it by row identity": the id of the selected
+row is read out of the DOM before the rebuild and looked up again after, and a
+row that has gone takes the selection back to the typed line rather than
+passing it to whatever took its place. Stale rows are kept for the in-flight
+read and dropped the moment the line stops being a query at all, which is the
+one case where holding them would answer a question nobody is asking.
+
+### Zero-prefix suggestions are a recency cache, so they stay rejected
+
+- **Found:** searching for evaluations of zero-prefix (empty-query) suggestion
+  lists turns up implementation and patent material rather than any usability
+  result — Yim and Cha, "On-device Query Caching For Enhancing Zero-Prefix Query
+  Suggestions" (TDCommons 3697), plus e-commerce query-suggestion patents.
+  https://www.tdcommons.org/dpubs_series/3697/
+- **Verdict:** **reject**, and record it so the question is not reopened.
+- **Phase:** n/a.
+
+The consistent description across all of it is that zero-prefix lists are
+ranked from a cache of *recent and recurring queries*. That is precisely the
+signal this project rejected for deciding what belongs to a context, and
+adopting it at the one surface with no query to rank against would be adopting
+it in its weakest form. The empty bar keeps showing the twelve verbs: it is the
+only surface that can teach the vocabulary, and there are no menus behind it.
+
+### A store row with no Places record is invisible to the bar
+
+- **Found:** by a test of the ranking that failed for a good reason — a
+  synthetic trail row, in no context and on no active trail, was offered by
+  nothing.
+- **Verdict:** **accept** as the floor doing its job; note the one real case.
+- **Phase:** 2C, and it strengthens the case for the deferred trail-finding
+  surface.
+
+Tiers 2 to 4 are provenance and each has a precondition; tier 5 is Places. So a
+page reachable by none of them is a page that is on some old trail, is not in
+the active context, and has no Places record — which happens when history has
+been cleared but the fork's own store has not. That is a narrow case and the
+honest answer is not a sixth tier: it is that an old trail should be findable
+*as a trail*, which is the surface already deferred in `STATE.md`. Adding
+"every page you have ever recorded" as a tier would rank the whole database by
+nothing in particular, which is the bookmark graveyard argument again.
+
+### Hiding the origin is the failure mode of every chrome-minimising fork
+
+- **Searched:** browsers without an address bar, origin spoofing, kiosk chrome;
+  then eye-tracking studies on whether users look at the address bar at all.
+- **Found:** Zen — a Firefox fork with the same ambitions as this one — shipped
+  GHSA-vjfv-85qf-v25c, an origin-spoofing advisory whose root cause was chrome
+  that hid where the user actually was.
+  https://github.com/zen-browser/desktop/security/advisories/GHSA-vjfv-85qf-v25c
+  On the other side, a 2008 lab study of 63 participants found subjects spent
+  minimal time inspecting the address bar, and an eye-tracking study of phishing
+  judgements found 23% of participants never looked at browser cues at all —
+  those participants then chose wrong 40% of the time.
+  https://arxiv.org/pdf/1911.00953
+- **Verdict:** **adopt**, as the constraint that decided the shape of the
+  change — the address bar's *entry* half is replaceable and its *display* half
+  is not.
+- **Phase:** 2, shipped as `FOSLocationDisplay.sys.mjs`.
+
+The two findings look contradictory and are not. They are about different
+halves of the same widget. The evidence that users ignore the address bar is
+evidence about it as a *security indicator*: as a thing you are supposed to
+read before typing a password, it underperforms badly. The evidence from the
+Zen advisory is about what happens when the origin is not displayed *at all* —
+which is not "users ignore it slightly more" but a new attack surface, because
+an attacker can then render an origin of their choosing inside content and
+nothing contradicts it. An indicator that is often ignored still constrains
+what a page can claim; an absent one does not.
+
+So the seam to cut along was already there. Entry moves to the command bar,
+which is the half the fork has a better answer for. Display stays exactly where
+it is, in the element that already holds the eTLD+1 emphasis, punycode handling
+for lookalike domains, mixed-content and certificate state, and the site's
+granted permissions. The decisive practical point is that re-implementing that
+inside a command bar would mean re-earning fifteen years of adversarial work in
+an afternoon, and the advisory above is what that looks like when it goes
+wrong.
+
+`readOnly` turned out to be the supported way to do it rather than an invention:
+popup windows and taskbar tabs have shipped an address bar that shows an origin
+and refuses typing for years, so every anchor, panel and identity surface keeps
+working with no code of ours. This is the fourth time this project has found
+the mechanism it wanted already in the tree — see also the tab strip below.
+
+**Rejected along the way:** a hand-built origin strip of our own, showing
+origin plus the page's mark. Attractive, because the mark would give the strip
+a reason to be looked at that is not security theatre, and the whole problem
+with the address bar as an indicator is that nobody has a daily reason to read
+it. Rejected for this run on the grounds above — the strip would have to
+re-derive punycode and certificate state to be safe — but the *mark* half is
+worth revisiting as an addition to the kept element rather than a replacement
+for it.
+
+### The tab strip hides on grounds the tree already accepts
+
+- **Searched:** how Firefox forks remove the tab strip; then, in-tree,
+  `TabBarVisibility`.
+- **Found:** `browser/components/tabbrowser/content/tab-bar-visibility.js`
+  hides the strip when "only a single tab is visible **or tabs are displayed
+  elsewhere**", and vertical tabs is the existing case of the second clause.
+- **Verdict:** **adopt** — add one condition to that rule rather than build a
+  second way to collapse a toolbar.
+- **Phase:** 2A, shipped.
+
+Zen's answer to the same problem is a vertical tab sidebar that compact mode
+can hide, which is a different tab strip rather than no tab strip, so there was
+nothing to take from it. The tree's own answer was better: the rule already
+distinguishes "hidden and the tabs are gone" from "hidden because they are
+drawn somewhere else", and the Field is exactly the second. The tabs themselves
+stay — a tab is still where a document lives — so nothing is lost, and the
+comment warning that hiding the strip must not lose tabs is satisfied by
+construction rather than by argument.
+
+The cost showed up immediately and is worth writing down: upstream's tab tests
+measure, click and drag the strip, and one of them hung and aborted the whole
+directory. They now run with `browser.fos.field.replacesTabStrip=false`. That
+is not a way of hiding a regression — it is that those files are the coverage
+keeping the strip working for the pref that restores it, and the window with no
+strip has its own tests. Any surface this fork replaces will want the same
+treatment, and the manifest pref is the pattern.

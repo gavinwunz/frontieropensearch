@@ -1,0 +1,16 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+browser.jar:
+    content/browser/fos/fos-commandbar.css (content/fos-commandbar.css)
+    content/browser/fos/fos-field.css (content/fos-field.css)
+    content/browser/fos/fos-locationdisplay.css (content/fos-locationdisplay.css)
+    content/browser/fos/fos-contextsidebar.css (content/fos-contextsidebar.css)
+    content/browser/fos/fos-trailrail.css (content/fos-trailrail.css)
+
+    # The Context Engine's migrations are packaged so the store can read them at
+    # runtime. They stay .sql files rather than strings in a module because
+    # SCHEMA.md makes a shipped migration immutable, and a numbered file that is
+    # only ever added to is what makes that auditable.
+    content/browser/fos/migrations/001-initial.sql (/context-engine/migrations/001-initial.sql)

@@ -1,0 +1,211 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* The command bar.
+ *
+ * Built on the platform's design tokens rather than on literal values. Phase 3
+ * owns the fork's design system, and starting from the token set means that
+ * work is a matter of changing what the tokens resolve to rather than hunting
+ * literals through the stylesheet. It also gets dark mode, high contrast and
+ * forced colours right now instead of in a later pass — the tokens already
+ * carry those mappings, including collapsing the deemphasis opacities to 1
+ * under forced colours. */
+
+.fos-commandbar-backdrop {
+  position: fixed;
+  inset: 0;
+  /* Above the toolbox, which is a flex item carrying z-index: 0 and so paints
+     over anything lower however far up the document the backdrop is appended.
+     At z-index 10 the dim covered the content area only, leaving the chrome
+     looking live while the bar had taken the keyboard. */
+  z-index: 2147483647;
+  display: flex;
+  justify-content: center;
+  /* Not centred vertically: the bar sits high so that what it is about to do
+     to the page below stays visible while the user types. There is no space
+     token for a proportion of the viewport, and one would be wrong here —
+     this tracks window height, not the spacing scale. */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  padding-block-start: 12vh;
+  align-items: start;
+  background: var(--background-color-overlay);
+}
+
+.fos-commandbar-backdrop[hidden] {
+  display: none;
+}
+
+.fos-commandbar {
+  /* A measure, not a component size: capped so long page titles stay readable
+     and fluid so the bar survives a narrow window. No size token expresses
+     that pair. */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  width: min(44rem, 92vw);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--border-radius-medium);
+  border: var(--border-width) solid var(--border-color);
+  background: var(--background-color-box);
+  color: var(--text-color);
+  box-shadow: var(--box-shadow-level-3);
+  overflow: hidden;
+}
+
+.fos-commandbar-input {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: var(--font-size-large);
+  padding: var(--space-medium) var(--space-large);
+}
+
+.fos-commandbar-input:focus-visible {
+  outline: none;
+}
+
+.fos-commandbar-status {
+  padding: var(--space-xsmall) var(--space-large) var(--space-small);
+  font-size: var(--font-size-small);
+  color: var(--text-color-deemphasized);
+  border-block-end: var(--border-width) solid var(--border-color);
+}
+
+.fos-commandbar-status:empty {
+  display: none;
+}
+
+.fos-commandbar-status[data-kind="error"] {
+  color: var(--text-color-error);
+}
+
+/* "Go to" and "Search for" are the two things Enter can do to a line of prose,
+   and telling them apart at a glance is the whole job of this line. */
+.fos-commandbar-status[data-kind="url"] {
+  color: var(--color-accent-primary);
+}
+
+.fos-commandbar-list {
+  margin: 0;
+  padding: var(--space-xsmall) 0;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.fos-commandbar-group {
+  padding: var(--space-small) var(--space-large) var(--space-xsmall);
+  font-size: var(--font-size-small);
+  text-transform: uppercase;
+  opacity: var(--opacity-deemphasized-strong);
+}
+
+.fos-commandbar-row {
+  display: flex;
+  gap: var(--space-small);
+  align-items: baseline;
+  padding: var(--space-xsmall) var(--space-large);
+  cursor: default;
+}
+
+.fos-commandbar-row[aria-selected="true"] {
+  background: var(--background-color-list-item-hover);
+  color: var(--text-color-list-item-hover);
+}
+
+.fos-commandbar-label {
+  font-weight: var(--font-weight-semibold);
+  /* Marks are one character and action words are up to seven, so without a
+     floor the detail column jitters as the list narrows under each keystroke. */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  min-width: 4.5rem;
+}
+
+/* A page offered as a suggestion. Its label is a page title rather than a verb
+   or a letter, so it gives up the fixed label column and truncates instead.
+
+   The provenance line sits directly beside the title rather than out at the
+   far edge: it is what the tier heading above is claiming about this row in
+   particular, and a column of details separated from their titles by half the
+   bar is a column nobody reads as belonging to them. */
+.fos-commandbar-row[data-kind="page"] .fos-commandbar-label {
+  min-width: 0;
+  flex: 0 1 auto;
+  font-weight: var(--font-weight);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fos-commandbar-row[data-kind="page"] .fos-commandbar-detail {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* The letter a suggested page already answers to, in the treatment the rail
+   and the sidebar give a mark. */
+.fos-commandbar-mark {
+  /* One character, fixed width, so titles line up whether or not the page
+     holds a letter. */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  width: 1em;
+  flex: none;
+  text-align: center;
+  font-family: monospace;
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-accent-primary);
+}
+
+.fos-commandbar-spoken {
+  color: var(--text-color-deemphasized);
+  font-variant: small-caps;
+}
+
+.fos-commandbar-detail {
+  color: var(--text-color-deemphasized);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (prefers-contrast) {
+  .fos-commandbar {
+    border-width: calc(var(--border-width) * 2);
+  }
+}
+
+/* The transient answer line.
+ *
+ * Pillar C answers after the bar has closed, so this sits on its own rather
+ * than inside the bar. Bottom-anchored deliberately: the bar is the surface you
+ * are typing into and belongs high where it does not hide what it is acting on,
+ * and an answer is the opposite — it is finished, and it should be as far out
+ * of the way as it can be while still being read. */
+.fos-report {
+  position: fixed;
+  inset-block-end: var(--space-large);
+  inset-inline: 0;
+  margin-inline: auto;
+  width: fit-content;
+  /* A measure. Long enough for a sentence, capped so an exported-pack
+     confirmation with a long context name does not span the window. */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  max-width: min(60ch, 90vw);
+  z-index: 2147483647;
+  padding-block: var(--space-small);
+  padding-inline: var(--space-medium);
+  border-radius: var(--border-radius-medium);
+  border: var(--border-width) solid var(--border-color);
+  background: var(--background-color-box);
+  color: var(--text-color);
+  box-shadow: var(--box-shadow-level-3);
+  font-size: var(--font-size-small);
+  cursor: default;
+}
+
+.fos-report[hidden] {
+  display: none;
+}

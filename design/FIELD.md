@@ -178,6 +178,38 @@ Adopted with one modification that our design forces:
 - If a drop would require displacing a pinned card, the drop is refused and the
   dragged card returns to its origin. Refusing is correct: the alternative is
   silently destroying a position the user deliberately chose.
+- **A chain that reaches the edge of the region re-seats the card it was
+  pushing, rather than refusing.** This was found by running the model against
+  a session-sized workload rather than by reasoning about it, and it matters:
+  in any region that is merely busy, every push chain eventually reaches an
+  edge, so refusing there meant that most ordinary drags did not work — while
+  the seat the dragged card had vacated sat empty. An unpinned card has no
+  position anybody chose, so the system may re-seat it exactly as it was free
+  to seed it there. Refusal stays reserved for what it was written for: a
+  position the user owns.
+
+### Capacity, and what a full region does
+
+A region holds what its extent and the minimum distance permit, which is the
+"tens" of §3. Three things happen in order when a card arrives at a full region,
+and the order is the design:
+
+1. **Seed into a free seat.** The ordinary case.
+2. **Evict the least recently used unpinned card**, dismissing it. This is §8
+   rather than an eviction policy bolted on: dismissal is free and lossless, the
+   Field holds what is in play, and a pinned card is never a candidate because
+   the user put it there. Exactly one card is traded out, so arriving at a full
+   region costs one dismissal and not a cleared board.
+3. **Grow the region.** Needed when every card is pinned, and — the case only a
+   real workload showed — when the freed seat is still covered by a card that
+   was dragged off the seeding lattice, so the region has room that no lattice
+   seat can reach. Growth is safe against §2 because the region level is scaled
+   to fit and cannot be panned, so a taller region still has no empty reachable
+   view.
+
+**Placement must never fail.** It is driven by navigation, and a browser that
+refuses to open a page because a canvas is untidy is not a browser. That is why
+step 3 has no exit other than success.
 
 ## 7. The card
 
@@ -251,6 +283,12 @@ Four properties, each falsifiable, each mapping to a decision above.
 3. **No two cards overlap, at any moment, including mid-drag.** (§6)
 4. **Dismiss and restore is lossless**, scroll position included, in one command.
    (§8)
+5. **Placement never fails and never refuses.** Navigating always produces a
+   card, whatever state the region is in. (§6, capacity)
+
+These live as `browser/components/fos/tests/unit/test_field.js`, run against a
+session-sized workload rather than a handful of cards, because both defects
+found so far were invisible at three cards and obvious at forty.
 
 ## 10. Open questions
 
@@ -260,11 +298,59 @@ Recorded rather than guessed at, to be settled by building.
   region-of-regions (§3) is the obvious rule, but "least recently touched" may be
   the wrong metric — a trail parked deliberately is not a trail abandoned. The
   Context Engine has the dwell data to do better; revisit once 2C has real data.
-- **What a region looks like when its trail is a deep tree.** A region is a trail,
-  but a trail is a tree, and this spec treats regions as flat. Whether branch
-  structure should be visible inside a region, or stay in the trail rail where it
-  is already rendered, is undecided. Resolve it after the rail exists — building
-  the tree twice in two surfaces is the failure mode to avoid.
+- ~~**What a region looks like when its trail is a deep tree.**~~ **Settled: the
+  structure is transient, and it is lineage rather than a tree.** See §11.
 - **Whether pinning should be explicit as well as implicit.** Moving a card pins
   it. There may need to be a way to pin without moving, and to unpin. Cheap to
   add later, and premature to design before anyone has used it.
+
+---
+
+## 11. Lineage — the answer to §10's deep-tree question
+
+A region is a trail, a trail is a tree, and §1–§8 treat regions as flat. The
+question deferred until the rail existed was whether branch structure belongs
+inside a region too.
+
+**It does, but only while a card is focused, and as lineage rather than as a
+tree.** Focus a card and its ancestors *within that region* stay lit while every
+other card dims. Nothing is drawn persistently: no edges, no layout constraint,
+no second rendering of the tree.
+
+Three things decide it, and they pull in different directions until you notice
+that they are answering different questions.
+
+**Hierarchy earns its space at revisitation, and nowhere else.** PadPrints
+(Hypertext '98) is the closest measured relative of this design — a zoomable
+hierarchy of page thumbnails, tested against Netscape's own history — and its
+two experiments split exactly along that line. On general browsing it produced
+significantly fewer page accesses but *no* difference in task time. On tasks
+that required returning to a page already seen, its users finished in 61.2% of
+the time. Structure is not a constant benefit that justifies constant ink; it is
+a benefit at the moment you are trying to get back to something.
+
+**Users reach for proximity and leave explicit links alone.** That is the
+consistent finding of the spatial-hypertext work already recorded in
+`IDEAS.md`. Systems offering both an implicit spatial arrangement and an
+explicit node-link overlay — Storyspace's map view, VKB — saw the spatial
+relations do the work. And a persistent overlay is worse here than in those
+systems, because the Field invites the user to drag cards: any edge set drawn
+over an arrangement people rearrange becomes spaghetti inside a session.
+
+**The rail already renders the tree properly.** §10's stated failure mode was
+building the tree twice, and a transient highlight is not a second rendering —
+it is derived from positions that already exist, which is why it survives a drag
+without any maintenance.
+
+The encoding is dimming the unrelated cards rather than tinting the chain. That
+is not taste: three shades of outline on three neighbouring cards was not
+tellable apart in a screenshot, and a highlight nobody can see is not a
+highlight. It is the same correction Data Mountain made when it had to bind a
+floating title to its thumbnail with a matching halo — contrast, not decoration.
+
+### What this does not settle
+
+Lineage is drawn *within one region*. A page reached from another trail has an
+ancestor that is not in this region at all, and nothing on screen says so. That
+is the trail-crossing case in `IDEAS.md`, and it belongs with the Context
+Engine, which is where the relationship between trails is actually modelled.

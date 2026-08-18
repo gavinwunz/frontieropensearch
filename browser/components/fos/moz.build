@@ -2,9 +2,33 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+XPCSHELL_TESTS_MANIFESTS += ["tests/unit/xpcshell.toml"]
+BROWSER_CHROME_MANIFESTS += ["tests/browser/browser.toml"]
+
+JAR_MANIFESTS += ["jar.mn"]
+
 EXTRA_JS_MODULES += [
+    "FOSActions.sys.mjs",
+    "FOSChrome.sys.mjs",
+    "FOSCommandBar.sys.mjs",
+    "FOSCommandBarView.sys.mjs",
     "FOSCommandParser.sys.mjs",
+    "FOSContextEngine.sys.mjs",
+    "FOSContextPack.sys.mjs",
+    "FOSContextSidebar.sys.mjs",
+    "FOSContextSidebarView.sys.mjs",
+    "FOSContextSignals.sys.mjs",
+    "FOSContextStore.sys.mjs",
+    "FOSField.sys.mjs",
+    "FOSFieldSurface.sys.mjs",
+    "FOSFieldView.sys.mjs",
     "FOSGrammar.sys.mjs",
+    "FOSLocationDisplay.sys.mjs",
     "FOSMarks.sys.mjs",
+    "FOSPlacesFloor.sys.mjs",
+    "FOSSuggest.sys.mjs",
+    "FOSTrailRail.sys.mjs",
+    "FOSTrailRailView.sys.mjs",
+    "FOSTrailSession.sys.mjs",
     "FOSTrailTree.sys.mjs",
 ]

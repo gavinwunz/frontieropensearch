@@ -302,6 +302,51 @@ var gBrowserInit = {
     gBrowser.addProgressListener(window.XULBrowserWindow);
     gBrowser.addTabsProgressListener(window.TabsProgressListener);
 
+    // Frontier OpenSearch, pillar B. Capture has to be listening before
+    // the first navigation, so the trail session attaches at window init
+    // rather than lazily when the rail is first opened — a tree missing
+    // its own root is worse than no tree. Wiring it also registers
+    // pillar B's verbs and marks on the command bar.
+    const { FOSTrailSession } = ChromeUtils.importESModule(
+      "resource:///modules/FOSTrailSession.sys.mjs"
+    );
+    const { FOSCommandBar } = ChromeUtils.importESModule(
+      "resource:///modules/FOSCommandBar.sys.mjs"
+    );
+    const { FOSFieldSurface } = ChromeUtils.importESModule(
+      "resource:///modules/FOSFieldSurface.sys.mjs"
+    );
+    const bar = FOSCommandBar.forWindow(window);
+    FOSTrailSession.forWindow(window).wire(bar);
+    // Pillar A wires after pillar B, because a region is a trail: the Field
+    // reads the captured tree and would have nothing to place cards into if it
+    // went first.
+    FOSFieldSurface.forWindow(window).wire(bar);
+
+    // Pillar C last, and it is the only one of the three that opens a file, so
+    // it is also the only one that can fail at startup. Attaching is async and
+    // is deliberately not awaited: window init must not wait on a disk, and a
+    // context engine that cannot open its database is a browser that records
+    // nothing rather than a browser that does not start. Verbs are registered
+    // before the await inside `wire`, so `what` and `pack` answer rather than
+    // reporting themselves unwired even while the store is still opening.
+    const { FOSContextEngine } = ChromeUtils.importESModule(
+      "resource:///modules/FOSContextEngine.sys.mjs"
+    );
+    const engine = FOSContextEngine.forWindow(window).wire(bar);
+    engine
+      .attach({ session: FOSTrailSession.forWindow(window) })
+      .catch(console.error);
+
+    // The sidebar is pillar C's second surface and binds no verb of its own —
+    // wiring it only tells the engine that `what` now has somewhere to show its
+    // answer as well as somewhere to say it. It builds no DOM until first
+    // opened, so a window that never asks pays nothing for this.
+    const { FOSContextSidebar } = ChromeUtils.importESModule(
+      "resource:///modules/FOSContextSidebar.sys.mjs"
+    );
+    FOSContextSidebar.forWindow(window).wire();
+
     // TODO bug 2038578: audit these consumers and move any that don't need
     // to run before SessionStore's per-window init to 'browser-window-load'.
     BrowserUtils.callModulesFromCategory(
@@ -324,6 +369,21 @@ var gBrowserInit = {
     ) {
       // adjust browser UI for popups
       gURLBar.readOnly = true;
+    } else {
+      // Frontier OpenSearch. The address bar stops being an input, so that the
+      // command bar is the one entry surface by mouse as well as by key. It
+      // stays visible and keeps showing the origin: that display is a security
+      // boundary rather than decoration, and it is the half of the address bar
+      // the command bar does not replace. This sits beside the popup case
+      // above because it is the same operation on the same element at the one
+      // point in startup already known to be safe for it.
+      const { FOSLocationDisplay } = ChromeUtils.importESModule(
+        "resource:///modules/FOSLocationDisplay.sys.mjs"
+      );
+      const { FOSCommandBar: FOSBar } = ChromeUtils.importESModule(
+        "resource:///modules/FOSCommandBar.sys.mjs"
+      );
+      FOSLocationDisplay.forWindow(window).wire(FOSBar.forWindow(window));
     }
 
     BrowserUtils.callModulesFromCategory(

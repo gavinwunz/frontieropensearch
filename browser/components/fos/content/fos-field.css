@@ -1,0 +1,215 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* The Field: pillar A's surface.
+ *
+ * On the platform design tokens for the same reasons as the command bar and the
+ * rail — dark mode, high contrast and forced colours arrive already mapped, and
+ * Phase 3's design system becomes a question of what the tokens resolve to. */
+
+.fos-field {
+  position: fixed;
+  inset: 0;
+  /* Above the toolbox, which carries z-index: 0 and so paints over anything
+     lower however far up the document this is appended. */
+  z-index: 2147483645;
+  display: flex;
+  flex-direction: column;
+  background: var(--background-color-canvas);
+  color: var(--text-color);
+}
+
+.fos-field[hidden] {
+  display: none;
+}
+
+.fos-field-bar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-small);
+  padding: var(--space-small) var(--space-large);
+  border-block-end: var(--border-width) solid var(--border-color);
+}
+
+.fos-field-crumbs {
+  font-size: var(--font-size-large);
+  font-weight: var(--font-weight-bold);
+}
+
+.fos-field-status {
+  font-size: var(--font-size-small);
+  opacity: var(--opacity-deemphasized-strong);
+}
+
+.fos-field-stage {
+  position: relative;
+  flex: 1;
+  /* No pan, no scroll: the overview is the whole world scaled to fit, and a
+     scrollbar here would be the desert fog FIELD.md §2 exists to prevent
+     arriving through the back door. */
+  overflow: hidden;
+}
+
+.fos-field-stage:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-inset);
+}
+
+.fos-field-empty {
+  position: absolute;
+  inset-block-start: 40%;
+  inset-inline: 0;
+  text-align: center;
+  opacity: var(--opacity-deemphasized-strong);
+}
+
+/* ---- the overview ------------------------------------------------------- */
+
+.fos-field-tile {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--border-radius-medium);
+  background: var(--background-color-box);
+  overflow: hidden;
+}
+
+/* A region keeps its slot for as long as it exists, so the boundary is drawn
+   persistently: wayfinding research is consistent that a landmark which moves
+   is not a landmark. */
+.fos-field-tile[data-focus] {
+  border-color: var(--border-color-interactive);
+  box-shadow: var(--box-shadow-level-2);
+}
+
+.fos-field-tile-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-xsmall);
+  padding: var(--space-xxsmall) var(--space-small);
+  font-size: var(--font-size-small);
+  border-block-end: var(--border-width) solid var(--border-color);
+}
+
+.fos-field-tile-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fos-field-tile-count {
+  opacity: var(--opacity-deemphasized-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.fos-field-tile-body {
+  position: relative;
+  flex: 1;
+}
+
+.fos-field-mini {
+  position: absolute;
+  border-radius: var(--border-radius-small);
+  overflow: hidden;
+  background: var(--background-color-box);
+  outline: var(--border-width) solid var(--border-color);
+}
+
+/* ---- a region ----------------------------------------------------------- */
+
+.fos-field-region {
+  position: absolute;
+  border: var(--border-width) solid var(--border-color);
+  border-radius: var(--border-radius-medium);
+  background: var(--background-color-box);
+}
+
+.fos-field-card {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  border-radius: var(--border-radius-small);
+  background: var(--background-color-box);
+  outline: var(--border-width) solid var(--border-color);
+  cursor: grab;
+  user-select: none;
+}
+
+.fos-field-card[data-focus] {
+  outline: var(--border-width) solid var(--border-color-selected);
+  box-shadow: var(--box-shadow-level-2);
+}
+
+/* A card the user placed. §4 makes this permanent — the system may never move
+   it again — so it is worth showing which cards carry that promise. */
+.fos-field-card[data-pinned] {
+  outline-color: var(--border-color-interactive);
+}
+
+/* The focused card's ancestors within this region, lit only while it is
+   focused. FIELD.md §10: the tree is drawn properly in the rail, and a
+   persistent node-link overlay on a canvas people drag becomes spaghetti.
+
+   Rendered by dimming everything else rather than by tinting the chain. Three
+   shades of outline on three neighbouring cards was not readable — the point of
+   a lineage is the contrast between what came from where you are and what did
+   not, so the cheapest legible encoding is to take the unrelated cards down. */
+.fos-field-card[data-lineage] {
+  outline-color: var(--color-accent-primary);
+}
+
+.fos-field-stage[data-lineage-active] .fos-field-card:not([data-lineage], [data-focus]) {
+  opacity: var(--opacity-deemphasized-strong);
+}
+
+/* A refused drop. §6: refusing is correct, because the alternative is silently
+   destroying a position the user deliberately chose — but it has to be
+   visible, or a drag that stops dead reads as a bug. */
+.fos-field-card[data-refused] {
+  outline-color: var(--border-color-error);
+}
+
+.fos-field-shot {
+  border-start-start-radius: var(--border-radius-small);
+  border-start-end-radius: var(--border-radius-small);
+  background-color: var(--background-color-box-info);
+  background-size: cover;
+  background-position: top center;
+}
+
+.fos-field-mini .fos-field-shot {
+  block-size: 100%;
+}
+
+.fos-field-mark {
+  position: absolute;
+  inset-block-start: var(--space-xxsmall);
+  inset-inline-start: var(--space-xxsmall);
+  min-inline-size: var(--size-item-small);
+  padding-inline: var(--space-xxsmall);
+  border-radius: var(--border-radius-small);
+  background: var(--background-color-box);
+  color: var(--text-color);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-bold);
+  text-align: center;
+}
+
+/* Bound to the card and always rendered. Data Mountain's tooltip delay
+   "precluded rapid inspection of multiple titles", and a floating title users
+   could not attribute to a thumbnail had to be tied to it before it helped. */
+.fos-field-caption {
+  flex: none;
+  padding-inline: var(--space-xxsmall);
+  font-size: var(--font-size-small);
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

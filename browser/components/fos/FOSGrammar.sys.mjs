@@ -32,10 +32,16 @@
  */
 export const ACTIONS = Object.freeze({
   // Pillar A — the Field.
+  // `enter` and `dismiss` take a node, not a separate "card" kind. A page is
+  // one object: the card is its presence on the Field and the row is its
+  // presence on the rail, and giving each of those its own letter spent two of
+  // the twenty-six on one page. `enter` therefore reaches a page whose card has
+  // been dismissed too, which is exactly what FIELD.md §8 promises — dismissal
+  // is free because one `enter` brings it back.
   enter: {
     pillar: "field",
     target: "required",
-    accepts: ["card"],
+    accepts: ["node"],
     text: false,
     summary: "Zoom the card to fill the window and make it active",
   },
@@ -49,7 +55,7 @@ export const ACTIONS = Object.freeze({
   dismiss: {
     pillar: "field",
     target: "required",
-    accepts: ["card"],
+    accepts: ["node"],
     text: false,
     summary: "Drop the card from the Field, leaving the page on its trail",
   },
@@ -86,18 +92,25 @@ export const ACTIONS = Object.freeze({
   name: {
     pillar: "trails",
     target: "optional",
-    accepts: ["node", "trail", "card", "context"],
+    accepts: ["node", "trail", "context"],
     text: "required",
     summary: "Name an object, making it first-class and searchable",
   },
 
   // Pillar C — the context engine.
+  // Optional, not required, and the bare form is the release. A pinned context
+  // deliberately survives the next navigation — that is what makes the verb a
+  // statement rather than a suggestion — but without a way to say "follow me
+  // again" it survives *every* navigation, and the bar goes on ranking by an
+  // enquiry the user finished an hour and five tabs ago. `context` alone hands
+  // the decision back to provenance, exactly as `back` alone applies to where
+  // you already are.
   context: {
     pillar: "context",
-    target: "required",
+    target: "optional",
     accepts: ["context"],
     text: false,
-    summary: "Switch the active context and re-rank suggestions",
+    summary: "Switch the active context, or follow the current trail again",
   },
   pack: {
     pillar: "context",

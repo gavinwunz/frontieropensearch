@@ -12,6 +12,12 @@ prefs = [
   "browser.sessionstore.closedTabsFromAllWindows=true",
   "browser.sessionstore.closedTabsFromClosedWindows=true",
   "sidebar.verticalTabs.dragToPinPromo.dismissed=true",
+  # Frontier OpenSearch does not draw the tab strip — the Field shows open
+  # pages instead — and these tests measure, click and drag it. They are the
+  # coverage that keeps the strip working for the pref that restores it, so
+  # they run against a window that has one. The window that has none is
+  # covered in browser/components/fos/tests/browser/.
+  "browser.fos.field.replacesTabStrip=false",
 ]
 skip-if = [
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && tsan", # Bug 2057863

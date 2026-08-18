@@ -1,0 +1,11 @@
+[DEFAULT]
+run-if = [
+  "os != 'android'",
+]
+head = ""
+# resource:///modules/ only resolves with the browser appdir.
+firefox-appdir = "browser"
+
+["test_contextstore.js"]
+
+["test_field.js"]

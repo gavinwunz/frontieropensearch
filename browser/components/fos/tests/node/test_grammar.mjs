@@ -108,10 +108,10 @@ test("marks are sticky across re-registration", () => {
   // The rule the whole feature rests on. A card that is re-rendered,
   // re-clustered or retitled keeps its name, or nothing can ever be learned.
   const marks = new MarkRegistry();
-  const letter = marks.assign("card1", { label: "gecko", type: "card" });
+  const letter = marks.assign("card1", { label: "gecko", type: "node" });
   for (let i = 0; i < 5; i++) {
     assert.equal(
-      marks.assign("card1", { label: `gecko ${i}`, type: "card" }),
+      marks.assign("card1", { label: `gecko ${i}`, type: "node" }),
       letter
     );
   }
@@ -146,21 +146,21 @@ test("the 27th object is registered but unmarked", () => {
 
 test("candidates are filtered to what the action accepts", () => {
   const marks = new MarkRegistry();
-  marks.assign("c1", { label: "gecko", type: "card" });
-  marks.assign("n1", { label: "trail node", type: "node" });
+  marks.assign("c1", { label: "gecko", type: "node" });
   marks.assign("x1", { label: "spidermonkey", type: "context" });
+  marks.assign("t1", { label: "memex", type: "trail" });
 
-  const cards = marks.candidates(["card"]);
-  assert.equal(cards.length, 1);
-  assert.equal(cards[0].id, "c1");
-  assert.equal(cards[0].word, markWord(cards[0].letter));
+  const pages = marks.candidates(["node"]);
+  assert.equal(pages.length, 1);
+  assert.equal(pages[0].id, "c1");
+  assert.equal(pages[0].word, markWord(pages[0].letter));
   assert.equal(marks.candidates().length, 3);
 
   const pending = parse("enter ", { marks }).pending;
   assert.deepEqual(
     candidatesFor(pending, marks).map(c => c.id),
     ["c1"],
-    "a pending 'enter' offers only cards"
+    "a pending 'enter' offers only pages"
   );
 });
 
@@ -247,7 +247,7 @@ test("a half-typed command reports the slot being filled", () => {
   assert.deepEqual(target.pending, {
     action: "enter",
     expect: "target",
-    accepts: ["card"],
+    accepts: ["node"],
   });
   assert.deepEqual(target.commands, []);
 
@@ -318,7 +318,7 @@ test("falling back to prose never invents a partial command", () => {
 // web search.
 test("a semantic mark failure stays an error rather than becoming a query", () => {
   const marks = new MarkRegistry();
-  marks.assign("g1", { label: "gecko", type: "card" });
+  marks.assign("g1", { label: "gecko", type: "node" });
   const r = parse("enter cap", { marks });
   assert.equal(r.type, ERROR);
   assert.equal(r.error.code, E_DEAD_MARK);
@@ -326,7 +326,7 @@ test("a semantic mark failure stays an error rather than becoming a query", () =
 
 test("marks are checked against the live registry when one is supplied", () => {
   const marks = new MarkRegistry();
-  marks.assign("c1", { label: "gecko", type: "card" });
+  marks.assign("c1", { label: "gecko", type: "node" });
 
   assert.equal(parse("enter gust", { marks }).commands[0].target, "g");
 
@@ -347,7 +347,7 @@ test("an action refuses a mark of the wrong type", () => {
   assert.equal(r.type, ERROR);
   assert.equal(r.error.code, E_WRONG_TYPE);
   assert.equal(r.error.got, "context");
-  assert.deepEqual(r.error.accepts, ["card"]);
+  assert.deepEqual(r.error.accepts, ["node"]);
   // The same mark is fine for the verb that does accept a context.
   assert.equal(parse("context sun", { marks }).type, COMMANDS);
 });

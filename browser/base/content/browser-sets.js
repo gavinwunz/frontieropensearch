@@ -13,6 +13,9 @@ document.addEventListener(
       ContainerCreationPanel:
         "chrome://browser/content/usercontext/ContainerCreationPanel.mjs",
       Referrals: "resource:///modules/referrals/Referrals.sys.mjs",
+      FOSCommandBar: "resource:///modules/FOSCommandBar.sys.mjs",
+      FOSFieldSurface: "resource:///modules/FOSFieldSurface.sys.mjs",
+      FOSTrailRail: "resource:///modules/FOSTrailRail.sys.mjs",
     });
 
     // <commandset id="mainCommandSet"> defined in browser-sets.inc.xhtml
@@ -205,8 +208,13 @@ document.addEventListener(
               event.sourceEvent
             );
             break;
+          // "Show all tabs" is exactly what the Field is for, so the
+          // command keeps its name and its menu item and points at the
+          // surface that replaces the strip, rather than a second overview
+          // growing up beside the first.
           case "Browser:ShowAllTabs":
-            gTabsPanel.showAllTabsPanel();
+          case "FOS:Field":
+            lazy.FOSFieldSurface.forWindow(window).toggle();
             break;
           case "Browser:AddTabSplitView":
             BrowserCommands.addTabSplitView();
@@ -238,6 +246,20 @@ document.addEventListener(
             break;
           case "Browser:OpenLocation":
             openLocation(event);
+            break;
+          // Frontier OpenSearch's one entry surface. Every gesture that used
+          // to mean "focus the address bar" or "focus the search box" now
+          // means this, because the phase plan allows exactly one such
+          // surface and two boxes competing for the same keys is how the
+          // second one gets built by accident.
+          case "FOS:CommandBar":
+            lazy.FOSCommandBar.forWindow(window).toggle();
+            break;
+          // Pillar B replaces linear history, so it takes the key that
+          // used to open the history sidebar rather than adding a second
+          // gesture beside it.
+          case "FOS:TrailRail":
+            lazy.FOSTrailRail.forWindow(window).toggle();
             break;
           case "Browser:RestoreLastSession":
             SessionStore.restoreLastSession();
