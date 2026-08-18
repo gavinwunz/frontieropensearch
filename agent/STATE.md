@@ -202,28 +202,42 @@ tags unchanged on origin.
 
 ## Next task
 
-The single-surface gap is closed. In rough order of value.
+The single-surface gap is closed, and with it the last item that was blocking
+the phase's own acceptance criterion. In rough order of value.
 
-1. **A background tab arrives with no signal at all.** Surfaced by removing the
+1. **Drive the demo flow end to end, in one test.** This is Phase 2's "done
+   when" verbatim — search, branch three ways, zoom out to the Field, switch
+   context, export a context pack — and every piece of it now exists and is
+   separately tested. Nothing has ever run them as one sequence, so the honest
+   answer to "is Phase 2 finished" is currently unknown rather than yes. Do
+   this before building anything else: it either closes the phase or it names
+   exactly what is missing, and both outcomes are worth more than another
+   feature. Name the file so it sorts **last** in
+   `browser/components/fos/tests/browser/` — the directory shares one window
+   and runs alphabetically, and a flow test that seeds a trail early would
+   change what every later file sees. If it passes: merge to `main`, tag,
+   write `agent/reports/phase-2.md` with the screenshots, and notify. That is
+   the only notification this phase gets.
+2. **A background tab arrives with no signal at all.** Surfaced by removing the
    strip and the first thing a real session would notice: a `target=_blank`
    load, or anything opened behind the page in front, is now invisible until
    the Field is opened. The strip was doing that job incidentally. This is not
    an argument for the strip — it is that the Field needs an ambient way to say
    "something arrived", and the card model already knows which card is new.
    Cheapest honest answer first; do not build a notification system.
-2. **The embedding pass**, on `EmbeddingsGenerator` and `ClusterAlgos`. Target
+3. **The embedding pass**, on `EmbeddingsGenerator` and `ClusterAlgos`. Target
    unchanged: query understanding, because the shallow extractor gets nothing
    from a lower-case query. Merge contexts across trails with
    `source = 'embedding'`, never replacing the provenance floor. It would also
    give the ranking a sixth signal without giving it a sixth tier — a merged
    context is still tier 2.
-3. **`prune`, and an export surface for trails.** Deferred again, and this run
+4. **`prune`, and an export surface for trails.** Deferred again, and this run
    strengthened the case: a page on an old trail whose Places record has been
    cleared is reachable by no tier, and the honest answer is that an old trail
    should be findable *as a trail* rather than that the ranking should grow a
    tier holding the whole database. Also what would let a *named* trail be
    pinned past the restore window.
-4. **The voice path.** Unchanged: measure model size and latency; do not
+5. **The voice path.** Unchanged: measure model size and latency; do not
    re-litigate availability. Note that `suggest` already resolves a spoken mark
    word, so the addressing half of this surface is done.
 
