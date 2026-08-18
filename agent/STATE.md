@@ -7,74 +7,60 @@ Keep it short — this is state, not a log. History belongs in `JOURNAL.md`.
 
 ## Phase
 
-**Phase 0 — Bootstrap: COMPLETE.** Merged to `main`, tagged `phase-0`, report at
-`agent/reports/phase-0.md`. Now on **Phase 1 — Rebrand**, with Phase 2's
-pure-logic layer running ahead of it.
+**Phase 0 — Bootstrap: COMPLETE** (tagged `phase-0`, report `agent/reports/phase-0.md`).
+**Phase 1 — Rebrand: COMPLETE** (tagged `phase-1`, report `agent/reports/phase-1.md`).
+Now on **Phase 2 — The novel UI**, which is the heart of the project and is
+execution, not invention: all three pillars have a written design.
 
 ## Done
 
-- Firefox upstream added as remote `upstream` (push disabled) and fetched in
-  full — 12.6M objects, 5.1G. Merged into `agent/dev` with
-  `--allow-unrelated-histories`. Tree is 473k files and `./mach` works.
-- Merge conflicts resolved: `.gitignore` is the union of both, `README.md` and
-  `CLAUDE.md` are the fork's. Upstream's `CLAUDE.md` was only a pointer to
-  `AGENTS.md`, which survives untouched.
-- `./mach bootstrap` complete. Toolchains in `/data/.mozbuild`.
-- `context-engine/SCHEMA.md` written — tables, migration policy, and the three
-  design decisions that are easy to get wrong.
-- `design/GRAMMAR.md` — the command bar, marks, and the one parse path shared by
-  keyboard and voice.
-- `design/FIELD.md` — pillar A, specified against measured evidence rather than
-  taste. All three pillars now have a written design; Phase 2 has no unspecified
-  major piece left.
-- `browser/branding/frontieropensearch/` created from `unofficial`: brand
-  strings, prefs with update/telemetry off, and `generate-mark.py`, which is the
-  single source of truth for the mark — it emits the SVG and every PNG size.
+- Full Firefox history merged into `agent/dev`; `./mach` works; toolchains on
+  `/data`. Full build is ~31m cold, ~4m for a C++ change, seconds for
+  `build faster`.
+- **Designs written, all three pillars.** `context-engine/SCHEMA.md` (data
+  layer), `design/GRAMMAR.md` (command bar, marks, one parse path for keyboard
+  and voice), `design/FIELD.md` (pillar A, with four falsifiable acceptance
+  properties in §9).
+- **Branding complete and verified in the running browser.**
+  `browser/branding/frontieropensearch/` with `generate-mark.py` as the single
+  source of truth for the mark. App constants confirmed in `config.status` and
+  `application.ini`.
+- **Phase 1 verified against a live fresh profile, not a grep.** Zero visible
+  Firefox/Mozilla strings in the browser window, app menu, menubar and all six
+  settings panes. `about:rights` is now a local page instead of a redirect to
+  Mozilla's Firefox Terms of Use. Telemetry genuinely off —
+  `canRecordBase`/`canRecordExtended` both false. Relay, accounts, VPN/Monitor
+  promos off. See `agent/reports/phase-1.md` for the full table.
 - **First Phase 2 code.** `browser/components/fos/` holds marks
   (`FOSMarks.sys.mjs`), the action table (`FOSGrammar.sys.mjs`), the parser
-  (`FOSCommandParser.sys.mjs`) and the trail tree (`FOSTrailTree.sys.mjs`), with
-  34 unit tests green. None of it touches a Gecko API, so it runs under `node
-  --test` in about a second — `browser/components/fos/tests/node/run.sh`. The
-  directory has a `moz.build` but is **not** yet in `browser/components/moz.build`,
-  which is what keeps it clear of the running build. `./mach lint -l eslint
-  browser/components/fos/` is clean.
-- `./mach configure` passes. Verified in `config.status`:
-  `MOZ_APP_DISPLAYNAME='Frontier OpenSearch'`, `MOZ_APP_NAME='frontieropensearch'`,
-  `MOZ_APP_BASENAME='FrontierOpenSearch'`, `MOZ_APP_VENDOR='Frontier'`,
-  `MOZ_APP_PROFILE='frontieropensearch'`,
-  `MOZ_BRANDING_DIRECTORY='browser/branding/frontieropensearch'`.
+  (`FOSCommandParser.sys.mjs`) and the trail tree (`FOSTrailTree.sys.mjs`), 37
+  unit tests green under `node --test` in ~0.1s via
+  `browser/components/fos/tests/node/run.sh`. Wired into
+  `browser/components/moz.build`.
 
 ## In progress
 
-Nothing running in the background. The tree is fully pushed and `main` is
-current.
+Nothing running. Tree fully pushed; `main`, `agent/dev` and both tags on origin.
 
 ## Next task
 
-Phase 1 is what remains, and it is small — the branding directory, app
-constants, prefs and `brand.ftl`/`brand.properties` are all done and verified in
-the built binary.
+Phase 2 execution, in this order:
 
-1. The remaining user-visible "Firefox" strings. Find them the honest way:
-   launch the browser and read the first-run surfaces, rather than grepping the
-   tree. The about dialog and the l10n override path are the two known gaps.
-   **Do not mass-sed the tree.**
-2. The mark ships and is ours — `dist/bin/browser/chrome/icons/default/` holds
-   default{16,32,48,64,128}.png and `default64.png` hashes identical to
-   `browser/branding/frontieropensearch/default64.png` and different from both
-   `unofficial/` and `nightly/`. What is still unchecked is whether the *window*
-   and the about dialog actually render it, which needs a UI look, not a hash.
-3. Then Phase 2 execution, in this order:
-   - The Field's card and region model (`design/FIELD.md`) — the last
-     pure-logic piece, and a region is a trail, so it builds on `FOSTrailTree`.
-   - `PageThumbs` capture for cards; `nsISHEntry` for restoring a node's scroll
-     and form state; the command bar UI over the parser.
-   - Turn `FIELD.md` §9's four acceptance properties into browser-chrome tests
-     **as each piece lands, not after**.
+1. **The Field's card and region model** (`design/FIELD.md`) — the last
+   pure-logic piece, so it can be built and tested the cheap way first. A region
+   is a trail, so it builds on `FOSTrailTree`.
+2. `PageThumbs` capture for cards; `nsISHEntry` for restoring a node's scroll and
+   form state; the command bar UI over the existing parser.
+3. Turn `FIELD.md` §9's four acceptance properties into browser-chrome tests
+   **as each piece lands, not after**.
+4. The voice path is **no longer blocked** — see the ASR entry in `IDEAS.md`.
+   Remaining unknowns are model size and latency on this hardware, not
+   availability. Measure those; do not re-litigate whether ASR is possible.
 
-**Test in Gecko, not only in node.** This run's grammar bug was invisible to 34
-green node tests and took under a minute to find once the modules were imported
-into a real runtime. The harness for that is now known and cheap:
+**Test in Gecko, not only in node.** Two bugs this project has shipped were
+invisible to green node tests: a grammar bug found in one minute once the modules
+were imported into a real runtime, and a truncated wordmark found only by
+screenshotting. The xpcshell harness:
 
 ```bash
 LD_LIBRARY_PATH=$PWD/obj-x86_64-pc-linux-gnu/dist/bin \
@@ -85,27 +71,19 @@ LD_LIBRARY_PATH=$PWD/obj-x86_64-pc-linux-gnu/dist/bin \
 The `-a` is what maps `resource:///`; without it every browser module fails to
 load and it looks like a packaging fault.
 
-Rule that held well this run and should keep holding: while a full build is in
-flight, do not touch anything the build reads. New, unreferenced files under
-`browser/` are safe — an unreferenced `moz.build` is inert — but editing an
-existing `moz.build` or any build input is not.
+Rule that keeps holding: while a full build is in flight, do not touch anything
+the build reads. New, unreferenced files under `browser/` are safe — an
+unreferenced `moz.build` is inert — but editing an existing `moz.build` or any
+build input is not.
 
 ## Background jobs
 
 Started with `./agent/bg.sh <name> <cmd>`; check with `./agent/bg-status.sh`.
 Each runs as its own transient systemd unit `fos-job-<name>.service`, in
-`app.slice` beside `fos.service` rather than inside it. Verified this run: a
-restart cannot reach them. `agent/logs/<name>.current` symlinks the live log.
+`app.slice` beside `fos.service` rather than inside it, which is what makes it
+survive a restart. `agent/logs/<name>.current` symlinks the live log.
 
-None. Both of the long-running jobs finished this run.
-
-- `./mach build` finished `=== EXIT 0 ===` in 31m40s on 8 cores from a cold
-  objdir. Far faster than the 1–2 hours assumed. A full rebuild is affordable;
-  it does not have to be feared into a background job every time.
-- `./agent/push-chunked.sh` reached `PUSH COMPLETE`. The whole 990k-commit
-  history is on `origin/agent/dev`, and `main` and the `phase-0` tag are up too.
-  Incremental pushes are now ordinary and fast; the chunked script is only
-  needed again after another huge upstream fetch.
+None.
 
 ## Blockers
 
@@ -113,163 +91,101 @@ None.
 
 ## Gotchas worth not rediscovering
 
-- `./mach lint`'s default stylish formatter crashes on this tree with
-  `TypeError: unhashable type: 'dict'` in `formatters/stylish.py` whenever a
-  finding carries a dict hint. The lint itself is fine — pass `-f unix` and it
-  reports normally. Do not read the traceback as a broken lint setup.
+- **Inspect the running browser, not the tree.** The Phase 1 findings that
+  mattered most — a network redirect and a locked pref — are invisible to
+  grepping for strings. The harness is the `firefox-devtools` MCP: launch with
+  `MOZ_REMOTE_ALLOW_SYSTEM_ACCESS=1` and a scratch `profilePath`,
+  `list_privileged_contexts` → `select_privileged_context`, then
+  `evaluate_privileged_script`. `screenshot_page` in a chrome context captures
+  the **whole chrome window**, which is how the truncated wordmark was caught.
+- **Filter by rendered visibility or you will fix non-problems.**
+  `documentElement.textContent` includes `hidden` elements. Check
+  `getBoundingClientRect()` plus computed `display`/`visibility`.
+- **Selecting a privileged context puts WebDriver in chrome mode**, and BiDi
+  content navigation (`new_page`, `navigate_page`) then fails with "unknown
+  error". Do content-side checks first, or `restart_firefox` to reset.
+- `./mach lint` crashes in three linters (`gecko-trace-lint`, `glean-parser`,
+  `clang-format`) with `AssertionError` / "Unexpected result type" on
+  multi-path invocations. These are infrastructure failures, not findings —
+  re-run the specific linter on the specific file (`./mach lint -l clang-format
+  -f unix <file>`) to get a real answer. Also pass `-f unix`: the default
+  stylish formatter crashes on `TypeError: unhashable type: 'dict'`.
+- **A stale, empty `obj*/CLOBBER` demands a pointless full clobber.** The objdir
+  file was 0 bytes from configure while the tree's had content, so mach asked
+  for a 30-minute rebuild it did not need — the last full build had already
+  succeeded against that exact tree. `cp CLOBBER obj-*/CLOBBER` records the
+  state a clobber would have left. Check both files before believing the notice.
 - `node --test <dir>` only scans a directory whose name matches node's own test
   patterns, which `tests/node` does not; it treats the path as a module and
-  fails with `MODULE_NOT_FOUND`. Pass the files, or use the `run.sh` in that
-  directory.
+  fails with `MODULE_NOT_FOUND`. Pass the files, or use the `run.sh` there.
 - **`origin` is SSH on a deploy key, and it has to stay that way.** Pushing over
   HTTPS with the `gh` OAuth token fails permanently with *"refusing to allow an
   OAuth App to create or update workflow `.github/workflows/README` without
-  `workflow` scope"*. The token has `gist, read:org, repo`, and 20 commits in
-  Firefox's history touch `.github/workflows/`, so no chunking can get past it —
-  runs 2 through 5 read those as ordinary chunk failures and lost the whole
-  push each time. The fix is a write **deploy key** at `~/.ssh/fos_deploy`
-  (outside the tree), registered on the repo, with `origin` on
-  `git@github.com:...` and `core.sshCommand` set in `.git/config`. Deploy keys
-  are not OAuth App credentials, so the restriction does not apply. If a push
-  ever fails on `workflow` scope again, check `git remote -v` first — something
-  has reset the remote to HTTPS.
+  `workflow` scope"*, and 20 commits of Firefox history touch that path, so no
+  chunking can get past it. The fix is a write deploy key at `~/.ssh/fos_deploy`
+  (outside the tree) with `core.sshCommand` set in `.git/config`. If a push ever
+  fails on `workflow` scope again, check `git remote -v` first.
 - `push-chunked.sh`'s comment claims each chunk boundary fast-forwards the
-  previous one. It does not: topological order puts ancestors before
-  descendants, but commit *N+40000* need not descend from commit *N* in a
-  merge-heavy DAG, so some chunks are rejected as non-fast-forward. Harmless —
-  the script skips on and the final `push HEAD` catches everything — but do not
-  read those rejections as a fault.
-- Never take a full-screen X grab on `:10.0`. That is Gavin's real desktop, not
-  a scratch display, and a grab captured his open tabs and a terminal mid-OAuth.
-  There is no Xvfb on this box. Use `./mach run --headless --screenshot`, which
-  renders content only and is safe to commit.
+  previous one. It does not, so some chunks are rejected as non-fast-forward.
+  Harmless — the final `push HEAD` catches everything — but do not read those
+  rejections as a fault.
+- **Never take a full-screen X grab on `:10.0`.** That is Gavin's real desktop,
+  not a scratch display. There is no Xvfb on this box. Use the MCP's
+  `screenshot_page`, or `./mach run --headless --screenshot`, both of which
+  render the browser only.
+- A `&&` chain after a `md5sum` of a path that may not exist silently skips the
+  rest. Cost a confusing minute when `generate-mark.py` appeared not to run.
 
 ## Failure counters
 
 <!-- Task name → consecutive failures. At 3, stop retrying the same way, write the
      analysis below, and change approach or task. -->
 
-Full build — **cleared.** Succeeded on the third attempt, `EXIT 0` in 31m40s.
-The counter is reset; the cgroup fix from run 3 was correct.
+None active. Full build and push were both cleared in earlier runs.
 
-Push — **cleared, and it was a four-run failure nobody was counting.** Runs 2–5
-each lost the push and each diagnosed it as a transport or lifetime problem. It
-was an authorisation problem the whole time, visible in the log as a one-line
-`remote rejected ... workflow scope` among ordinary-looking chunk output. The
-lesson worth keeping: a job that fails the same way four runs running should
-have its *log* read for a distinct error string, not its launcher rewritten
-again. The three-strikes rule only works if the counter is actually kept, so
-count a repeated failure even when each run has a plausible fresh story for it.
+The push failure is the one to remember: it failed four runs running and each
+run invented a fresh plausible story (transport, process lifetime) rather than
+reading the log for a distinct error string. It was an authorisation problem the
+whole time, visible as one line among ordinary-looking output. **The
+three-strikes rule only works if the counter is actually kept**, so count a
+repeated failure even when each run has a new explanation for it.
 
 ## Decisions taken
 
-- 2026-08-18 — **A line is a command only if every token parses as one.** The
-  rule "prose is anything not beginning with an action word" left `what is a
-  memex` returning a syntax error, and eight of the twelve action words are
-  ordinary English. Syntactic failure now falls back to a query; semantic
-  failure on a real mark (dead, wrong type) stays an error. Chrome made the same
-  call for the same reason — since 88.0.4324 a bare keyword loses to search and
-  invoking it takes a deliberate Tab. See `design/GRAMMAR.md` §3 and IDEAS.
-- 2026-08-18 — `origin` pushes over SSH with a deploy key, not HTTPS with the
-  OAuth token, because the token cannot write `.github/workflows/`. See the
-  gotcha above; this is a constraint, not a preference.
-
+- 2026-08-18 — **Telemetry is switched off in `TelemetryPrefValue()`, not in a
+  pref file.** `SetupTelemetryPref` locks the pref, so a branding pref line is
+  silently ignored; leaving one in place would read as a guarantee it cannot
+  give. Deleted it and left a comment saying where the real switch is.
+- 2026-08-18 — **The fork names Mozilla and Firefox on purpose in exactly two
+  places**: the MPL attribution and the not-affiliated notice, in the about
+  dialog and `about:rights`. These are excluded from the CO01 Fluent lint,
+  because writing them with `{ -brand-* }` terms would resolve to the fork's own
+  name and make the disclaimer say nothing. Everywhere else, zero.
+- 2026-08-18 — **Mozilla services are switched off, not rebranded.** Relay,
+  Firefox Accounts, VPN and Monitor promos each carry a network path to Mozilla,
+  and the fork has no account system. Renaming them would have been a lie.
+- 2026-08-18 — **A line is a command only if every token parses as one.** Eight
+  of the twelve action words are ordinary English, so `what is a memex` returned
+  a syntax error. Syntactic failure now falls back to a query; semantic failure
+  on a real mark stays an error. Chrome made the same call in 88.0.4324. See
+  `design/GRAMMAR.md` §3.
 - 2026-08-18 — Fork-owned design specs live in `design/`. `docs/` at the repo
-  root is upstream Firefox's and is not ours to fill. `design/GRAMMAR.md` is the
-  command bar and marks spec; `context-engine/SCHEMA.md` remains the data layer.
+  root is upstream Firefox's and is not ours to fill.
 - 2026-08-18 — Every addressable object carries a **mark**: one letter, shown,
   spoken as its Talon-alphabet word. Typing `c` and saying "cap" resolve through
   one path, which is how "no separate accessibility mode" is met. Marks are
-  sticky for an object's lifetime — the point is that a name can be learned,
-  which is exactly what positional numbering in macOS Voice Control gives up.
-- 2026-08-18 — The command bar treats any input not starting with a known action
-  word as a search. No mode switch, ever, in either modality.
+  sticky for an object's lifetime.
 - 2026-08-18 — The captured navigation tree and a **Trail** are different things.
   Capture is automatic and total; a Trail is a named, curated selection promoted
-  out of it. This is what distinguishes pillar B from Nyxt's history tree, which
-  already ships.
+  out of it. This is what distinguishes pillar B from Nyxt's shipped history tree.
+- 2026-08-18 — The Field is **bounded**, not an infinite canvas. Jul and Furnas
+  on desert fog: an infinite plane is almost all empty, so almost every reachable
+  view has nothing to navigate by. Recorded in `design/FIELD.md` as a deliberate
+  departure from the phase plan's wording.
 - 2026-08-18 — Name fixed as Frontier OpenSearch. See `BRANDING.md`; do not
   revisit.
-- 2026-08-18 — Upstream is a git remote, not a vendored copy. The fork keeps
-  full Firefox history so it can rebase onto upstream later. `upstream` has its
-  push URL set to `no_push`.
-- 2026-08-18 — All build state lives on `/data`. The root filesystem has under
-  5G free, so `~/.mozbuild` is a symlink to `/data/.mozbuild`. Source
-  `agent/env.sh` before any mach command.
-- 2026-08-18 — `mozconfig` is checked in and portable — no absolute paths. It is
-  un-ignored explicitly in `.gitignore`, which otherwise excludes `/mozconfig*`.
-- 2026-08-18 — `MOZ_APP_VENDOR` and `MOZ_APP_PROFILE` are `imply_option()`s in
-  `browser/moz.configure` and cannot be set from a mozconfig, so they are patched
-  at source. That two-line diff is the only tree edit outside the branding dir.
-- 2026-08-18 — `MOZ_APP_ID` left at Firefox's GUID for now. Changing it affects
-  extension compatibility and it is not user-visible. Revisit in Phase 1 only if
-  profile collision proves to be a real problem.
-- 2026-08-18 — The Context Engine will use the in-tree ML runtime
-  (`toolkit/components/ml`) for embeddings and clustering. Nothing new gets
-  vendored. See `IDEAS.md`.
-- 2026-08-18 — The hands-free path is voice via a local Whisper model on that
-  same runtime, push-to-talk. Gecko's Web Speech API is cloud-only and is
-  therefore unusable here. See `IDEAS.md`.
-- 2026-08-18 — Long jobs start via `agent/bg.sh`, which launches them with
-  `systemd-run --user` as their own unit. The agent is a `Type=oneshot` systemd
-  user service, so when its process returns systemd deactivates `fos.service`
-  and `KillMode=control-group` SIGTERMs everything left in that cgroup. Neither
-  `nohup` nor `setsid` escapes this — a new session is still the same cgroup,
-  and run 2 mistook a verified new session for proof of safety. Only a separate
-  cgroup survives. The exit marker in the log stays: it is what distinguishes a
-  killed job from a finished one.
-- 2026-08-18 — sccache enabled, cache on `/data`. Turned on while the build was
-  only six minutes in, so the restart cost almost nothing and every later
-  clobber is cheap.
-- 2026-08-18 — Voice input is no longer treated as settled. `text-to-speech` is
-  a supported task on the in-tree engine but `automatic-speech-recognition` is
-  not listed, so a small capture-to-transcript spike gates the voice work. See
-  `IDEAS.md`.
-- 2026-08-18 — The Field is **bounded, not infinite**, which is a deliberate
-  departure from the phase plan's "infinite, zoomable spatial canvas". An
-  infinite plane is mostly empty, so most reachable views are desert fog (Jul and
-  Furnas) — no information to navigate by. The overview always shows everything
-  and always fits; overflow is absorbed by nesting regions, never by growing the
-  plane. Zoom stays but moves between three semantic levels. See `design/FIELD.md`
-  §2 and the IDEAS entry.
-- 2026-08-18 — Auto-layout seeds a card's position; **the user owns it from the
-  first move and the system may never move a pinned card again**. Data Mountain's
-  measured win came from hand-made layouts, and it contrasts itself explicitly
-  with PadPrints's automatic layout "for short term use". A position the system
-  chose builds no spatial memory, so auto-clustering cannot be what the Field's
-  value rests on — provenance placement is a free starting state, not the idea.
-- 2026-08-18 — Field cards are **cached snapshots**, not live browsers; only the
-  focused card renders live, under a pref-controlled budget. Every open page is a
-  `<browser>` with its own content process, deactivated when unselected. Reuse
-  `PageThumbs.captureToCanvas`, as `tab-hover-preview.mjs` already does. Data
-  Mountain beat a bookmark list using static 64×64 thumbnails, so nothing that
-  matters is lost.
-- 2026-08-18 — Free-text arguments are **terminal**: an action taking free text
-  consumes the rest of the utterance and cannot be chained after. Talon segments
-  dictation with a 0.3s silence timeout, which misfires when users pause, but
-  the fatal objection is that silence means nothing to a keyboard — a timeout
-  would give the two modalities two different grammars, which is the separate
-  accessibility mode the brief forbids arriving by the back door. `name` and
-  `search` are the only free-text verbs and both are naturally last.
-- 2026-08-18 — The escape for a query that begins with an action word is the
-  ordinary verb `search <text>`, with `?` as typed sugar for the identical
-  command. A punctuation-only prefix in VS Code's style has no spoken form, so
-  it would be an action reachable from one modality only.
-- 2026-08-18 — In a slot that may hold either a mark or free text, **a valid
-  mark token fills the slot and anything else begins the text**. This is what
-  makes GRAMMAR.md's own chaining example parse as written. Cost: naming
-  something literally "cap" takes `name cap cap`.
-- 2026-08-18 — Mark allocation prefers a letter from the object's own label,
-  after Cursorless putting a hat on a character of the token. Stickiness makes a
-  mark learnable but does nothing for the first use; deriving it from the label
-  makes it guessable before it is learned. Preference only ever picks among free
-  letters, so it cannot conflict with stickiness.
-- 2026-08-18 — `promote()` **copies** nodes into a new named trail rather than
-  moving them. The captured tree is the record of what happened; a Trail is an
-  artefact the user made. If promotion moved nodes, curating a trail would edit
-  history.
-- 2026-08-18 — A **region in the Field is a trail**, not a second organising
-  structure. This is what keeps the Field from decaying the way canvas tools in
-  the wild are criticised for: named regions are searchable, unnamed space is not,
-  and trails are already nameable from the command bar. Placement means
-  provenance and never anything else.
+- 2026-08-18 — Upstream is a git remote, not a vendored copy, with its push URL
+  set to `no_push`.
+- 2026-08-18 — All build state lives on `/data`; `~/.mozbuild` is a symlink.
+  Source `agent/env.sh` before any mach command.
+- 2026-08-18 — `mozconfig` is checked in and portable — no absolute paths.
