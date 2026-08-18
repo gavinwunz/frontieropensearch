@@ -322,8 +322,9 @@ the first two are the ones with a user-visible defect behind them.
    that bar. The precedent is set — `browser.fos.field.replacesTabStrip=false`
    in the `tabs/` and `dragdrop/` manifests — but it is **not a one-line
    repeat**: setting `browser.fos.commandBar.replacesAddressBar=false` alone
-   left the file timing out rather than passing, which fits the key bindings
-   being owned by `FOS:CommandBar` regardless of that pref. Diagnose which
+   left the file **hanging** rather than passing — it exhausted every timeout
+   extension and had to be stopped by hand — which fits the key bindings being
+   owned by `FOS:CommandBar` regardless of that pref. Diagnose which
    prefs a restored window actually needs before writing any manifest. See the
    note below.
 
@@ -357,7 +358,7 @@ the first two are the ones with a user-visible defect behind them.
   hiding the switcher is what made the gap visible. The obvious fix, pinning
   `browser.fos.commandBar.replacesAddressBar=false` in the manifest the way
   `tabs/` pins the Field pref, **did not work**: the file went from failing to
-  timing out. The likely reason is that the pref restores the input but not the
+  hanging, exhausting all four timeout extensions with no further output. The likely reason is that the pref restores the input but not the
   keys — `FOS:CommandBar` owns `accel+L`, `alt+D`, `accel+K` and `accel+E`
   unconditionally, and a test that presses `accel+L` and waits for the urlbar to
   take focus waits forever. So the next run's first job is to find the full set

@@ -350,7 +350,8 @@ upstream's urlbar tests were never pinned against this fork:
 this change — the bar has been read-only for several runs and those tests type
 into it. The obvious repeat of the `tabs/` precedent does **not** work: pinning
 `browser.fos.commandBar.replacesAddressBar=false` took the file from failing to
-timing out, which fits `FOS:CommandBar` owning `accel+L` and friends
+hanging — it burned every timeout extension and had to be stopped — which fits
+`FOS:CommandBar` owning `accel+L` and friends
 unconditionally, so a test pressing `accel+L` and waiting for urlbar focus waits
 forever. 355 files across fifteen directories. That is a run's work with a
 diagnosis in front of it, not a manifest line at the end of this one, and it is
