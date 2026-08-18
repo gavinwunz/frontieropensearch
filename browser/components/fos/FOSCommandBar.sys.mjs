@@ -36,6 +36,15 @@ import {
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const STYLESHEET = "chrome://browser/content/fos/fos-commandbar.css";
 
+/**
+ * How long a transient answer stays up.
+ *
+ * Long enough to read a sentence without hurrying, short enough that it is
+ * gone before it becomes furniture. It is dismissible by click and is replaced
+ * outright by the next one, so overrunning costs nothing.
+ */
+const NOTICE_MS = 8000;
+
 /** One bar per chrome window. */
 // eslint-disable-next-line jsdoc/require-jsdoc
 const byWindow = new WeakMap();
@@ -69,6 +78,8 @@ export class FOSCommandBar {
   #root = null;
   #input = null;
   #status = null;
+  #report = null;
+  #reportTimer = 0;
   #list = null;
   #view = null;
   #selected = -1;
@@ -202,6 +213,55 @@ export class FOSCommandBar {
     this.#input = input;
     this.#status = status;
     this.#list = list;
+  }
+
+  /**
+   * Say one line to the user, with the bar closed.
+   *
+   * Pillar C's `what` and `pack` both answer a question asked in passing, and
+   * both answer *after* running, by which time the bar has closed and its
+   * status line has gone with it. Rather than keep the bar open — which would
+   * make an answer feel like an unfinished command — the answer gets its own
+   * transient line.
+   *
+   * It is a live region for the same reason the status line is: this is the
+   * only place the sentence is ever said, so a screen-reader user who does not
+   * get it here does not get it at all. It is polite rather than assertive
+   * because it always follows something the user just did deliberately.
+   *
+   * @param {string} message
+   */
+  notify(message) {
+    this.#build();
+    const doc = this.#window.document;
+    if (!this.#report) {
+      const report = doc.createElementNS(HTML_NS, "div");
+      report.className = "fos-report";
+      report.setAttribute("role", "status");
+      report.setAttribute("aria-live", "polite");
+      report.hidden = true;
+      // Clicking it dismisses it, so a long answer never sits in the way of
+      // the page it is about.
+      report.addEventListener("click", () => this.dismissNotice());
+      doc.documentElement.appendChild(report);
+      this.#report = report;
+    }
+    this.#report.textContent = message;
+    this.#report.hidden = false;
+    this.#window.clearTimeout(this.#reportTimer);
+    this.#reportTimer = this.#window.setTimeout(
+      () => this.dismissNotice(),
+      NOTICE_MS
+    );
+  }
+
+  /** Hide the transient line, if one is showing. */
+  dismissNotice() {
+    this.#window.clearTimeout(this.#reportTimer);
+    this.#reportTimer = 0;
+    if (this.#report) {
+      this.#report.hidden = true;
+    }
   }
 
   #update() {

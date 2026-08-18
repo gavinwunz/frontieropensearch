@@ -116,10 +116,30 @@ export function resolveInput(text, { isPrivate = false } = {}) {
 export class FOSActionDispatcher {
   #window;
   #handlers = new Map();
+  #queryListeners = new Set();
 
   constructor(window) {
     this.#window = window;
     this.register("search", cmd => this.openQuery(cmd.text));
+  }
+
+  /**
+   * Be told about every query the user issues.
+   *
+   * `openQuery` is the single funnel for both ways a query can arrive — bare
+   * prose that the parser classified as a query, and the explicit `search`
+   * verb — so one hook here catches all of them. The Context Engine is the
+   * subscriber, and it listens rather than being called because a query is not
+   * an action it performs: recording is a side effect of browsing, and the
+   * dispatcher must not acquire a dependency on a pillar to run.
+   *
+   * @param {Function} listener Called as `(text, resolved)` after the load has
+   *   been asked for, where `resolved` is what `resolveInput` decided.
+   * @returns {Function} An unsubscribe function.
+   */
+  onQuery(listener) {
+    this.#queryListeners.add(listener);
+    return () => this.#queryListeners.delete(listener);
   }
 
   /**
@@ -214,6 +234,16 @@ export class FOSActionDispatcher {
       triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
       postData: resolved.postData,
     });
+
+    for (const listener of this.#queryListeners) {
+      try {
+        listener(text, resolved);
+      } catch (e) {
+        // A recorder that throws must not stop the navigation it is recording.
+        console.error(e);
+      }
+    }
+
     return resolved;
   }
 }

@@ -140,3 +140,36 @@
     border-width: calc(var(--border-width) * 2);
   }
 }
+
+/* The transient answer line.
+ *
+ * Pillar C answers after the bar has closed, so this sits on its own rather
+ * than inside the bar. Bottom-anchored deliberately: the bar is the surface you
+ * are typing into and belongs high where it does not hide what it is acting on,
+ * and an answer is the opposite — it is finished, and it should be as far out
+ * of the way as it can be while still being read. */
+.fos-report {
+  position: fixed;
+  inset-block-end: var(--space-large);
+  inset-inline: 0;
+  margin-inline: auto;
+  width: fit-content;
+  /* A measure. Long enough for a sentence, capped so an exported-pack
+     confirmation with a long context name does not span the window. */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  max-width: min(60ch, 90vw);
+  z-index: 2147483647;
+  padding-block: var(--space-small);
+  padding-inline: var(--space-medium);
+  border-radius: var(--border-radius-medium);
+  border: var(--border-width) solid var(--border-color);
+  background: var(--background-color-box);
+  color: var(--text-color);
+  box-shadow: var(--box-shadow-level-3);
+  font-size: var(--font-size-small);
+  cursor: default;
+}
+
+.fos-report[hidden] {
+  display: none;
+}

@@ -323,6 +323,21 @@ var gBrowserInit = {
     // went first.
     FOSFieldSurface.forWindow(window).wire(bar);
 
+    // Pillar C last, and it is the only one of the three that opens a file, so
+    // it is also the only one that can fail at startup. Attaching is async and
+    // is deliberately not awaited: window init must not wait on a disk, and a
+    // context engine that cannot open its database is a browser that records
+    // nothing rather than a browser that does not start. Verbs are registered
+    // before the await inside `wire`, so `what` and `pack` answer rather than
+    // reporting themselves unwired even while the store is still opening.
+    const { FOSContextEngine } = ChromeUtils.importESModule(
+      "resource:///modules/FOSContextEngine.sys.mjs"
+    );
+    const engine = FOSContextEngine.forWindow(window).wire(bar);
+    engine
+      .attach({ session: FOSTrailSession.forWindow(window) })
+      .catch(console.error);
+
     // TODO bug 2038578: audit these consumers and move any that don't need
     // to run before SessionStore's per-window init to 'browser-window-load'.
     BrowserUtils.callModulesFromCategory(

@@ -6,3 +6,9 @@ browser.jar:
     content/browser/fos/fos-commandbar.css (content/fos-commandbar.css)
     content/browser/fos/fos-field.css (content/fos-field.css)
     content/browser/fos/fos-trailrail.css (content/fos-trailrail.css)
+
+    # The Context Engine's migrations are packaged so the store can read them at
+    # runtime. They stay .sql files rather than strings in a module because
+    # SCHEMA.md makes a shipped migration immutable, and a numbered file that is
+    # only ever added to is what makes that auditable.
+    content/browser/fos/migrations/001-initial.sql (/context-engine/migrations/001-initial.sql)
