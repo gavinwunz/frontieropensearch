@@ -160,3 +160,63 @@ branch, bookmark graveyards. Real complaints beat invented personas.
   grammar as the keyboard. Push-to-talk, not always-listening, to avoid the Midas touch
   problem in its audio form.
 
+
+### Nyxt shipped the history tree already (atlas-engineer/history-tree)
+- **Found:** 2026-08-18, searching for tree-history prior art;
+  https://github.com/atlas-engineer/history-tree
+- **What it is:** A Common Lisp library backing the Nyxt browser's *global* history tree.
+  Models "owners" (tabs) with a current node each over one shared tree, so several tabs
+  navigate interleaved branches of the same structure. States the problem exactly as this
+  project does: "A -> B, go back to A, then to C — linear history becomes A -> C. We lost
+  the information that we visited B."
+- **Verdict:** adapt, and drop any claim that branching history is unshipped.
+- **Why:** Criterion 1 is only partly met — a real browser ships this. What remains novel is
+  not the tree but what Trails do *with* it: restoring scroll and form state on node re-entry,
+  and being nameable, exportable objects that feed the Context Engine. Nyxt's tree is a
+  navigation structure; Trails are a memory structure. Say it that way and stop overclaiming.
+  Its stated limitation is the one to design against: **unbounded growth** — nodes are only
+  freed when their owner disappears, so the tree grows forever. Trails need an explicit
+  pruning or archival policy from day one, not bolted on once it is slow.
+- **Phase:** 2B. Read this model before designing the node/owner relationship; adopt the
+  separation of "owner's current node" from "the tree" so several cards can sit on one trail.
+
+### A tree you can only look at is a curiosity
+- **Found:** 2026-08-18, Tree Style History user reviews (chrome-stats.com, Chrome Web Store).
+- **What it is:** The most-repeated complaint about the main tree-history extension is not
+  the tree — it is "you can't manage the history at all, only view it tree style and that's
+  it", alongside "the interface isn't the most intuitive".
+- **Verdict:** adopt as the acceptance bar for 2B.
+- **Why:** Criterion 2, sharpened by a decade of someone else's user feedback. Visualising
+  history as a tree adds a pretty panel and no capability; every action a user wants —
+  re-enter a branch, name it, prune it, export it — has to be performed *on* the tree, or
+  Trails is the same curiosity with better typography. Concretely: no read-only tree rail
+  ships. Every node supports re-entry, rename, prune and export from the keyboard.
+- **Phase:** 2B.
+
+### The HTML spec does not require history to be presented linearly
+- **Found:** 2026-08-18, MDN History API and whatwg/html#7832 discussion.
+- **What it is:** The spec defines the linear `history` object exposed to content, but
+  explicitly does not define how that list is derived from the real session history, and
+  does not restrict how implementations present session history to the user.
+- **Verdict:** adopt as the standards-compliance argument.
+- **Why:** Removes the main criterion-3 worry about Trails — a branching UI is not a spec
+  violation, and content-facing `history.length` and `history.back()` can keep their linear
+  semantics while the *user-facing* surface is a tree. Trails is a presentation and storage
+  layer over session history, not a change to web-visible behaviour. Nothing we build here
+  should break a page's own history handling.
+- **Phase:** 2B.
+
+### Scroll and form state are already in the session history entry
+- **Found:** 2026-08-18, reading `docshell/shistory/nsISHEntry.idl` in-tree.
+- **What it is:** `nsISHEntry` carries `layoutHistoryState` — documented as "for scroll
+  position and form values" — plus explicit `setScrollPosition`/`getScrollPosition` and
+  `initLayoutHistoryState`.
+- **Verdict:** adopt.
+- **Why:** This is the criterion-3 clearance for the project's central promise. "Tabs are
+  unfinished work" makes lossless dismissal a hard requirement: a card dropped from the Field
+  must come back with scroll offset and half-filled forms intact, or the Field becomes one
+  more surface to hoard on. That state does not need inventing or scraping from content — it
+  already exists per entry, which is also how Gecko's own bfcache restores it. Trail nodes
+  should hold a reference to the session history entry rather than a bare URL.
+- **Phase:** 2B, and it gates 2A's dismissal gesture. A trail node is an entry reference,
+  never just a URL.
