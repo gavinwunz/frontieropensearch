@@ -431,6 +431,8 @@ CLAUDE.local.md
 /*.json.gz
 
 # Frontier OpenSearch
+# The fork's mozconfig is portable and checked in, unlike a developer's.
+!/mozconfig
 obj-*/
 .mozbuild/
 agent/logs/

@@ -1,0 +1,17 @@
+# Build configuration for Frontier OpenSearch.
+#
+# Portable by design: no absolute paths, so it is committed and used as-is.
+# Machine-specific state (MOZBUILD_STATE_PATH) belongs in the environment.
+
+ac_add_options --with-branding=browser/branding/frontieropensearch
+ac_add_options --with-app-name=frontieropensearch
+ac_add_options --with-app-basename=FrontierOpenSearch
+
+# The fork never contacts Mozilla. No crash reports, no update service,
+# no telemetry.
+ac_add_options --disable-crashreporter
+ac_add_options --disable-updater
+export MOZ_TELEMETRY_REPORTING=
+export MOZ_DATA_REPORTING=
+
+mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-@CONFIG_GUESS@
