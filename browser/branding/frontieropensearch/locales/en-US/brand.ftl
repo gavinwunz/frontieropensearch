@@ -56,7 +56,7 @@ fos-rights-licence =
 fos-rights-trademark =
     { -brand-full-name } is an independent fork of Mozilla Firefox. It is not
     affiliated with, endorsed by, or sponsored by Mozilla, and it carries none
-    of Mozilla's trademarks. Mozilla's Firefox Terms of Use do not govern this
+    of Mozilla’s trademarks. Mozilla’s Firefox Terms of Use do not govern this
     build; the licence above is the only agreement that applies.
 
 fos-rights-warranty =

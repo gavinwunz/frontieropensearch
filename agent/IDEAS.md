@@ -577,3 +577,26 @@ and never caught it, because they asserted the specified behaviour. It surfaced
 the first time the modules were imported into a real Gecko runtime and fed a
 sentence a person would actually type. Test the specification and you only ever
 confirm the specification.
+
+### Whisper is already in the tree — the ASR gate was never real
+- **Found:** 2026-08-18, reading `toolkit/components/ml/vendor/transformers.js` and
+  `actors/MLEngineParent.sys.mjs` directly, after run 2 recorded speech recognition as
+  absent from the ML engine's supported-task list.
+- **What it is:** The vendored Transformers.js ships the complete Whisper stack —
+  `WhisperForConditionalGeneration`, `WhisperProcessor`, `WhisperTokenizer`,
+  `WhisperFeatureExtractor`, `WhisperTextStreamer` — and carries the
+  `automatic-speech-recognition` pipeline tag. On the parent side, `checkTaskName()`
+  validates a task name against a *character pattern* (alphanumerics, dashes,
+  underscores) and nothing else. There is no allowlist of permitted tasks.
+- **Verdict:** adopt — and correct the earlier entry. The voice path is not gated.
+- **Why:** Criterion 3 was the only one in doubt for the hands-free requirement, and the
+  doubt came from reading a documentation table rather than the code. What run 2 found was
+  that ASR is not on the list of tasks Mozilla *ships a model for*; it inferred that the
+  engine would refuse the task. The engine does not check. The model is the only missing
+  piece and it is an ordinary ONNX Whisper checkpoint cached in OPFS like any other.
+- **Phase:** 2. The end-to-end hands-free path is voice → Whisper → the same
+  `FOSCommandParser` the keyboard uses, which is exactly the "no separate accessibility
+  mode" property the brief demands. Remaining unknowns are model size and latency on this
+  hardware, not availability — measure those, do not re-litigate whether ASR is possible.
+- **Lesson:** run 2's claim came from a capability table; this one came from the dispatch
+  code. When a feature looks blocked, check the code that would do the blocking.

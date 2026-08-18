@@ -4529,6 +4529,17 @@ void PreferencesImpl::SetupTelemetryPref() {
 #else  // !MOZ_WIDGET_ANDROID
 
 static bool TelemetryPrefValue() {
+  // Frontier OpenSearch collects nothing, on any channel. Upstream derives this
+  // from the compile-time update channel and then locks the pref in
+  // SetupTelemetryPref below, which is why setting it in a branding pref file
+  // has no effect — the lock beats the pref file, so the honest place to change
+  // it is here. A local developer build lands on the "default" channel and
+  // would otherwise record extended Telemetry.
+  //
+  // The upstream derivation is left below rather than deleted, so the rule it
+  // encodes stays readable in the diff and rebases cleanly.
+  return false;
+
   // For platforms with Unified Telemetry (here meaning not-Android),
   // toolkit.telemetry.enabled determines whether we send "extended" data.
   // We only want extended data from pre-release channels due to size.

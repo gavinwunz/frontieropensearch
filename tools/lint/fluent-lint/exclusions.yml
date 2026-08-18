@@ -135,6 +135,17 @@ CO01:
     messages:
         # browser/branding/official/locales/en-US/brand.ftl
         - trademarkInfo
+        # browser/branding/frontieropensearch/locales/en-US/brand.ftl
+        # This fork has to name Mozilla and Firefox literally: these strings are
+        # the MPL attribution and the statement that the fork is not affiliated
+        # with Mozilla. Writing them with { -brand-* } terms would resolve to
+        # the fork's own name and make the disclaimer say nothing.
+        - fos-about-community
+        - fos-about-no-services
+        - fos-rights-licence
+        - fos-rights-trademark
+        - fos-rights-services
+        - fos-rights-source
         # browser/addonNotifications.ftl
         - addon-install-error-hard-blocked
         # browser/appExtensionFields.ftl

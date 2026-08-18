@@ -29,9 +29,12 @@ pref("devtools.selfxss.count", 5);
 
 // Telemetry. The build is compiled without MOZ_TELEMETRY_REPORTING, so nothing
 // is uploaded, but the collection prefs still default to on and a fresh profile
-// reports toolkit.telemetry.enabled=true. Turn the collection itself off so the
-// pref state matches what the build actually does.
-pref("toolkit.telemetry.enabled", false);
+// recorded extended data locally. Turn the collection itself off so the pref
+// state matches what the build actually does.
+//
+// toolkit.telemetry.enabled is deliberately absent: Preferences.cpp locks it at
+// startup, so a line here would be silently ignored and would read as a
+// guarantee this file cannot give. It is switched off in TelemetryPrefValue().
 pref("toolkit.telemetry.unified", false);
 pref("toolkit.telemetry.archive.enabled", false);
 pref("toolkit.telemetry.newProfilePing.enabled", false);
