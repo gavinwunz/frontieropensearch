@@ -483,3 +483,60 @@ branch, bookmark graveyards. Real complaints beat invented personas.
   static 64×64 images and it still beat Favorites on every measure.
 - **Phase:** 2A. Reuse `PageThumbs`; vendor nothing; treat the count of live cards as a
   budget with a pref, not as a property of the design.
+
+### Talon's free-text problem: a timeout cannot be the segmentation rule
+- **Found:** 2026-08-18, implementing the parser and searching for how Talon decides where a
+  dictated argument ends — https://talon.wiki/Basic%20Usage/basic_usage/ and
+  https://www.fileside.app/blog/2025-04-14_voice-computing/.
+- **What it is:** Talon's `capture` takes a single word; longer free text needs a temporary
+  dictation command (`say <phrase>`), and the boundary back to command mode is a silence
+  timeout defaulting to 0.3s. Users report the predictable failure: pause mid-phrase and the
+  next subclause is executed as a command instead of dictated.
+- **Verdict:** adopt the problem, reject the solution. Free text is terminal — an action
+  taking free text consumes the rest of the utterance and cannot be chained after.
+- **Why:** This is the sharpest instance yet of the constraint in GRAMMAR.md §5. The reported
+  misfires are reason enough to want something better, but they are not the fatal objection.
+  The fatal objection is that silence has no meaning for typed input. A timeout would give the
+  keyboard and the voice front end two genuinely different grammars, which is the separate
+  accessibility mode the brief forbids, arrived at through the back door — and it would arrive
+  looking like a reasonable implementation detail rather than like a design decision, which is
+  what makes it worth writing down. A syntactic rule costs one free-text command per utterance
+  and is identical in both modalities.
+  Worth noting what this does *not* cost: `name` and `search` are the only free-text verbs in
+  the table, and both are naturally the last thing you say.
+- **Phase:** 2, built — `FOSCommandParser.sys.mjs`, and GRAMMAR.md §6.
+
+### VS Code's removable palette prefix, and why our escape is a verb instead
+- **Found:** 2026-08-18, searching for how unified command palettes disambiguate a command
+  from a search — https://destiner.io/blog/post/designing-a-command-palette/ and
+  https://uxpatterns.dev/patterns/advanced/command-palette.
+- **What it is:** Sublime prefixes queries with `@` or `:` to switch palette mode; VS Code lets
+  you add or delete a leading `>` to move between the file finder and the command palette,
+  making the mode a visible, editable character rather than a hidden state.
+- **Verdict:** adapt. Take the idea that the escape is ordinary editable text; reject the
+  prefix as the primary mechanism, because a punctuation mark has no spoken form.
+- **Why:** GRAMMAR.md §3 left the escape unspecified, and the obvious fix — a `/` or `>`
+  prefix — fails criterion 3 for us specifically: it is unsayable, so it would be an action
+  reachable from only one modality, which §5 calls a bug rather than an omission. Inverting it
+  costs nothing: our default is already the opposite of VS Code's, since prose is unmarked
+  here and commands are marked, so the escape has to mark the *query*. Making it the ordinary
+  verb `search <text>` folds it into the existing grammar with no new mechanism at all — it is
+  just another action with terminal free text — and `?` survives as pure typing sugar that
+  parses to the identical command. The test asserting `?enter the dragon` and `search enter
+  the dragon` are deep-equal is the one that keeps that true.
+- **Phase:** 2, built — GRAMMAR.md §3.
+
+### Cursorless hats sit on a character of the token, so a mark can be guessable
+- **Found:** 2026-08-18, re-reading the Cursorless entry above while writing the allocator.
+- **What it is:** A hat is drawn over a character *of the token it names*, so the spoken name
+  is derived from the thing rather than assigned from a counter.
+- **Verdict:** adopt as the allocation order. A new object takes the first free letter that
+  appears in its own label, first letter preferred, before falling back to the alphabet.
+- **Why:** Stickiness makes a mark learnable, but it does nothing for the first use, when the
+  user has not learned it yet. Deriving the letter from the label makes the mark *guessable*
+  before it is learned — a card titled "gecko" takes `g` — which closes the gap stickiness
+  leaves open at the start of a session. It costs one loop in the allocator and cannot
+  conflict with stickiness, since preference only ever decides which free letter to take and
+  never moves a letter already held. Degrades honestly: an untitled object just takes the next
+  free letter, which is where an arbitrary allocator would have started anyway.
+- **Phase:** 2, built — `FOSMarks.sys.mjs`.

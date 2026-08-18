@@ -108,8 +108,13 @@ and search queries *are* dictation.
 
 So the user never declares a mode. Commands are the marked case and prose is the
 default, in both modalities. `gecko session history` is a search. `enter cap` is
-a command. The cost is that a query which happens to begin with an action word
-needs an escape, which is a far smaller tax than a mode.
+a command.
+
+The cost is that a query which happens to begin with an action word needs an
+escape, which is a far smaller tax than a mode. The escape is the ordinary
+action `search <text>` — not a new mechanism, so it is reachable hands-free like
+everything else — with `?` as typed sugar for the same thing. `search enter the
+dragon` and `?enter the dragon` produce one identical command.
 
 ## 4. Actions
 
@@ -167,3 +172,50 @@ actually been built as specified:
    recognition on the in-tree engine is still unproven (`IDEAS.md`), and this
    design deliberately arranges that if it fails, everything above still ships
    and the failure is confined to one input adapter.
+
+---
+
+## 6. Parse rules
+
+Three rules the sections above leave open. Each was forced by implementation and
+each is settled the same way — syntactically, so that typing and speaking stay on
+one grammar.
+
+### Free text is terminal
+
+An action taking free text consumes the rest of the utterance. `name` and
+`search` are the only two, and neither may be chained after.
+
+Talon's answer to "where does dictated text end" is a 0.3s silence timeout, and
+its users report that the slightest pause mid-phrase ends dictation and the next
+subclause is executed as a command. That failure mode is bad enough in voice
+alone, but the fatal objection here is different: silence has no meaning at all
+for typed input, so a timeout would give the two modalities two different
+grammars — precisely what §5 forbids. A syntactic rule is identical in both.
+
+The cost is one free-text command per utterance, always last. `name cap enter the
+field` names the card "enter the field" rather than re-segmenting at `enter`.
+
+### A mark token fills the slot; anything else begins the text
+
+`name` takes an optional target and free text, so `name gecko session` is
+ambiguous on its face. The rule: the target slot is filled only if the token is a
+valid mark — a letter or an alphabet word — and otherwise the verb applies to the
+current object and that token begins the text.
+
+This is what makes §3's own chaining example, `enter cap branch name gecko`,
+parse as written: the `name` there has no target because `gecko` is not a mark,
+and it applies to the node `branch` just created. The tax is that naming
+something literally "cap" takes `name cap cap`, which is smaller than a mode and
+smaller than a punctuation escape with no spoken form.
+
+### A half-typed command is a normal result, not an error
+
+The parser runs on every keystroke, so incompleteness is the common case. It
+reports the slot the user is filling and the object types that slot accepts,
+which is what produces the live-narrowing candidate list §3 promises — from the
+same filter the voice grammar uses to constrain what may be said next.
+
+Liveness of a mark is checked only when the caller supplies the registry. The
+parser's own business is syntax; whether `cap` currently names anything is the
+registry's.
