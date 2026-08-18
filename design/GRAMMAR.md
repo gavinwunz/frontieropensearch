@@ -492,3 +492,66 @@ and the reason the two get different answers. The weights get a visible,
 one-time "download the speech model" step. What the fork must never ship is the
 shape run 26 had: a microphone that fails with an error about Remote Settings on
 a machine whose only real problem is that nobody told it to fetch anything.
+
+---
+
+## 9. What building the shell settled, and what it did not
+
+§8 was written from the state machine, before anything could open a microphone.
+Building the part that can — `FOSVoiceInput.sys.mjs` — settled four things §8
+left to the implementation, and opened one question worth more than the four.
+
+### The key is F4, and it is heard on the window
+
+Held, not tapped: the microphone is open while the key is down. F4 is unbound in
+this browser, which is why F2 could take the Field, and it produces no text, so
+no turn can begin by typing.
+
+The listener is on the chrome window in the capture phase rather than on the
+command bar, and that is not a preference. A key pressed while the focus is in a
+page is dispatched in the content process; the parent sees it only as the reply
+`BrowserParent::RecvReplyKeyEvent` re-dispatches at the `<browser>` element,
+from where it reaches the window. Keydown, keypress and keyup all take that
+path, so both halves of the gesture arrive — but only at the window. A listener
+on the bar's input would hear the talk key exactly when the bar already had the
+focus, which is the one moment a voice user has not reached yet.
+
+### The bar opens on the press
+
+The echo needs a surface, and the surface is the one the keyboard writes into.
+Opening it on the press rather than when the transcript lands means the user can
+see that this window is listening before they have finished the utterance, which
+is the question §8 says they are actually asking.
+
+### The download outranks every other notice
+
+Driving the real path showed both orderings: the arming failure can land before
+the download line, and the key-up's "too short to hear" can land after it. Both
+would leave a user who has just pressed the key looking at a complaint about
+their microphone while the browser quietly fetched a model. While a download is
+running it is the only account of why nothing happened, so it is the only thing
+said.
+
+### Recording is a `MediaRecorder`, decoded once
+
+Not an `AudioWorklet` drained frame by frame. The capture then costs the chrome
+process nothing during the window in which jank would be visible — while the
+user is speaking — and the decode lands after the key is up, where a model is
+about to run anyway. Decoding into an `OfflineAudioContext` built at 16kHz
+resamples the device's rate to Whisper's on the way.
+
+### Open: holding a key is the wrong gesture for some of the people this is for
+
+Push-to-talk was chosen because a press makes the microphone's state something
+the user did (§8). But sustained pressure is exactly what carpal tunnel,
+arthritis, tremor and fatigue conditions make expensive, and accessibility
+dictation tools converge on tap-to-start/tap-to-stop for that reason. A voice
+path whose only gesture is a held key has quietly excluded part of the audience
+that §5's "no separate accessibility mode" was written for.
+
+The answer is not a second mode. It is a second gesture on the same key, ending
+in the same transcript: a latched turn that a tap starts and a tap ends, bounded
+by the same `LISTENING` deadline that already exists, cancelled by the same
+Escape. What it must not do is make a mis-press open a 30-second microphone,
+which is what latching the current tap — today's "too short to hear" — would do.
+`IDEAS.md` (run 30) carries the candidates.

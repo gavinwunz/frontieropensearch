@@ -2130,3 +2130,83 @@ chose rather than a complaint about the one you left out. `opts.backend ||
 BACKENDS.onnx` cost four runs. When a component fails on a resource you did not
 know it wanted, check what it thinks you asked for before concluding the
 resource is unavailable.
+
+---
+
+## Run 30 — the voice path in a real browser, and the gesture it excludes
+
+**Phase:** post-plan. The shell `FOSVoiceSession` was designed against is
+written and wired, so the voice pillar is end to end for the first time.
+
+### Driven, not asserted: what the real stack does
+
+`agent/jobs/run30.sh` runs `browser_zzvoiceturn.js`, which replaces nothing —
+real key, real device, real recorder, real runtime, real bar:
+
+| stage | measured |
+| --- | --- |
+| first press with no weights | download announced, fetched and loaded from a hub in 1.5s |
+| arm — device open, engine resident | **106ms** |
+| 2s of audio, key-up to turn over | **513ms** |
+| what the model said | `" (whistling)"` |
+| what the user saw | "Nothing heard." |
+
+Three things fall out of that last pair, and none of them could have come from a
+test double.
+
+**The annotation rule earns its place.** Handed a tone, Whisper did not answer
+with nothing and did not answer with "thank you" — it answered with a bracketed
+annotation, which is the case `FOSVoiceTranscript`'s `ANNOTATION` regex was
+written for on the strength of reading rather than of evidence. It is now the
+observed behaviour of this model on this machine, and the phantom query it kept
+out of the Context Engine is a real one rather than a hypothetical.
+
+**513ms for the whole tail of a turn**, against run 29's 520ms for inference
+alone on a 3s clip, means `MediaRecorder` + `decodeAudioData` + resample cost
+almost nothing measurable. The decision to record rather than drain an
+`AudioWorklet` cost the budget nothing and cost the chrome process's main thread
+nothing while the user was speaking.
+
+**106ms to arm** is the number that decides whether the press feels like a
+button or like a wait, and it is well under the ~200ms at which a delay stops
+reading as instantaneous.
+
+### Adopt: a latched turn, because holding a key excludes people
+
+*Searched: push-to-talk and sustained keypress under motor impairment; what
+accessibility dictation tools do instead.* Sources converge, and the finding is
+uncomfortable for §8's first rule: sustained pressure is exactly what carpal
+tunnel, arthritis, tremor and fatigue conditions make expensive, and dictation
+tools written for those users offer tap-to-start/tap-to-stop rather than a held
+key. Push-to-talk is still right as *the* default — it eliminates false wakes
+and makes the microphone's state something the user did — but a voice path whose
+only gesture is a held key has quietly excluded part of the audience §5's "no
+separate accessibility mode" was written for.
+
+**Adopt**, as a second gesture rather than a second mode. It clears the bar:
+it is not a feature another browser has, it makes a turn possible for users for
+whom it currently is not, it needs nothing but the state machine already here,
+and it strengthens the same pillar rather than adding one. Two candidates, and
+the choice is the next run's:
+
+1. **Shift+F4 latches.** One press starts, the next ends, Escape cancels, the
+   30-second `LISTENING` deadline bounds it. A modifier is reachable one-fingered
+   through the platform's own sticky keys, which is a mechanism these users
+   already have turned on.
+2. **A tap latches.** Elegant — the state machine already tells a tap from a
+   hold, since a release during `ARMING` is today's "too short to hear" — and
+   dangerous for exactly that reason: a mis-press would open the microphone for
+   thirty seconds rather than being forgiven.
+
+(1) is the safer half of the pair and (2) is the one that needs no key at all.
+The deciding question is whether a mis-press is common enough to matter, which
+is a question about use rather than about design, so (1) ships first.
+
+*Rejected while here: VOX / voice-activated switching.* It removes the gesture
+entirely, and removes with it the property that makes push-to-talk honest — that
+the microphone is open because the user did something. `IDEAS.md` run 24 already
+priced what an always-listening microphone costs in phantom queries.
+
+Sources: [FluidVox voice typing for accessibility](https://www.fluidvox.com/voice-typing-for-accessibility),
+[Superwhisper for accessibility](https://superwhisper.com/for-accessibility),
+[Voice-operated switch](https://en.wikipedia.org/wiki/Voice-operated_switch)

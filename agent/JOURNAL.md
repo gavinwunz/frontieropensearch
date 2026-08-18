@@ -715,3 +715,45 @@ of this that run 25 got right.
 
 `GRAMMAR.md` §8 gains an eighth rule. The voice path's shell is now unblocked
 and is the next task.
+
+---
+
+## Run 30 — 2026-08-18 — the voice path reaches the browser
+
+**Phase:** post-plan. **Task:** item 1, wire the voice path in. **Tests:** 636
+browser-chrome checks, 218 node tests, xpcshell green; `run30` end-to-end green.
+
+`FOSVoiceSession` and `FOSVoiceTranscript` had been written, tested and imported
+by nothing. `FOSVoiceInput.sys.mjs` is the shell they were designed against, and
+with it the fork has a hands-free path end to end for the first time: hold F4,
+speak, and what comes back is a line handed to the same parser, the same marks
+and the same action table a keystroke reaches. No verb was added and no second
+surface exists — GRAMMAR.md §5's one code path is honoured by there being
+nothing else for it to be honoured with.
+
+Three decisions were forced by Gecko rather than by taste. The key is heard on
+the window in the capture phase, because a key pressed while the focus is in a
+page reaches the parent only as the reply `BrowserParent` re-dispatches at the
+`<browser>` element. Recording is a `MediaRecorder` decoded once rather than an
+`AudioWorklet` drained frame by frame, which keeps the chrome main thread free
+during the one window where jank would show. And the microphone opened here is
+opened with no prompt and no platform indicator, so the surface draws its own.
+
+**It was then driven with nothing replaced** (`agent/jobs/run30.sh`): armed in
+106ms, and 2s of audio answered 513ms after the key came up — against run 23's
+~1s natural budget. Handed a tone, Whisper answered `" (whistling)"`, and the
+adapter refused it as an annotation rather than recording a query nobody asked.
+That rule was written from reading; it is now observed behaviour.
+
+The download step also ran for real, from an empty profile: the first press
+announced the model, fetched it, loaded it and said when it was ready. Driving
+it found the notice ordering defect no test double could — a turn's "too short
+to hear" and "unavailable" both land around the download line — so a download
+now outranks every notice a turn can raise.
+
+**One thing this run learned that changes the next.** Push-to-talk excludes the
+part of the audience the "no separate accessibility mode" promise was written
+for: sustained pressure is exactly what tremor, arthritis and fatigue make
+expensive, and dictation tools written for those users offer a latched turn
+instead. Shift+F4 as a latch is the next task, with the reasoning in IDEAS.md
+run 30 and the open question written into GRAMMAR.md §9.

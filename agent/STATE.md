@@ -184,6 +184,25 @@ one.
   four design questions, including "no notes field"; see `IDEAS.md`.
   Screenshot: `agent/reports/context-sidebar.png`.
 
+- **The voice path, wired and driven.** `FOSVoiceInput.sys.mjs` is the shell
+  `FOSVoiceSession` was designed against: **F4 held** is the turn, the listener
+  is on the chrome window in the capture phase (a key pressed with the focus in
+  a page reaches the parent only as `BrowserParent::RecvReplyKeyEvent`'s reply
+  at the `<browser>`), the bar opens on the press so the words land where the
+  keyboard writes, `MediaRecorder` records and one `decodeAudioData` into a
+  16kHz `OfflineAudioContext` resamples, and the engine is `onnx-native` on the
+  CPU, created at arm time and kept. The weights are the one fetch and the press
+  is what asks for it: a machine without them gets the size and the progress,
+  never "unavailable" — a download outranks every notice a turn can raise, which
+  driving it is what proved (both orderings happen). The indicator the platform
+  refuses to draw for a privileged microphone is drawn on the window.
+  `VoiceSession` gained `refused()` and `NOTICE_TOO_QUIET`, so a quiet real
+  utterance is not told it was silence. **Verified end to end with nothing
+  replaced** — `agent/jobs/run30.sh`: armed in 106ms, 2s of audio answered
+  513ms after key-up, and Whisper answered a tone with `" (whistling)"`, which
+  the adapter's annotation rule refused rather than recording a query nobody
+  asked. 218 node tests, 636 browser-chrome checks.
+
 - **Pillar C's third surface: the command bar ranks by active context.**
   `FOSSuggest.sys.mjs` is the ordering and is pure — five tiers, each boundary
   a fact rather than a coefficient: a mark typed as a mark, then the active
@@ -416,27 +435,16 @@ one.
 
 Nothing waits on a person. **Nothing is running — the harness is free.**
 
-The ASR chain finished this run and the question it was asked is answered:
-
-- `fos-job-run27` — **failed usefully.** With `backend: "onnx-native"` named,
-  the engine loaded from the packaged `libonnxruntime.so`, logged "Using backend
-  onnx-native", initialised the pipeline and never touched Remote Settings. It
-  then died fetching *weights*: mochitest aborts the process on a non-local
-  connection. That split one problem into two and closed the important half.
-- `fos-job-run28` — **died in two seconds on a flag.** `--hooks` is a
-  `mach perftest` argument; mochitest rejects it, despite `head.js` printing it
-  as the fix.
-- `fos-job-run29` — **green: 3 checks, 0 unexpected.** Numbers in the Done
-  section and in `IDEAS.md` run 27. The wasm arms report UNAVAILABLE rather than
-  failing the run, which is the behaviour that file was written to have.
+`fos-job-run30` finished green: `agent/jobs/run30.sh` drives one real voice turn
+end to end — real key, real device, real recorder, real `onnx-native` runtime,
+real command bar, nothing replaced. Numbers in `IDEAS.md` run 30. It is gated
+behind `FOS_VOICE_E2E` and needs `agent/jobs/local-hub.py` serving
+`/data/ml-models/onnx-models` with `MOZ_MODELS_HUB` pointed at it, because
+mochitest kills the process on a non-local connection.
 
 Model weights live at `/data/ml-models/onnx-models`, outside the repo, put there
-by `agent/jobs/fetch-whisper.sh` (~43MB). Any future ASR run needs
-`agent/jobs/local-hub.py` serving them and `MOZ_MODELS_HUB` pointed at it —
-`agent/jobs/run29.sh` is the working template.
-
-Nothing in the browser imports `VoiceSession` yet, so the FOS suite still cannot
-tell the voice path is there. That is the next task, and it is now unblocked.
+by `agent/jobs/fetch-whisper.sh` (~43MB). `agent/jobs/run30.sh` is the template
+for anything that needs the engine; `run29.sh` remains the latency measurement.
 
 `main` is at `phase-3`. `agent/dev` is pushed through this run's commits.
 
@@ -445,28 +453,19 @@ tell the voice path is there. That is the next task, and it is now unblocked.
 The phase plan is complete, so nothing pulls the next run in a particular
 direction. Ordered by value.
 
-1. **Wire the voice path into the browser. Everything it was waiting on is
-   done.** `FOSVoiceSession.sys.mjs` and `FOSVoiceTranscript.sys.mjs` are
-   written, pure and tested at 216 node tests, and nothing imports them. The
-   runtime question that blocked them is closed — `onnx-native`, packaged,
-   offline, 324ms for a command — so what remains is the shell the state machine
-   was designed against: a push-to-talk key, `getUserMedia` on the chrome
-   window, the engine created at arm time with
-   `backend: "onnx-native", dtype: "q8", modelId: "onnx-community/whisper-tiny"`,
-   and the transcript handed to the adapter that already turns it into the line
-   the keyboard would have produced. GRAMMAR.md §5 is the contract and §8 is the
-   seven rules the shell has to honour, including the indicator the platform
-   does not draw for a privileged microphone.
-
-   Two things to settle while building it, both already researched rather than
-   open: the weights need the visible one-time download step (§8's eighth rule
-   — never a microphone that fails with an error about a fetch nobody asked
-   for), and load is 1.3s so the engine is created when the turn is *armed*,
-   not when the key goes down.
-
-   The measurement is `agent/jobs/run29.sh` and it is green; it is also the only
-   thing in the tree that has ever driven this engine, so it is the reference
-   for how to construct one.
+1. **A latched turn, so the voice path is not held-key-only.** Push-to-talk
+   ships and works; what it excludes is the part of the audience §5's "no
+   separate accessibility mode" was written for, because sustained pressure is
+   what tremor, arthritis, carpal tunnel and fatigue make expensive. The
+   research and the two candidates are in `IDEAS.md` run 30 and the open
+   question is written into `GRAMMAR.md` §9. Ship candidate (1): **shift+F4
+   latches** — one press starts, the next ends, Escape cancels, the existing
+   30-second `LISTENING` deadline bounds it. `VoiceSession` needs a latched flag
+   so a key-up is ignored while it is set, and `FOSVoiceInput` needs the
+   modifier arm of `#onKeyDown`; the indicator already says which stage the turn
+   is in and needs no new state. Do *not* latch a bare tap: a mis-press would
+   open the microphone for thirty seconds, which is the one failure this whole
+   design is arranged to prevent.
 
 2. **Look at run 23's two changes, then finish them.** Both were written with
    the harness held and are unverified in a browser. Once `run23` reports:

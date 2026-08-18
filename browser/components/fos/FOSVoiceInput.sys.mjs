@@ -291,6 +291,8 @@ export class FOSVoiceInput {
   /** Test seam: what makes engines. Replaced wholesale, never patched. */
   #createEngine = null;
   #listFiles = null;
+  /** The last thing the model said, before the adapter normalised it. */
+  #heard = "";
 
   constructor(window) {
     this.#window = window;
@@ -333,6 +335,21 @@ export class FOSVoiceInput {
   /** @returns {string} The turn's stage, for tests and for the indicator. */
   get state() {
     return this.#session.state;
+  }
+
+  /**
+   * What the model last returned, raw.
+   *
+   * Nothing in the browser reads this. It exists for the end-to-end run in
+   * `browser_zzvoiceturn.js`, which drives a real device through a real model
+   * and has no other way to tell "the engine answered and the adapter refused
+   * the answer" — the honest outcome for a room with nobody in it — from "the
+   * engine was never reached".
+   *
+   * @returns {string}
+   */
+  get lastHeard() {
+    return this.#heard;
   }
 
   /**
@@ -465,15 +482,14 @@ export class FOSVoiceInput {
     if (effect.input !== null) {
       this.#setInput(effect.input);
     }
-    // The one notice that is suppressed, and the reason is §8's last rule.
-    // A press that found no weights fails the turn *and* starts the download,
-    // and those arrive in that order — so saying "unavailable" here would
-    // replace the true account of what is happening, and what the user needs
-    // to be told, with the very line the rule was written against.
-    if (
-      effect.notice &&
-      !(this.#downloading && effect.notice === NOTICE_UNAVAILABLE)
-    ) {
+    // Nothing a turn has to say competes with the download, and the reason is
+    // §8's last rule. A press that found no weights ends the turn *and* starts
+    // the download, and driving it showed both orders happening: the arming
+    // failure can land before the download line or the key-up's "too short to
+    // hear" can land after it. Either way the download is the true account of
+    // why nothing happened, and a complaint about the microphone on top of it
+    // is the very line the rule was written against.
+    if (effect.notice && !this.#downloading) {
       this.#bar.notify(NOTICES[effect.notice] ?? NOTICES[NOTICE_UNAVAILABLE]);
     }
     if (effect.run !== null) {
@@ -591,6 +607,7 @@ export class FOSVoiceInput {
     let text = "";
     try {
       text = await this.#transcribe(recording.samples);
+      this.#heard = text;
     } catch (error) {
       console.error(error);
       if (turn === this.#turn) {
