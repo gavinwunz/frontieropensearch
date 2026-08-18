@@ -379,12 +379,20 @@ add_task(async function measure_a_crowded_overview() {
     Assert.greater(minis, 100, "the overview really is crowded");
 
     const renders = [];
+    const script = [];
+    const layout = [];
     for (let i = 0; i < 10; i++) {
       await nextFrame(win);
       const t0 = win.performance.now();
       field.render();
-      renders.push(win.performance.now() - t0 + flush(win));
+      const built = win.performance.now() - t0;
+      const flushed = flush(win);
+      script.push(built);
+      layout.push(flushed);
+      renders.push(built + flushed);
     }
+    stats("crowded-overview-render-script", script);
+    stats("crowded-overview-render-layout", layout);
     const row = stats("crowded-overview-render", renders);
     Assert.less(
       row.p95,
