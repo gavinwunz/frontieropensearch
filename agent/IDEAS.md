@@ -1457,3 +1457,68 @@ figure is believable only because the same loop was run with the Field closed.
 The first version of this harness reported a confident set of numbers for a
 drag that was being refused on every move and never moved a card at all —
 caught by counting committed moves, which cost two lines.
+
+
+## Run 19 — the polish pass, and two things a stylesheet cannot tell you
+
+**Not a search.** This is the design-system pass Phase 3 asks for, and it is
+recorded here because both of its findings are about *method* rather than about
+an idea, and the method is the part that transfers.
+
+**The screenshots are the instrument.** `SYSTEM.md` was written by reading five
+stylesheets against each other, and it caught what that can catch: five
+treatments of a mark, two mechanisms for "secondary", a type scale with its
+lower half missing. It could not catch either of this run's two defects,
+because both are about *proportion between* things that are individually
+correct. The rail's rows were 17.6px and the sidebar's 21px, and each looked
+deliberate on its own page. The entity list at zero block padding had a comment
+explaining itself. What settled both was opening `shot-context.png` and
+`shot-trails.png` at 3× and looking. Reading the picture is now the second half
+of the design-system loop, not an afterthought to it — the same conclusion run
+17 reached from the other direction when a screenshot found the blank content
+rectangle.
+
+**A CSS rule that removes something is invisible to a reader.**
+`.fos-rail-list:focus-visible { outline: var(--focus-outline) }` reads as "this
+surface draws a focus ring". It was not: it was *overriding* the `outline: auto`
+that Gecko's UA stylesheet already draws on every focused element. Deleting it
+therefore did not remove the ring, it restored a 1px grey one — and the
+screenshot afterwards looked, at a glance, exactly like the screenshot before.
+The live test said `rgb(60, 60, 60) auto 1px` in one line.
+
+The general shape: **a declaration is only ever the delta against what the
+platform already does, and a stylesheet does not show you what that is.** Any
+change that consists of deleting a declaration needs a computed-style
+assertion, not a re-read. This project has now paid for that lesson twice —
+once with `--font-size-small` resolving to nothing, once here — and both times
+the cost was the same, a rule that read correctly and meant something else.
+
+**Adopt: the container-plus-descendant focus model.** The ring belongs on the
+row the keyboard will act on, not around the panel holding it, and the
+container keeps it only for the case where nothing is selected. This is the
+ordinary listbox pattern rather than an invention, and the reason it is worth
+writing down is the branch: a surface that opens with nothing selected reaches
+the ugly case *by default*, so the sidebar now opens on the page you are on,
+the way the rail already did. The design rule and the seeding decision are one
+decision, and separating them would have shipped the rule with its worst case
+as its normal case.
+
+**Reject: an inactive-selection colour.** The first sketch had
+`--fos-selected-background-inactive`, a `color-mix` for a row that is selected
+in a panel that does not hold the keyboard — the full listbox model. Dropped.
+The selected background is already `color-mix(currentColor 20%, transparent)`,
+so a weakened version is 8% of the text colour, which is not a colour anybody
+can see; under forced colours it would have to collapse back to `SelectedItem`
+anyway; and the state it distinguishes cannot arise in a surface that closes on
+Escape and returns focus to the page. A token the design cannot demonstrate a
+use for is a token the next surface will use for something else.
+
+**Reject: `:has()`, on the tree's own evidence.** `:not(:has(.row[aria-selected]))`
+is the selector that says what is meant, and it worked. `stylelint-plugin-mozilla`
+refuses it: it scales with the subtree and needs the harder invalidation path,
+and a rail holding a real trail's worth of rows would run that on every arrow
+key. The replacement is `[aria-activedescendant]` on the container — not a
+proxy for the selection but the same fact, already written there for assistive
+technology, and free to match. Worth remembering as a general move: **the ARIA
+attribute a surface already maintains is usually the state a `:has()` was
+about to go looking for.**
