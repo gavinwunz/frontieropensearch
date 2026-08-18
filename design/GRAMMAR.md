@@ -320,8 +320,8 @@ the separate accessibility mode §5 forbids would get built by accident.
 ## 8. Rules the voice front end forced
 
 §5 promised that a transcript and a keystroke meet as one token stream. Building
-the front end that produces the transcript settled six things the promise leaves
-open. All six hold the same line §5 and §7 hold: whatever cannot be modality-
+the front end that produces the transcript settled seven things the promise
+leaves open. All six hold the same line §5 and §7 hold: whatever cannot be modality-
 blind is pushed *out* of the grammar rather than into it, and lives in the input
 adapter where it can be replaced.
 
@@ -412,3 +412,41 @@ node rather than deleting one. The one destructive thing a browser normally
 offers a voice user — closing a window with unsaved work — has no verb, because
 the Field replaced it. A confirmation step would be the honest answer to a
 grammar with a destructive verb in it; the better answer was not to have one.
+
+### No stage may last forever, because nothing else will end it
+
+The other six rules are interface judgements. This one is a fact about Gecko,
+and it is the only rule here that would survive a different interface.
+
+A chrome window's `getUserMedia` runs as `CallerType::System`. In
+`dom/media/MediaManager.cpp` that sets `privileged`, and `askPermission` is
+`!privileged || …permission.force` — so the call **never prompts**. The sharing
+indicator does not make up for it: the indicator is driven by
+`recording-device-events`, and the only thing that observes it is
+`BrowserProcessChild`, a process actor registered in
+`DesktopActorRegistry.sys.mjs` without `includeParent`. It is therefore never
+instantiated in the parent process, which is the process the chrome window's
+microphone belongs to. Nothing is listening when the recorder is the parent.
+
+So a microphone opened on this path is opened with no prompt, no indicator and
+no row in the permissions UI. This fork does not get to treat that as a
+convenience. Two things follow, and the second is the load-bearing one:
+
+*The voice surface draws its own indicator.* The stages were already visible
+because a voice user's real question is "is it listening yet" — that answer now
+also has to carry the weight the platform's indicator is not carrying.
+
+*The state machine is the only thing that can close the microphone, so it may
+never be left holding one open.* Every active stage carries a deadline, chosen
+where it costs nothing rather than picked as a round number: `listening` gets
+Whisper's own 30-second window, past which the model discards the audio anyway,
+so the cap can only end turns whose tail was going to be thrown away. Losing
+window focus ends a turn outright — holding a key and switching away is the
+ordinary way a key-up goes missing, and it is the gesture that has left a
+push-to-talk microphone open in every application that ever shipped one.
+
+A deadline decides *when* a turn ends and never invents a way for it to end.
+A listen that runs out is a key that came up: the audio is transcribed rather
+than discarded, and the long-utterance case needs no telling apart from the
+lost-key-up case, because a room that nobody is talking in does not clear the
+audio gate that already exists.

@@ -1866,3 +1866,80 @@ free text — and stops there.
 
 **Phase:** decided this run and recorded in `GRAMMAR.md` §8 so it is not
 reconsidered in three runs' time.
+
+## Run 25
+
+### The microphone this fork can open is invisible, and that is a Gecko fact
+
+**Searched:** whether a chrome-privileged `getUserMedia` prompts and whether it
+lights the sharing indicator — first on the web
+(<https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia>,
+<https://blog.addpipe.com/getusermedia-getting-started/>), then in the tree,
+which is where the answer actually is.
+
+**What the web says:** that the spec requires an indicator whenever a camera or
+microphone is in use, that Firefox shows a pulsing icon in the address bar for
+it, and — the one useful qualifier — that a `getUserMedia` call needs the page
+to have focus *so that the capture indicators will be visible*. Also that
+"privileged or built-in apps may bypass a number of permission concerns", which
+is the right shape and no use as evidence. None of this answers what this fork
+does, because this fork is the privileged caller.
+
+**What the tree says, which is the answer.** Two independent reads, both
+verifiable in one grep:
+
+1. `dom/media/MediaManager.cpp`: `bool privileged = isChrome || pref`, where
+   `isChrome = (aCallerType == CallerType::System)`, and then
+   `askPermission = (!privileged || …permission.force) && …`. A chrome window's
+   call is System, so `askPermission` is false and the request goes straight to
+   `getUserMedia:privileged:allow`. **It never prompts.**
+2. The indicator is driven by `recording-device-events`
+   (`MediaManager::NotifyRecordingStatusChange`). The only observer of it is
+   `BrowserProcessChild`, registered in `DesktopActorRegistry.sys.mjs` as a
+   JSProcessActor **without `includeParent`** — the one actor in that file that
+   sets it is `MozCachedOHTTP`. So the actor is never instantiated in the parent
+   process, and the parent process is the one whose chrome window holds the
+   microphone. **Nothing is listening when the recorder is the parent.**
+
+No prompt, no indicator, no row in the permissions UI, and nothing in the tree
+that a user could consult after the fact.
+
+**Verdict: adopt as a constraint, not as a convenience — and it is the strongest
+argument push-to-talk has.** The earlier case for a press over a wake word
+(run 23) was that it makes the microphone's state something the user did rather
+than something they trust. That was a preference. This makes it structural: on
+this path there is no platform mechanism that would tell the user the microphone
+is open, so "the user is physically holding a key" is not merely the honest
+design, it is the *only* remaining signal — and the fork has to supply the rest
+itself.
+
+Two things follow, both built this run.
+
+*The state machine may never be left holding an open microphone*, because it is
+the only thing that can close one. Every active stage now carries a deadline it
+hands to the shell, and `blurred()` ends a turn outright, because holding a key
+and switching away is the ordinary way a key-up goes missing — the release is
+delivered to whatever took the focus. That failure is not hypothetical: the
+push-to-talk stuck-open bug is the single best-attested complaint about the
+gesture across Discord, TeamSpeak, Mumble and FiveM
+(<https://support.discord.com/hc/en-us/articles/211376518-Voice-Input-Modes-101-Push-to-Talk-Voice-Activated>,
+<https://github.com/citizenfx/fivem/issues/3663>,
+<https://github.com/FrazzIe/mumble-voip-fivem/issues/158>), and in every one of
+those the user can at least see a hot-mic indicator. Here they cannot.
+
+*The deadline is chosen where it costs nothing.* `listening` gets Whisper's own
+30-second window, past which the model discards the audio anyway — so the cap
+can only ever end a turn whose tail was going to be thrown away, which is what
+makes a hard bound on an open microphone safe to set low enough to matter. The
+same trick is not available for `arming` and `transcribing`, and those two are
+honestly just generous hang-catchers.
+
+**The bit worth remembering beyond voice:** the fork is going to keep reaching
+for privileged APIs, and the privilege silently removes the *user-facing* half
+of an API as well as the permission check. The thing to ask of the next one is
+not "am I allowed to call this" but "who was going to tell the user I did, and
+are they still there".
+
+**Phase:** built this run — `FOSVoiceSession.sys.mjs`, `GRAMMAR.md` §8's
+seventh rule, and the property test that every abandoning event from every
+stage closes the microphone.
