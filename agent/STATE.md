@@ -143,6 +143,24 @@ execution, not invention: all three pillars have a written design.
   four design questions, including "no notes field"; see `IDEAS.md`.
   Screenshot: `agent/reports/context-sidebar.png`.
 
+- **Pillar C's third surface: the command bar ranks by active context.**
+  `FOSSuggest.sys.mjs` is the ordering and is pure — five tiers, each boundary
+  a fact rather than a coefficient: a mark typed as a mark, then the active
+  context (best outcome first, in the order `contextContents` already
+  justified), then the active trail, then crossings, then Places frecency as
+  the floor. `FOSPlacesFloor.sys.mjs` is that last tier, reading Places' own
+  read-only connection and its own current ranking column. Two new store reads
+  feed the middle: `trailPages` and `contextCrossings`, the second being the
+  tier no other browser could offer — what *another* trail found after reaching
+  a page this context also reached. `FOSContextEngine.suggest` gathers the five
+  and `activate` decides what accepting one means: a page still on a live trail
+  is re-entered, so scroll and form state come back, and a page that is only a
+  row is loaded. `FOSActions.openURL` is new and exists so that picking a page
+  off a list is not recorded as a query. Every tier heading is printed, so the
+  ranking explains itself in the surface. 179 node tests, 279 browser-chrome
+  checks, 64 xpcshell checks. Verified by screenshot in light and dark —
+  `agent/reports/suggest-tiers*.png`.
+
 - **A surface's stylesheet now lands before its first frame.** All four chrome
   surfaces appended a `<link>` on first open, which loads asynchronously, so
   the first frame painted a fixed-position panel as a full-width block.
@@ -160,35 +178,34 @@ execution, not invention: all three pillars have a written design.
 
 ## In progress
 
-Nothing running. `agent/dev` pushed through the ranking-research commit;
+Nothing running. `agent/dev` pushed through the suggestion-ranking commits;
 `main` and both tags unchanged on origin.
 
 ## Next task
 
-Two of pillar C's three surfaces exist. In rough order of value.
+All three of pillar C's surfaces now exist. In rough order of value.
 
-1. **Rank the command bar by active context.** The last of the three surfaces
-   with no code: the bar still has no suggestion ranking of any kind. This is
-   what "not global frecency" means, it needs the store's read side, which is
-   there, and this run's research settled what it should be — `IDEAS.md`,
-   "Ranking is tiers of provenance, not a score", which also has the number
-   that sets the bar (Mozilla optimised frecency's twenty-two weights across
-   723,581 users and bought 0.6 of a character, so the test is "the page is
-   offered at all", not "it moved up two places"). Candidates must come from
-   the **store**, not the window's tree, because ~60% of complex tasks continue
-   across sessions.
-2. **The embedding pass**, on `EmbeddingsGenerator` and `ClusterAlgos`. It now
-   has a concrete target rather than a vague one: query understanding, because
-   the shallow extractor gets nothing from a lower-case query. It should merge
-   contexts across trails with `source = 'embedding'`, never replacing the
-   provenance floor.
-3. **The tab strip still exists.** Unchanged and still the widest blast radius
-   in the phase; still wants its own run.
-4. **`prune`, and an export surface for trails** — still deferred, still a
-   considered grammar change. A surface for finding old trails is also what
-   would let a *named* trail be pinned past the restore window (see below).
-5. **The voice path.** Unchanged: measure model size and latency; do not
-   re-litigate availability.
+1. **The tab strip still exists.** Now the widest gap between what the phase
+   plan claims and what the build does: the Field replaces it, the Field is
+   built, and the keyboard has been unified onto the command bar for four runs.
+   Until the toolbar goes, "one entry surface" is true of the keyboard and not
+   of the mouse. Widest blast radius in the phase — upstream browser-chrome
+   tests drive the tab strip — so it wants its own run.
+2. **The embedding pass**, on `EmbeddingsGenerator` and `ClusterAlgos`. Target
+   unchanged: query understanding, because the shallow extractor gets nothing
+   from a lower-case query. Merge contexts across trails with
+   `source = 'embedding'`, never replacing the provenance floor. It would also
+   give the ranking a sixth signal without giving it a sixth tier — a merged
+   context is still tier 2.
+3. **`prune`, and an export surface for trails.** Deferred again, and this run
+   strengthened the case: a page on an old trail whose Places record has been
+   cleared is reachable by no tier, and the honest answer is that an old trail
+   should be findable *as a trail* rather than that the ranking should grow a
+   tier holding the whole database. Also what would let a *named* trail be
+   pinned past the restore window.
+4. **The voice path.** Unchanged: measure model size and latency; do not
+   re-litigate availability. Note that `suggest` already resolves a spoken mark
+   word, so the addressing half of this surface is done.
 
 **Test in Gecko, not only in node.** Two bugs this project has shipped were
 invisible to green node tests: a grammar bug found in one minute once the modules
@@ -282,6 +299,20 @@ Adding one test file re-ordered the suite and made a Field test fail for that
 reason alone. Scope a lookup to `activeTrailId` and take the most recent.
 This is also the harness that finds mark-pressure bugs: run the whole
 directory, never the one file you changed.
+
+**A page reachable by no tier is a page whose history was cleared.** Tiers 2
+to 4 each have a precondition and tier 5 is Places, so a row that is on an old
+trail, outside the active context, and gone from Places is offered by nothing.
+Narrow, and the answer is not a sixth tier holding the whole database — it is
+that an old trail should be findable *as a trail*, which is the surface already
+deferred below. See `IDEAS.md`.
+
+**The bar re-renders wholesale, so the selection is re-anchored by row id.**
+A suggestion read lands after the keystroke that asked for it, and the user may
+already have arrowed down. The id of the selected row is read out of the DOM
+before the rebuild and looked up again after; a row that has gone takes the
+selection back to the typed line rather than handing it to whatever replaced
+it. Do not "optimise" this into an index.
 
 **A named context can fail to get a mark under real mark pressure.** Contexts
 take letters only after being named, and only from what the active trail and

@@ -1144,3 +1144,62 @@ A tier is explainable in one line to the user, which frecency has never been,
 and a tier boundary is falsifiable: either the page is in the context or it is
 not. Only the last tier holds a score, and it is one this project did not
 invent.
+
+### A late suggestion list must not renumber under the selection
+
+- **Found:** in this tree, not on the web — `UrlbarView.mjs` and
+  `UrlbarChildController.mjs`. Two rules, both shipped for fifteen years and
+  neither written down anywhere as advice.
+- **Verdict:** **adopt** both, in the bar's own terms.
+- **Phase:** 2C, this run.
+
+The first: results are only auto-selected when nothing is selected already
+(`if (!this.#selectedElement …)`), and typing resets the selection to none.
+The second: rows from the previous query are held on screen while the next one
+runs and are only dropped once it returns something —
+`browser.urlbar.removeStaleRowsTimeout`, 400ms. The first is a correctness
+rule and the second is a legibility one, and together they are the whole answer
+to "the read lands after the keystroke that asked for it".
+
+The bar re-renders wholesale rather than diffing rows, so "do not move the
+selection" had to become "re-anchor it by row identity": the id of the selected
+row is read out of the DOM before the rebuild and looked up again after, and a
+row that has gone takes the selection back to the typed line rather than
+passing it to whatever took its place. Stale rows are kept for the in-flight
+read and dropped the moment the line stops being a query at all, which is the
+one case where holding them would answer a question nobody is asking.
+
+### Zero-prefix suggestions are a recency cache, so they stay rejected
+
+- **Found:** searching for evaluations of zero-prefix (empty-query) suggestion
+  lists turns up implementation and patent material rather than any usability
+  result — Yim and Cha, "On-device Query Caching For Enhancing Zero-Prefix Query
+  Suggestions" (TDCommons 3697), plus e-commerce query-suggestion patents.
+  https://www.tdcommons.org/dpubs_series/3697/
+- **Verdict:** **reject**, and record it so the question is not reopened.
+- **Phase:** n/a.
+
+The consistent description across all of it is that zero-prefix lists are
+ranked from a cache of *recent and recurring queries*. That is precisely the
+signal this project rejected for deciding what belongs to a context, and
+adopting it at the one surface with no query to rank against would be adopting
+it in its weakest form. The empty bar keeps showing the twelve verbs: it is the
+only surface that can teach the vocabulary, and there are no menus behind it.
+
+### A store row with no Places record is invisible to the bar
+
+- **Found:** by a test of the ranking that failed for a good reason — a
+  synthetic trail row, in no context and on no active trail, was offered by
+  nothing.
+- **Verdict:** **accept** as the floor doing its job; note the one real case.
+- **Phase:** 2C, and it strengthens the case for the deferred trail-finding
+  surface.
+
+Tiers 2 to 4 are provenance and each has a precondition; tier 5 is Places. So a
+page reachable by none of them is a page that is on some old trail, is not in
+the active context, and has no Places record — which happens when history has
+been cleared but the fork's own store has not. That is a narrow case and the
+honest answer is not a sixth tier: it is that an old trail should be findable
+*as a trail*, which is the surface already deferred in `STATE.md`. Adding
+"every page you have ever recorded" as a tier would rank the whole database by
+nothing in particular, which is the bookmark graveyard argument again.
