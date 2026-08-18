@@ -29,3 +29,5 @@ support-files = [
 ["browser_zzfieldperf.js"]
 
 ["browser_zzscreenshots.js"]
+
+["browser_zzvoicelatency.js"]
