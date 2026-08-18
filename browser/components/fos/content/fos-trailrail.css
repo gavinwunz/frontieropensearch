@@ -11,7 +11,12 @@
 
 .fos-rail {
   position: fixed;
-  inset-block: 0;
+  /* Below the browser's own toolbar, never over it: this panel is meant to be
+     read beside a page with the browser still usable, and at `inset-block: 0`
+     it covered back, forward and reload. FOSChrome measures the toolbox and
+     keeps the property honest; the fallback is the old behaviour rather than a
+     guessed height, since a wrong constant would leave a gap. */
+  inset-block: var(--fos-chrome-block-start, 0) 0;
   inset-inline-start: 0;
   /* Above the toolbox, which carries z-index: 0 and so paints over anything
      lower however far up the document this is appended. */

@@ -11,7 +11,10 @@
 
 .fos-sidebar {
   position: fixed;
-  inset-block: 0;
+  /* Below the browser's own toolbar, for the reason the rail is: at
+     `inset-block: 0` this panel covered the page actions, the unseen mark and
+     the app menu, which is every control on that end of the window. */
+  inset-block: var(--fos-chrome-block-start, 0) 0;
   /* Opposite the trail rail, so both can be open at once. "How did I get here"
      and "what do I know" are different questions and a user reading one may
      well want the other. */

@@ -28,7 +28,7 @@ import { FOSContextEngine } from "./FOSContextEngine.sys.mjs";
 import { FOSTrailSession, nodeKey } from "./FOSTrailSession.sys.mjs";
 import { moveSelection, sidebarFor } from "./FOSContextSidebarView.sys.mjs";
 
-import { ensureStylesheet } from "./FOSChrome.sys.mjs";
+import { ensureStylesheet, trackChromeInset } from "./FOSChrome.sys.mjs";
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const STYLESHEET = "chrome://browser/content/fos/fos-contextsidebar.css";
@@ -391,6 +391,7 @@ export class FOSContextSidebar {
     const doc = this.#window.document;
 
     ensureStylesheet(this.#window, STYLESHEET);
+    trackChromeInset(this.#window);
 
     const root = doc.createElementNS(HTML_NS, "aside");
     root.className = "fos-sidebar";

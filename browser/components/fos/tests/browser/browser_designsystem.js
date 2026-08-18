@@ -19,6 +19,12 @@
 const { ensureStylesheet } = ChromeUtils.importESModule(
   "resource:///modules/FOSChrome.sys.mjs"
 );
+const { FOSTrailRail } = ChromeUtils.importESModule(
+  "resource:///modules/FOSTrailRail.sys.mjs"
+);
+const { FOSContextSidebar } = ChromeUtils.importESModule(
+  "resource:///modules/FOSContextSidebar.sys.mjs"
+);
 
 const SHEETS = [
   "fos-tokens.css",
@@ -122,9 +128,14 @@ add_task(async function every_fos_token_resolves() {
       "the surfaces are written against the fork's tokens"
     );
 
-    // `--fos-rail-depth` is set per row from script rather than declared as a
-    // design token, and is the one legitimate exception.
-    const runtimeSet = new Set(["--fos-rail-depth"]);
+    // Measurements, not design tokens: both are written from script because
+    // their value is a fact about the running window rather than a decision.
+    // `--fos-rail-depth` is set per row; `--fos-chrome-block-start` is the
+    // height of the browser's own toolbar, which the panels stop below.
+    const runtimeSet = new Set([
+      "--fos-rail-depth",
+      "--fos-chrome-block-start",
+    ]);
 
     for (const token of used) {
       if (runtimeSet.has(token)) {
@@ -361,5 +372,58 @@ add_task(async function the_dead_token_is_gone() {
       0,
       `${name} does not reach for the platform's inert --font-size-small`
     );
+  }
+});
+
+add_task(async function a_panel_never_covers_the_browsers_own_controls() {
+  // Found by looking at a screenshot rather than at a stylesheet, which is the
+  // only way it could have been: every assertion in the suite measures a panel,
+  // and none of them asks what the panel is on top of. With the rail open there
+  // was no back button, and with the sidebar open there was no app menu, no
+  // page actions and no unseen mark — the one signal this fork keeps
+  // permanently on screen, covered by the surface that answers it.
+  //
+  // Both panels sit above the toolbox on purpose: it carries `z-index: 0` and
+  // would otherwise paint over them. Overlaying the *page* is the staged
+  // trade-off recorded in STATE. Overlaying the browser was never chosen.
+  const win = window;
+  const toolbox = win.document.getElementById("navigator-toolbox");
+  const chrome = toolbox.getBoundingClientRect();
+  Assert.greater(chrome.bottom, 0, "this window has a toolbar to be covered");
+
+  const rail = FOSTrailRail.forWindow(win);
+  const sidebar = FOSContextSidebar.forWindow(win);
+  await rail.open();
+  await sidebar.open();
+
+  try {
+    for (const [what, selector] of [
+      ["the rail", ".fos-rail"],
+      ["the sidebar", ".fos-sidebar"],
+    ]) {
+      const panel = win.document.querySelector(selector);
+      const box = panel.getBoundingClientRect();
+      Assert.greater(box.height, 0, `${what} is on screen`);
+      Assert.greaterOrEqual(
+        Math.round(box.top),
+        Math.round(chrome.bottom),
+        `${what} starts below the toolbar (${Math.round(box.top)} >= ` +
+          `${Math.round(chrome.bottom)})`
+      );
+    }
+
+    // And the measurement is a measurement, not a constant that happens to be
+    // right on this machine: it says what the toolbox says.
+    const declared = win
+      .getComputedStyle(win.document.documentElement)
+      .getPropertyValue("--fos-chrome-block-start");
+    Assert.equal(
+      Math.round(parseFloat(declared)),
+      Math.round(chrome.bottom),
+      `--fos-chrome-block-start tracks the toolbox (${declared})`
+    );
+  } finally {
+    sidebar.close();
+    rail.close();
   }
 });

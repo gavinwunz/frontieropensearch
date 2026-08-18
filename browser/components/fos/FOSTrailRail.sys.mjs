@@ -28,7 +28,7 @@ import {
 } from "./FOSTrailRailView.sys.mjs";
 import { FOSTrailSession, nodeKey } from "./FOSTrailSession.sys.mjs";
 
-import { ensureStylesheet } from "./FOSChrome.sys.mjs";
+import { ensureStylesheet, trackChromeInset } from "./FOSChrome.sys.mjs";
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const STYLESHEET = "chrome://browser/content/fos/fos-trailrail.css";
@@ -341,6 +341,7 @@ export class FOSTrailRail {
     const doc = this.#window.document;
 
     ensureStylesheet(this.#window, STYLESHEET);
+    trackChromeInset(this.#window);
 
     const root = doc.createElementNS(HTML_NS, "aside");
     root.className = "fos-rail";
