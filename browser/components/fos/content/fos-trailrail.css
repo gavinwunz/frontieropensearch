@@ -66,7 +66,7 @@
 
 .fos-rail-list {
   margin: 0;
-  padding: var(--space-xsmall) 0;
+  padding: var(--fos-list-padding-block) 0;
   list-style: none;
   overflow-y: auto;
   flex: 1;
@@ -85,7 +85,7 @@
      stay a real indent rather than collapsing to a guide line. */
   /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   padding-inline: calc(var(--space-small) + var(--fos-rail-depth, 0) * 0.75rem) var(--fos-gutter-panel);
-  padding-block: var(--space-xxsmall);
+  padding-block: var(--fos-row-padding-block);
   cursor: default;
 }
 

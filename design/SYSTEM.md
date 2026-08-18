@@ -111,19 +111,41 @@ kind of state from the identical row in the rail beside it.
 Hover on an enterable row stays distinct from selection, because they mean
 different things: hover is the pointer, selection is where the keyboard is.
 
-## 6. Gutter
+## 6. Spacing
 
-`--fos-gutter-panel` (0.75rem) and `--fos-gutter-dialog` (1rem): the inline
-padding shared by every row, header and heading of a surface, so that labels
-down a panel share one left edge.
+Two axes, both properties of the **surface** rather than of the row.
 
-It is a property of the **surface**, not of the row. A flanking panel is
-22–24rem and a centred dialog is 44rem, and the wider surface carries the wider
-gutter. This was already what the surfaces did; it was simply never stated, so
-individual rows had begun to drift off it.
+**Inline.** `--fos-gutter-panel` (0.75rem) and `--fos-gutter-dialog` (1rem):
+the padding shared by every row, header and heading, so that labels down a
+panel share one left edge. A flanking panel is 22–24rem and a centred dialog is
+44rem, and the wider surface carries the wider gutter. This was already what
+the surfaces did; it was simply never stated, so individual rows had begun to
+drift off it.
 
-Rows inside a Field tile are miniatures rather than panel rows and are exempt.
-That exception is stated here because it is the one the rule needs.
+**Block.** The first version of this section settled the inline axis and said
+nothing about the other one, and four surfaces then answered it four ways: a
+rail row padded itself `xxsmall`, a sidebar row and a command bar row `xsmall`,
+and the sidebar's list of entities nothing at all. The rail and the sidebar are
+open at the same time on either side of the page, listing the same nodes at
+different line rhythms; and the entity list, at no rhythm, read as a paragraph
+rather than as rows.
+
+```
+--fos-row-padding-block    0.25rem    a row in any list
+--fos-list-padding-block   0.5rem     a scrolling body, above its first row
+--fos-heading-space-above  0.5rem     above a group heading
+```
+
+A group heading takes a full step above and a **row's** step below, so it binds
+to the rows it labels instead of floating between two groups.
+
+An entity row now sits on the same rhythm as every other row. What makes an
+entity a topic rather than a destination is that it carries no mark, no time
+and no hover — not that it is packed tighter than the rows above it.
+
+Rows inside a Field tile are miniatures rather than panel rows and are exempt
+from both axes. That exception is stated here because it is the one the rule
+needs.
 
 ## 7. Layers
 
@@ -173,7 +195,11 @@ checks in a running chrome window that:
   its own the day that changes;
 - no surface de-emphasises text with opacity, except the one object-level rule
   §3 names;
-- no surface reaches for the dead platform token again.
+- no surface reaches for the dead platform token again;
+- every list row in the window, in whichever surface, has the same block
+  padding, and it is the token's — measured on real rows rather than read out
+  of the stylesheet, which is the only way to catch a later rule overriding
+  it.
 
 A lint rule can only see what a stylesheet says. The bug this system was built
 around was a stylesheet that said the right thing and meant nothing.

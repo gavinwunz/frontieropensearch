@@ -224,6 +224,80 @@ add_task(async function text_is_quieted_by_colour_not_opacity() {
   }
 });
 
+/**
+ * The used block padding of a bare element carrying a class, in this window.
+ *
+ * Read off a real element rather than out of the stylesheet, because the
+ * failure this guards against is a later rule overriding the token — which is
+ * exactly how the sidebar's entity rows came to have no block padding at all
+ * while the row rule above them said otherwise.
+ *
+ * @param {Window} win A chrome window.
+ * @param {string} className The row's class.
+ * @param {object} [attrs] Attributes to set, for rows selected by one.
+ * @returns {number} The used `padding-block-start`, in px.
+ */
+function usedRowPadding(win, className, attrs = {}) {
+  const doc = win.document;
+  const el = doc.createElement("div");
+  el.className = className;
+  for (const [name, value] of Object.entries(attrs)) {
+    el.setAttribute(name, value);
+  }
+  doc.documentElement.appendChild(el);
+  const used = parseFloat(win.getComputedStyle(el).paddingBlockStart);
+  el.remove();
+  return used;
+}
+
+add_task(async function every_list_row_shares_one_rhythm() {
+  // SYSTEM.md §6. The rail and the sidebar are open at the same time on either
+  // side of the page and list the same nodes; they ran at different line
+  // rhythms, and the sidebar's entity list ran at none, which read as a
+  // paragraph rather than as rows.
+  const win = window;
+  {
+    for (const name of SHEETS) {
+      ensureStylesheet(win, BASE + name);
+    }
+
+    const rows = [
+      ["fos-rail-row", {}],
+      ["fos-sidebar-row", {}],
+      // The list that had `padding-block: 0` of its own.
+      ["fos-sidebar-row", { "data-kind": "entity" }],
+      ["fos-commandbar-row", {}],
+    ];
+
+    const [first] = rows;
+    const expected = usedRowPadding(win, first[0], first[1]);
+    Assert.greater(expected, 0, "a row has block padding at all");
+
+    for (const [className, attrs] of rows) {
+      const used = usedRowPadding(win, className, attrs);
+      const what = Object.entries(attrs)
+        .map(([k, v]) => `[${k}="${v}"]`)
+        .join("");
+      Assert.equal(
+        used,
+        expected,
+        `.${className}${what} is on the one row rhythm (${used}px)`
+      );
+    }
+
+    // And the two flanking panels inset their scrolling bodies by the same
+    // amount, so neither list starts hard against the header rule over it.
+    const rail = usedRowPadding(win, "fos-rail-list");
+    const sidebar = usedRowPadding(win, "fos-sidebar-body");
+    Assert.greater(rail, expected, "a body is inset further than a row");
+    Assert.equal(
+      rail,
+      sidebar,
+      `the rail and the sidebar inset their bodies alike (${rail}px)`
+    );
+  }
+});
+
 add_task(async function the_dead_token_is_gone() {
   // The exact declaration that produced the bug, so it cannot come back by
   // being copied out of an older surface.

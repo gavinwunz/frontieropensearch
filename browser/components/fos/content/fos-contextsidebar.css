@@ -80,7 +80,7 @@
 .fos-sidebar-body {
   flex: 1;
   overflow-y: auto;
-  padding: var(--space-small) 0;
+  padding: var(--fos-list-padding-block) 0;
 }
 
 .fos-sidebar-body:focus-visible {
@@ -94,7 +94,7 @@
 
 .fos-sidebar-heading {
   margin: 0;
-  padding: var(--space-xsmall) var(--fos-gutter-panel);
+  padding: var(--fos-heading-space-above) var(--fos-gutter-panel) var(--fos-row-padding-block);
   font-size: var(--fos-font-size-small);
   font-weight: var(--fos-font-weight-emphasis);
   text-transform: uppercase;
@@ -104,7 +104,7 @@
 
 .fos-sidebar-note {
   margin: 0;
-  padding: 0 var(--fos-gutter-panel) var(--space-xsmall);
+  padding: 0 var(--fos-gutter-panel) var(--fos-row-padding-block);
   font-size: var(--fos-font-size-small);
 }
 
@@ -127,7 +127,7 @@
   display: flex;
   align-items: baseline;
   gap: var(--space-small);
-  padding: var(--space-xsmall) var(--fos-gutter-panel);
+  padding: var(--fos-row-padding-block) var(--fos-gutter-panel);
 }
 
 /* Only a row that goes somewhere offers to be clicked. An entity is a topic,
@@ -205,7 +205,3 @@
   font-style: italic;
 }
 
-/* Entities read as a list of topics rather than a list of destinations. */
-.fos-sidebar-row[data-kind="entity"] {
-  padding-block: 0;
-}
