@@ -434,6 +434,58 @@ add_task(async function test_a_card_without_a_snapshot_paints_the_stored_one() {
 });
 
 /**
+ * A burst of resize events is one render, not one render each.
+ *
+ * `render` rebuilds the stage from nothing, and a resize gesture fires its
+ * event many times per frame. Measured on a crowded overview a rebuild is
+ * around 15ms, so the unthrottled version spent a whole frame's budget several
+ * times over producing pictures nobody ever saw. This is the behaviour that
+ * fix rests on; `browser_zzfieldperf.js` holds the numbers.
+ */
+add_task(async function a_burst_of_resizes_renders_once() {
+  await goTo(PAGE_A);
+  const surface = field();
+  surface.open();
+  await new Promise(resolve => window.requestAnimationFrame(resolve));
+
+  const rendered = [];
+  const original = surface.render.bind(surface);
+  surface.render = () => {
+    rendered.push(1);
+    original();
+  };
+
+  try {
+    for (let i = 0; i < 10; i++) {
+      window.dispatchEvent(new Event("resize"));
+    }
+    Assert.equal(
+      rendered.length,
+      0,
+      "no render happens in the event's own tick"
+    );
+
+    await new Promise(resolve => window.requestAnimationFrame(resolve));
+    // The coalesced render is scheduled on a frame, so it has run by the time
+    // the frame after that one arrives.
+    await new Promise(resolve => window.requestAnimationFrame(resolve));
+    Assert.equal(rendered.length, 1, "ten resize events produced one render");
+
+    window.dispatchEvent(new Event("resize"));
+    await new Promise(resolve => window.requestAnimationFrame(resolve));
+    await new Promise(resolve => window.requestAnimationFrame(resolve));
+    Assert.equal(
+      rendered.length,
+      2,
+      "and a later resize is not swallowed by the one before it"
+    );
+  } finally {
+    delete surface.render;
+    surface.close();
+  }
+});
+
+/**
  * Property 3 where it can actually be violated: on screen.
  *
  * The model's `overlaps()` is authoritative about the boxes the model owns,
