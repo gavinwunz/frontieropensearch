@@ -59,6 +59,24 @@ execution, not invention: all three pillars have a written design.
   as a sibling, with no duplicate node from the restore. 70 browser-chrome
   checks, 83 node tests.
 
+- **The Field, and pillar A end to end.** `FOSFieldSurface.sys.mjs` renders the
+  overview, the region level and the page over the card model, which needed no
+  revisiting. `FOSFieldView.sys.mjs` is the pure layout — scale-to-fit at both
+  levels, spatial arrow-key movement, lineage — and is tested in node.
+  Thumbnails come from `PageThumbs.captureTabPreviewThumbnail`, the tab-preview
+  path, taken at the moment a page is departed. A drag calls `moveCard` on every
+  pointer move, so mid-drag state is drop state. **F2 toggles page and Field**,
+  and `Browser:ShowAllTabs` points at it too. `enter`, `field` and `dismiss` are
+  wired; `context`, `pack` and `what` are what remain unwired. 121 browser-chrome
+  checks, 96 node tests, verified by screenshot — `agent/reports/field-*.png`.
+
+- **`FIELD.md` §10's deep-tree question is answered, in a new §11.** Lineage is
+  transient and shown on focus, not a tree drawn inside every region. PadPrints
+  is the evidence for showing hierarchy at all (61.2% of the time on revisitation
+  tasks, and *no* time difference on general browsing), the spatial-hypertext
+  literature is the evidence against drawing it persistently, and the rail
+  already renders the tree properly.
+
 - **First Phase 2 code.** `browser/components/fos/` holds marks
   (`FOSMarks.sys.mjs`), the action table (`FOSGrammar.sys.mjs`), the parser
   (`FOSCommandParser.sys.mjs`) and the trail tree (`FOSTrailTree.sys.mjs`), 37
@@ -72,16 +90,13 @@ Nothing running. Tree fully pushed; `main`, `agent/dev` and both tags on origin.
 
 ## Next task
 
-Phase 2 execution. Pillars A and C are what remain.
+Phase 2 execution. Pillar C is what remains, plus two deferred pieces of A and B.
 
-1. **The Field's rendering** — `PageThumbs.captureToCanvas` for cards, reusing
-   the `tab-hover-preview.mjs` path. The model underneath (`FOSField.sys.mjs`)
-   is done and does not need revisiting, and `FIELD.md` §10's question about
-   what a region looks like for a deep tree can now be answered, because the
-   rail exists. Wiring a pillar into the bar is two calls: register its objects
-   on `bar.marks`, and `bar.actions.register(verb, fn)` per verb. The verbs
-   still unwired are `enter`, `field`, `dismiss` (A) and `context`, `pack`,
-   `what` (C); `browser_commandbar.js` prints the live list.
+1. **The Context Engine.** The only pillar with no code at all. `context-engine/
+   SCHEMA.md` is written; `context`, `pack` and `what` are the three unwired
+   verbs, and `browser_commandbar.js` prints the live list. Wiring a pillar into
+   the bar is two calls: register its objects on `bar.marks`, and
+   `bar.actions.register(verb, fn)` per verb.
 2. **`prune`, and an export surface.** `IDEAS.md`'s acceptance bar for 2B is
    that every action is performable *on* the tree — re-enter, rename, prune,
    export. Re-entry, rename and graft are done and `toJSON` exists, but there is
@@ -149,9 +164,51 @@ Only the keyboard gestures have been unified onto the command bar; removing the
 toolbar itself belongs with the Field, which replaces the tab strip. Until then
 the "one entry surface" claim is true of the keyboard and not yet of the mouse,
 and `agent/reports/cmdbar-*.png` shows exactly that. Do not describe Phase 2 as
-meeting the single-surface criterion before the toolbar goes.
+meeting the single-surface criterion before the toolbar goes. **The Field now
+exists, so this is unblocked** — it is the next honest step for pillar A, and it
+is a wide blast radius (upstream browser-chrome tests drive the tab strip), so
+it wants its own run rather than being tacked onto one.
+
+**A region is mostly empty until a trail is large.** A region seats 56 cards and
+a three-page trail therefore renders as a short column in the middle of a lot of
+nothing — visible in `agent/reports/field-region.png`. This is a small-N artefact
+and not the desert fog of §2: the region level is scaled to fit and cannot be
+panned, so there is no empty view to get lost in, and Data Mountain's subjects
+were working with 100 pages. Scaling the region to its *content* instead would
+move cards whenever an unrelated card arrived, which is exactly the invariant
+§4 exists to protect. Leave it; revisit only with a real session's worth of
+pages in front of you.
+
+**Cards seed in a vertical column growing upward.** `#firstFreeSeat` sorts by
+distance from the anchor then row-major, and the nearest free seat to a parent
+is the one directly above it. It is deterministic and correct, and it does not
+read as "provenance" as strongly as a spread would. A tie-break change is a
+model change with tests at 40 cards behind it — do it deliberately or not at
+all.
 
 ## Gotchas worth not rediscovering
+
+- **A screenshot of the chrome, without touching the real display.** The X-grab
+  route is forbidden (there is no Xvfb on this box, and `:10.0` is Gavin's own
+  desktop). The safe route is a scratch browser-chrome test that draws the
+  window into a canvas and writes the PNG:
+  `ctx.drawWindow(window, 0, 0, w, h, "white")` on a canvas scaled by
+  `devicePixelRatio`, then `IOUtils.write` the decoded data URL. Add the file to
+  `tests/browser/browser.toml`, run it, read the PNG, and delete both again.
+  Every visual defect this project has shipped was found this way and by no
+  other means.
+
+- **An invariant about what the user sees has to be asserted against what is
+  drawn.** `FieldModel.overlaps()` was green while the rendered cards overlapped,
+  because the caption hung below the box the invariant was checked against. The
+  browser test now compares `getBoundingClientRect` between every pair of cards.
+  The general form: a model-level invariant tests the model, not the surface.
+
+- **Marks are a budget of 26 shared by every pillar.** A card and its trail node
+  are one page and must not take a letter each. Anything that registers marks
+  for a new kind of object has to say what it gives up. `FOSTrailSession.retain`
+  is how a surface claims letters for pages outside the active trail, and the
+  active trail can take one back — retention is a claim, not a guarantee.
 
 - **A chrome overlay needs a very high z-index, not a plausible one.**
   `navigator-toolbox` is a flex item carrying `z-index: 0`, which makes it a
@@ -353,6 +410,16 @@ repeated failure even when each run has a new explanation for it.
 - 2026-08-18 — **Mozilla services are switched off, not rebranded.** Relay,
   Firefox Accounts, VPN and Monitor promos each carry a network path to Mozilla,
   and the fork has no account system. Renaming them would have been a lie.
+- 2026-08-18 — **A page carries one mark, and it belongs to its trail node.**
+  A card is that page's presence on the Field, not a second object to address,
+  so `enter` and `dismiss` take a node. Giving cards their own letters spent two
+  of the twenty-six on every page, and the rail lost its marks in a session of
+  ordinary size. It also makes `FIELD.md` §8 sayable: the mark survives the
+  dismissal that removes the card, so `enter <mark>` is what brings it back.
+- 2026-08-18 — **The overview lays out the slots that hold something**, not all
+  nine. Sizing for nine left two thirds of the window empty at three trails.
+  `§5`'s landmark property is carried by the model's permanent slot indices — a
+  region never reorders against another — rather than by the grid's shape.
 - 2026-08-18 — **A line is a command only if every token parses as one.** Eight
   of the twelve action words are ordinary English, so `what is a memex` returned
   a syntax error. Syntactic failure now falls back to a query; semantic failure
