@@ -280,6 +280,16 @@ add_task(async function take_the_screenshots() {
     "the bar took the mark before it was photographed"
   );
   await shoot("shot-unseen");
+
+  // 7. And the other half of that signal: pressing the key the dot is asking
+  //    for, and finding the Field able to say which card it meant. The tab is
+  //    still open, because the arrival has to still be there to be marked.
+  //    Taken at the overview, which is the level the accent is hardest at — a
+  //    miniature is about ten pixels across here.
+  field().open();
+  await shoot("shot-arrived");
+  field().close();
+
   BrowserTestUtils.removeTab(background);
   field().open();
   field().close();
