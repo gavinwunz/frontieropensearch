@@ -374,3 +374,112 @@ branch, bookmark graveyards. Real complaints beat invented personas.
   contexts are related, which is a clustering input, and it feeds the context sidebar's
   "what you know so far" directly.
 - **Phase:** 2C, as a signal in the sidebar and a ranking input in the command bar.
+
+### Data Mountain: spatial memory works, but only for layouts the user made
+- **Found:** 2026-08-18, Robertson, Czerwinski, Larson, Robbins, Thiel and van Dantzich,
+  "Data Mountain: Using Spatial Memory for Document Management", UIST '98
+  (microsoft.com/en-us/research/wp-content/uploads/1998/01/p153-robertson.pdf).
+- **What it is:** 100 web page thumbnails freely placed by the user on an inclined plane,
+  measured against IE4 Favorites for storage and retrieval. Data Mountain was reliably
+  faster (F(2,18) = 4.84, p < .02), had reliably fewer incorrect retrievals and reliably
+  fewer failures to find the page inside two minutes.
+- **Verdict:** adopt — this is the empirical foundation the Field was missing.
+- **Why:** It is the strongest evidence that a spatial page-switcher beats a list, and it is
+  from a controlled study rather than a product's marketing. But the finding that matters
+  most is the one buried in the related-work section, and it contradicts the naive Field:
+
+  > "PadPrints uses an automatic layout for short term use; the Data Mountain uses a manual
+  > layout to exploit spatial memory for long term use."
+
+  Spatial memory is memory for *where you put something*. A layout the system generated is
+  not a place the user chose, so it builds no memory to retrieve by — which means "the Field
+  auto-clusters your pages" cannot be the mechanism the Field's value rests on. Auto-layout
+  is a starting position; only user placement is load-bearing. This is the same shape as the
+  Smart Tab Grouping correction: clustering is a supporting detail, not the idea.
+
+  Three further results that are direct design constraints:
+  - **Occlusion is the dominant failure.** Under the early collision model "some users
+    effectively lost many pages due to occlusion"; the fix — maintaining a minimum distance
+    between all pages at all times, propagating displacement transitively — was judged to
+    have "contributed most to improved user performance" in the second group. Cards must
+    never overlap, ever, at any zoom level.
+  - **Thumbnail plus title, together.** In Data Mountain the combined cue was fastest and
+    title-only was its weakest condition; in IE4's list the reverse held — thumbnails
+    actively *hurt* retrieval. A spatial switcher and a list want opposite cues, so a card
+    carrying only a favicon and a title is a list with extra steps.
+  - **No hover delay, and bind the title to its card.** A standard tooltip delay was
+    rejected in piloting because it "precluded rapid inspection of multiple titles"; the
+    first design also failed because users could not tell which thumbnail a floating title
+    belonged to, fixed with a matching coloured halo. Users riffle titles once spatial
+    memory has got them to the neighbourhood — the last metre is textual.
+  - Users needed no category labels: they "built a very accurate mental map of their
+    categories even without explicit labels", some promoting a salient thumbnail to serve as
+    their own landmark.
+- **Phase:** 2A. Every one of these lands in `design/FIELD.md`.
+
+### Desert fog: the argument against an infinite canvas
+- **Found:** 2026-08-18, Jul and Furnas, "Critical Zones in Desert Fog: Aids to Multiscale
+  Navigation", UIST '98; plus the Hornbæk, Bederson and Plaisant ZUI overview studies
+  (dl.acm.org/doi/abs/10.1145/586081.586086).
+- **What it is:** Desert fog is the state where a view of the world "contains no information
+  on which to base navigational decisions" — you have zoomed or panned into emptiness, and
+  nothing on screen tells you which way anything is. Their remedy is *critical zone
+  analysis*: group objects by their visibility in views rather than by their spatial layout.
+- **Verdict:** adapt — and it forces a deliberate departure from the phase plan's wording.
+- **Why:** An infinite zoomable canvas is a desert fog generator by construction: almost all
+  of an infinite plane is empty, so almost every reachable view is featureless. Note that
+  Data Mountain, the design with the actual evidence behind it, went the other way — "the
+  system is designed with a fixed viewpoint, so users need not navigate around the space."
+  Its win came partly from *not* being navigable.
+
+  So the Field is bounded, not infinite: the overview always shows the whole world, always
+  fits the window, and cannot be panned into emptiness. Zoom stays, because zoom is what
+  shows a card's provenance as it grows out of its region — but it moves between a few
+  defined semantic levels rather than over a continuum of scales. Every reachable view then
+  has content by construction, which is the critical-zone insight applied at design time
+  instead of as a navigational aid bolted on afterwards.
+
+  This contradicts "an infinite, zoomable spatial canvas" in the phase plan. Taking it
+  anyway: the brief's own instruction is that a better finding beats the plan, and infinity
+  here is a property no user asked for that costs the interface its navigability.
+- **Phase:** 2A. Recorded in `design/FIELD.md` as decision 1, flagged as a plan deviation.
+
+### Named regions are searchable; unnamed space is not
+- **Found:** 2026-08-18, surveying complaints about infinite-canvas tools in practice —
+  Miro, FigJam, Obsidian Canvas, tldraw (storyflow.so, omnicanvasnotes.com round-ups).
+- **What it is:** The recurring criticism of canvas tools is not the drawing, it is that
+  boards decay into places you cannot find anything in, and that the tools lack the folders,
+  tags and search that would let you. The one-line rule from the survey: named regions are
+  searchable and unnamed space is not; pick one spatial convention and hold it.
+- **Verdict:** adopt as the constraint that keeps the Field from decaying into a messy desk.
+- **Why:** This is the real-world failure of the thing we are building, from people using
+  spatial canvases daily, and it is the objection the Field has to answer. It resolves
+  neatly, because we already have the names: the Field's regions are trails, and trails are
+  already nameable first-class objects with a `name` verb in `design/GRAMMAR.md`. So every
+  region carries a name and is reachable from the command bar without touching the canvas at
+  all — spatial and textual retrieval over one structure.
+  It also settles the "one spatial convention" question: placement means provenance. A
+  card's region is the trail it came from, and that never means anything else.
+- **Phase:** 2A, with the naming path already specified in 2B.
+
+### Field cards are snapshots, not live browsers
+- **Found:** 2026-08-18, reading `toolkit/components/thumbnails/PageThumbs.sys.mjs` and
+  `toolkit/content/widgets/browser-custom-element.mjs` in tree.
+- **What it is:** The phase plan calls for "live-thumbnail cards". Every open page in Gecko
+  is a `<browser>` whose content lives in its own process, and unselected browsers are
+  deliberately deactivated so they neither paint nor consume CPU. Painting fifty at once to
+  fill a canvas means keeping fifty content processes rendering.
+- **Verdict:** adapt — snapshots by default, live only where it is affordable.
+- **Why:** Criterion 3. What the tree already gives us:
+  - `PageThumbs.captureToCanvas(browser, canvas, args)` renders a browser to a canvas via
+    `drawSnapshot`, with `BackgroundPageThumbs` for off-screen capture and an existing
+    storage service. `tab-hover-preview.mjs` already does exactly this for tab previews.
+  - `docShellIsActive` and `renderLayers` are *separable* on a remote browser: the setter for
+    the former drives the latter, but `renderLayers` can be set alone, so a browser can keep
+    painting without being the active docshell. This is the mechanism behind warm tab
+    switching, and it is the budget knob for the Field.
+  So: a card is a cached snapshot, refreshed on navigation and on dismissal; the focused card
+  renders live. Data Mountain says this costs nothing that matters — its thumbnails were
+  static 64×64 images and it still beat Favorites on every measure.
+- **Phase:** 2A. Reuse `PageThumbs`; vendor nothing; treat the count of live cards as a
+  budget with a pref, not as a property of the design.

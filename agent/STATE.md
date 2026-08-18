@@ -20,6 +20,11 @@ Keep it short — this is state, not a log. History belongs in `JOURNAL.md`.
 - `./mach bootstrap` complete. Toolchains in `/data/.mozbuild`.
 - `context-engine/SCHEMA.md` written — tables, migration policy, and the three
   design decisions that are easy to get wrong.
+- `design/GRAMMAR.md` — the command bar, marks, and the one parse path shared by
+  keyboard and voice.
+- `design/FIELD.md` — pillar A, specified against measured evidence rather than
+  taste. All three pillars now have a written design; Phase 2 has no unspecified
+  major piece left.
 - `browser/branding/frontieropensearch/` created from `unofficial`: brand
   strings, prefs with update/telemetry off, and `generate-mark.py`, which is the
   single source of truth for the mark — it emits the SVG and every PNG size.
@@ -49,10 +54,12 @@ Keep it short — this is state, not a log. History belongs in `JOURNAL.md`.
 4. Do not edit anything under `browser/` or `toolkit/` while a full build is in
    flight — research and the `agent/`, `context-engine/` and `design/` docs are
    the safe work. Build inputs have not been touched since the build started.
-5. `design/GRAMMAR.md` is ready to implement whenever Phase 2 opens. Marks and
-   the parser are pure frontend logic with no dependency on the ASR spike, so
-   they are the right first thing to build in 2 and can be tested by keyboard
-   alone.
+5. When Phase 2 opens, build in this order: marks and the parser
+   (`design/GRAMMAR.md`) first, since they are pure frontend logic testable by
+   keyboard alone and every pillar's verbs route through them; then the Field's
+   card and region model (`design/FIELD.md`), reusing `PageThumbs` for capture.
+   The four acceptance properties in FIELD.md §9 are written to be testable and
+   should become browser-chrome tests as the code lands, not after.
 
 ## Background jobs
 
@@ -65,11 +72,12 @@ restart cannot reach them. `agent/logs/<name>.current` symlinks the live log.
   `fos-job-build.service` — started 2026-08-18T11:22Z. Expect 1–2 hours on 8
   cores. The build detects an agent and limits output to warnings and errors,
   so a quiet log is the healthy case — judge it by the `=== EXIT n ===` marker,
-  not by the tail.
+  not by the tail. Alive and compiling `gfx/` at 13 minutes as of 11:35Z — the
+  cgroup fix holds, and this is the first build to survive a run boundary.
 - `./agent/push-chunked.sh` — log `agent/logs/push-1787052149.log`, unit
   `fos-job-push.service`. Pushes 40k commits at a time because a single 5G push
   exceeds GitHub's limit. Resumable: it reads where origin is and continues.
-  Ends with `PUSH COMPLETE`. At 516k of 990k commits as of 11:46Z.
+  Ends with `PUSH COMPLETE`. At 597k of 990k commits as of 11:35Z.
 
 ## Blockers
 
@@ -141,3 +149,27 @@ fos-job-build` for what killed it before changing anything.
   a supported task on the in-tree engine but `automatic-speech-recognition` is
   not listed, so a small capture-to-transcript spike gates the voice work. See
   `IDEAS.md`.
+- 2026-08-18 — The Field is **bounded, not infinite**, which is a deliberate
+  departure from the phase plan's "infinite, zoomable spatial canvas". An
+  infinite plane is mostly empty, so most reachable views are desert fog (Jul and
+  Furnas) — no information to navigate by. The overview always shows everything
+  and always fits; overflow is absorbed by nesting regions, never by growing the
+  plane. Zoom stays but moves between three semantic levels. See `design/FIELD.md`
+  §2 and the IDEAS entry.
+- 2026-08-18 — Auto-layout seeds a card's position; **the user owns it from the
+  first move and the system may never move a pinned card again**. Data Mountain's
+  measured win came from hand-made layouts, and it contrasts itself explicitly
+  with PadPrints's automatic layout "for short term use". A position the system
+  chose builds no spatial memory, so auto-clustering cannot be what the Field's
+  value rests on — provenance placement is a free starting state, not the idea.
+- 2026-08-18 — Field cards are **cached snapshots**, not live browsers; only the
+  focused card renders live, under a pref-controlled budget. Every open page is a
+  `<browser>` with its own content process, deactivated when unselected. Reuse
+  `PageThumbs.captureToCanvas`, as `tab-hover-preview.mjs` already does. Data
+  Mountain beat a bookmark list using static 64×64 thumbnails, so nothing that
+  matters is lost.
+- 2026-08-18 — A **region in the Field is a trail**, not a second organising
+  structure. This is what keeps the Field from decaying the way canvas tools in
+  the wild are criticised for: named regions are searchable, unnamed space is not,
+  and trails are already nameable from the command bar. Placement means
+  provenance and never anything else.
