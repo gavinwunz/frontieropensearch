@@ -757,3 +757,53 @@ for: sustained pressure is exactly what tremor, arthritis and fatigue make
 expensive, and dictation tools written for those users offer a latched turn
 instead. Shift+F4 as a latch is the next task, with the reasoning in IDEAS.md
 run 30 and the open question written into GRAMMAR.md §9.
+
+## Run 31 — 2026-08-18 — the latch, and the bound it nearly removed
+
+**Phase:** post-plan. **Task:** item 1, a latched turn. **Tests:** 223 node
+tests, 658 browser-chrome checks, both green; `run31` end-to-end green with
+nothing replaced.
+
+Shift+F4 latches a voice turn: one press starts it, the next ends it, nothing is
+held in between. Run 30 chose this out of two candidates because holding a key
+is exactly what tremor, arthritis, carpal tunnel and fatigue make expensive, and
+a hands-free path reachable only by sustained pressure had excluded the part of
+the audience GRAMMAR.md §5's "no separate accessibility mode" was written for —
+from the modality that was supposed to be their way in.
+
+It cost one flag in `FOSVoiceSession`, one modifier arm in `FOSVoiceInput` and
+one element on the indicator, which is the whole argument for calling it a
+gesture rather than a mode: the turn arms, listens, transcribes and executes
+down the same path a held key takes. Had it needed a second path it would have
+been a second mode wearing a gesture's name.
+
+**The find is that the one safety bound was defined in terms of the gesture it
+bounds.** Nothing in this build draws a platform indicator for a privileged
+microphone, so the 30-second `LISTENING` deadline is all that stands between a
+mis-latched device and half a minute of open microphone. It was implemented as
+"a listen that runs out is a key that came up" — literally, by calling
+`release`, which a latched turn ignores. So it would have bounded every turn in
+the design except the only one with nobody's finger on the key, and silently,
+because every test in the suite was a held turn. Both endings go through one
+private step now, and the node property "every way out of every stage closes the
+microphone" runs over both gestures rather than over both paths.
+
+**Driven with nothing replaced**, both gestures on one resident engine: latched
+armed in 106ms *with no key held*, a real `MediaRecorder` stayed open across the
+key-up that follows the latching press for a whole 2s utterance, and the
+stopping press turned the turn over in 504ms — against the held turn's 106ms and
+521ms in the same run. That middle number is the one no double could have
+produced, and it is the whole of what the latch risks.
+
+Two decisions followed from the microphone being unattended. Any press ends a
+latched turn, not only a latching one: the presses are asymmetric because
+ending early costs one utterance and failing to end costs an open device. And
+the indicator now says how to stop, since for a held turn the finger is that
+answer and for a latched turn nothing is. Driving it also caught a wording
+defect no test had reason to look for — the audio gate's "too short" told a
+latched user to hold a key they were not holding.
+
+**Still open, deliberately:** the bare tap, which needs no modifier at all and
+is what a user with one reliable finger would rather have. A mis-tap would open
+the microphone for the full deadline, and how often that happens is a question
+about use rather than about design.

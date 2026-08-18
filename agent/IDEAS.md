@@ -2210,3 +2210,93 @@ priced what an always-listening microphone costs in phantom queries.
 Sources: [FluidVox voice typing for accessibility](https://www.fluidvox.com/voice-typing-for-accessibility),
 [Superwhisper for accessibility](https://superwhisper.com/for-accessibility),
 [Voice-operated switch](https://en.wikipedia.org/wiki/Voice-operated_switch)
+
+## Run 31 — the latch, and a bound that was defined in terms of a gesture
+
+**Phase:** post-plan. Run 30's adopted idea, built: **shift+F4 latches a voice
+turn**, one press starts it and the next ends it. Candidate (1) of the pair, as
+run 30 said it would be.
+
+### What it cost, which is the argument for it being a gesture and not a mode
+
+One flag in `FOSVoiceSession`, one modifier arm in `FOSVoiceInput`, and one
+element on the indicator. The turn arms, listens, transcribes and executes down
+exactly the path a held key takes — same device, same recorder, same runtime,
+same line handed to the same parser. That is the test §5's "no separate
+accessibility mode" was always going to be judged by: if the second gesture had
+needed a second path, it would have been a second mode wearing a gesture's name.
+
+### The find: a safety bound written in terms of an ordinary event
+
+`LISTENING_DEADLINE_MS` is the only thing standing between a mis-latched
+microphone and thirty seconds of open device — this build draws no platform
+indicator for a privileged `getUserMedia` (run 25), so nothing else would notice.
+It was implemented as *"a listen that runs out is a key that came up"*, literally,
+by calling `release`. A latched turn ignores `release`, because not holding the
+key is the entire point.
+
+So the deadline would have bounded every turn in the design **except the only one
+that needed bounding**, and it would have done it silently: every existing test
+passes, because every existing test is a held turn. Both endings now go through
+one private step and `release` is a thin caller of it.
+
+**Generalise it:** when a safety bound is expressed as "this is the same as that
+ordinary event", any later mode that suppresses the ordinary event removes the
+bound without touching the bound. The three defences worth having are to define
+the bound on its own terms, to run the safety property over every mode rather
+than every path (`test_voice.mjs` now runs "every way out of every stage closes
+the microphone" over both gestures), and to be suspicious of a rule whose
+statement contains a gesture.
+
+### Driven, not asserted: both gestures on one resident engine
+
+`agent/jobs/run30.sh`, extended. Nothing replaced — real key, real device, real
+recorder, real `onnx-native` runtime, real bar:
+
+| | held | latched |
+| --- | --- | --- |
+| armed | 106ms | **106ms, with no key held** |
+| 2s of audio, stop to turn over | 521ms | **504ms** |
+| what the model said | `" (whistling)"` | `" (whistling)"` |
+
+The middle row of the latched column is the only one that could not have been
+faked: a real `MediaRecorder` stayed open across the key-up that follows the
+latching press, for a whole utterance, and a real one closed on the press that
+ended it. Both are `getUserMedia` behaviour rather than the state machine's, and
+the state machine is already covered in node.
+
+### Two decisions the build forced, both about the microphone being unattended
+
+**Any press ends a latched turn, not only a latching one.** The presses are
+asymmetric on purpose: starting one needs the modifier, stopping one does not.
+A user who latched with shift and reached back for the bare key has asked to
+stop, ending early costs one utterance, and failing to end leaves a device open
+that nothing will draw an indicator for. Those are not the same size of mistake.
+
+**The indicator has to say how to stop.** For a held turn the user's own finger
+is the answer to "how do I stop this"; for a latched turn nothing is, and this
+element is already the only signal in the browser that the microphone is open.
+It is hidden with `visibility` rather than `display` once the model is working —
+a press would do nothing by then — so the box does not resize under the eye
+reading it, which is the same reason the recording dot is quieted rather than
+removed.
+
+*Searched: hands-free dictation stop affordances; sticky keys and one-handed
+modifier reach.* Both confirmed rather than changed the design. Latched
+dictation surfaces put the stop control on the same indicator that reports
+listening, which is what was built; and sticky keys "latches a modifier key
+after it is pressed and released", which is what makes shift a one-fingered arm
+rather than a second thing to hold — the objection that would otherwise have
+sunk candidate (1) for exactly the users it is for.
+
+Sources: [Sticky keys](https://en.wikipedia.org/wiki/Sticky_keys),
+[Wispr Flow hands-free](https://docs.wisprflow.ai/articles/6391241694-use-flow-hands-free),
+[Accessibility dictation on Mac](https://www.getvoibe.com/resources/accessibility-dictation/)
+
+### Still open, and deliberately
+
+The bare tap — run 30's candidate (2) — needs no modifier and so is what a user
+with one reliable finger would actually want. It stays unbuilt because a mis-tap
+would open the microphone for the whole thirty-second deadline, and how often a
+mis-tap happens is a question about use rather than about design. `GRAMMAR.md`
+§9 carries it.

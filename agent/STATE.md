@@ -203,6 +203,26 @@ one.
   the adapter's annotation rule refused rather than recording a query nobody
   asked. 218 node tests, 636 browser-chrome checks.
 
+- **The voice path has a second gesture, so it is no longer held-key-only.**
+  **Shift+F4 latches**: one press starts the turn, the next ends it, nothing is
+  held in between. It is a gesture and not a mode — one flag in `VoiceSession`,
+  one modifier arm in `FOSVoiceInput`, one element on the indicator, and the
+  same device, runtime, parser and action table a held key reaches. Any press
+  ends a latched turn, not only a latching one, because ending early costs an
+  utterance where failing to end leaves a microphone open that this build draws
+  no platform indicator for. **The find was that the one safety bound was
+  defined in terms of the gesture it bounds**: the `LISTENING` deadline ended a
+  turn by calling `release`, which a latched turn ignores, so it would have
+  bounded every turn except the only one with nobody's finger on the key — and
+  silently, since every existing test is a held turn. Both endings go through
+  one private step now, and the node property "every way out of every stage
+  closes the microphone" runs over both gestures. **Verified live with nothing
+  replaced** (`agent/jobs/run30.sh`): latched armed in 106ms *with no key held*,
+  a real `MediaRecorder` stayed open across the key-up for a whole 2s utterance,
+  and the stopping press turned the turn over in 504ms — against the held turn's
+  106ms and 521ms on the same resident engine. `GRAMMAR.md` §8's tenth rule and
+  §9, `IDEAS.md` run 31. 223 node tests, 658 browser-chrome checks.
+
 - **Pillar C's third surface: the command bar ranks by active context.**
   `FOSSuggest.sys.mjs` is the ordering and is pure — five tiers, each boundary
   a fact rather than a coefficient: a mark typed as a mark, then the active
@@ -435,10 +455,10 @@ one.
 
 Nothing waits on a person. **Nothing is running — the harness is free.**
 
-`fos-job-run30` finished green: `agent/jobs/run30.sh` drives one real voice turn
-end to end — real key, real device, real recorder, real `onnx-native` runtime,
-real command bar, nothing replaced. Numbers in `IDEAS.md` run 30. It is gated
-behind `FOS_VOICE_E2E` and needs `agent/jobs/local-hub.py` serving
+`fos-job-run31` finished green: `agent/jobs/run30.sh` now drives **both**
+gestures end to end — real key, real device, real recorder, real `onnx-native`
+runtime, real command bar, nothing replaced. Numbers in `IDEAS.md` run 31. It is
+gated behind `FOS_VOICE_E2E` and needs `agent/jobs/local-hub.py` serving
 `/data/ml-models/onnx-models` with `MOZ_MODELS_HUB` pointed at it, because
 mochitest kills the process on a non-local connection.
 
@@ -453,21 +473,7 @@ for anything that needs the engine; `run29.sh` remains the latency measurement.
 The phase plan is complete, so nothing pulls the next run in a particular
 direction. Ordered by value.
 
-1. **A latched turn, so the voice path is not held-key-only.** Push-to-talk
-   ships and works; what it excludes is the part of the audience §5's "no
-   separate accessibility mode" was written for, because sustained pressure is
-   what tremor, arthritis, carpal tunnel and fatigue make expensive. The
-   research and the two candidates are in `IDEAS.md` run 30 and the open
-   question is written into `GRAMMAR.md` §9. Ship candidate (1): **shift+F4
-   latches** — one press starts, the next ends, Escape cancels, the existing
-   30-second `LISTENING` deadline bounds it. `VoiceSession` needs a latched flag
-   so a key-up is ignored while it is set, and `FOSVoiceInput` needs the
-   modifier arm of `#onKeyDown`; the indicator already says which stage the turn
-   is in and needs no new state. Do *not* latch a bare tap: a mis-press would
-   open the microphone for thirty seconds, which is the one failure this whole
-   design is arranged to prevent.
-
-2. **Look at run 23's two changes, then finish them.** Both were written with
+1. **Look at run 23's two changes, then finish them.** Both were written with
    the harness held and are unverified in a browser. Once `run23` reports:
 
    - **The unseen mark, with eyes on it.** `browser_zzscreenshots.js` gained a
@@ -479,29 +485,51 @@ direction. Ordered by value.
      the pair that matters — the gap was ~31ms a frame — and
      `resize-burst-of-10` should be flat, since it was already 1ms.
 
-3. **Why this build has no remote tabs.** Three upstream urlbar files fail on it
+2. **Why this build has no remote tabs.** Three upstream urlbar files fail on it
    and the fork is not what breaks them. `services-sync` is built and its
    modules are in `dist/bin/modules/services-sync/`, so it is not packaging. The
    next step is `UrlbarProviderRemoteTabs.isActive` in a driven browser with
    `services.sync.username` set, not more reading.
 
-4. **The 17 timed-out urlbar files, if they are ever worth it.** The resume
+3. **The 17 timed-out urlbar files, if they are ever worth it.** The resume
    finished: 70 failures, every one a timeout, no assertion failures anywhere in
    the remaining 282 files. That closes the question the run was asked. Whether
    all 17 are the one environmental teardown crash is unverified and is a
    separate job — and a low-value one, since none of them is a claim about the
    fork.
 
-5. **The embedding pass and `prune`.** Carried from Phase 2. The embedding pass
+4. **The embedding pass and `prune`.** Carried from Phase 2. The embedding pass
    is what properly fixes the entity extractor's remaining limitation.
 
-6. **The active card can have no thumbnail**, and **closing the rail while the
+5. **The active card can have no thumbnail**, and **closing the rail while the
    Field is open leaves Escape with nowhere to go.** Both narrow, both below.
 
-7. **A region's height is a ratchet.** Recorded in `FIELD.md` §6 as open, not as
+6. **A region's height is a ratchet.** Recorded in `FIELD.md` §6 as open, not as
    a defect.
 
 ## Found this run, not yet chased
+
+- **A safety bound written in terms of an ordinary event stops being a bound the
+  moment a mode suppresses that event.** The `LISTENING` deadline read "a listen
+  that runs out is a key that came up" and was implemented by calling `release`.
+  Adding a gesture that ignores `release` would have removed the only bound on
+  the only turn nobody's finger is holding — and removed it silently, because
+  every test in the suite was a held turn. Define the bound on its own terms,
+  run the safety property over every *mode* rather than every path, and be
+  suspicious of any rule whose statement contains a gesture.
+
+- **The environment is not inherited: `source agent/env.sh` before every mach
+  command.** Without it `./mach build faster` dies on "Cannot find ccache",
+  because the mozconfig reaches for `$MOZBUILD_STATE_PATH/sccache/sccache` and
+  the variable is empty. It reads like a broken toolchain and is a missing
+  export. Shell state does not persist between tool calls, so it goes on the
+  same line as the command.
+
+- **`./mach lint` crashes in its default formatter on this tree.**
+  `stylish.py` does `err.hint not in seen_hints` and a hint is a dict:
+  `TypeError: unhashable type: 'dict'`. It is the formatter, not the lint —
+  `--format unix` runs the same checks and prints them. Worth knowing before
+  concluding the linter is unhappy about something.
 
 - **A wrong default costs more than a missing value.** `MLEngineChild` reads
   `opts.backend || BACKENDS.onnx`, so leaving `backend` unset does not produce a
