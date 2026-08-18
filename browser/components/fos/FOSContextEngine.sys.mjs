@@ -39,6 +39,7 @@ import {
   normaliseIntent,
 } from "./FOSContextSignals.sys.mjs";
 import { buildContextPack } from "./FOSContextPack.sys.mjs";
+import { summariseContents } from "./FOSContextSidebarView.sys.mjs";
 import { FOSContextStore } from "./FOSContextStore.sys.mjs";
 
 /** One database per profile, shared by every window. */
@@ -129,6 +130,17 @@ export class FOSContextEngine {
    * switch again. Null means "follow the trail I am on".
    */
   #pinnedContextId = null;
+  /**
+   * A surface that can *show* what `what` reports, if one is attached.
+   *
+   * `GRAMMAR.md` §4 has always described `what` as answering "spoken or shown",
+   * and the two halves are one verb rather than two: the sentence is what a
+   * hands-free path would say, the panel is what a screen shows. The engine
+   * owns the verb because the verb is pillar C's; the surface is optional
+   * because a window without one must still be able to answer.
+   */
+  #surface = null;
+
   /** A query recorded but not yet attached to the node it opened. */
   #pendingQuery = null;
   /**
@@ -178,6 +190,20 @@ export class FOSContextEngine {
   /** The queue, so a test can await everything outstanding. */
   get settled() {
     return this.#queue;
+  }
+
+  /**
+   * Attach the surface `what` should open.
+   *
+   * Called by the surface rather than by the engine, so that the engine never
+   * has to import one — this module is loaded by the recorder on the
+   * navigation path, and a display it may never show has no business being
+   * pulled in behind it.
+   *
+   * @param {?object} surface Anything with an async `open()`.
+   */
+  setSurface(surface) {
+    this.#surface = surface;
   }
 
   /**
@@ -584,30 +610,70 @@ export class FOSContextEngine {
   /**
    * A one-line answer to "what do you have on this?".
    *
+   * The sentence itself is built in `FOSContextSidebarView` because the sidebar
+   * shows the same one as its heading, and a claim stated in two places is a
+   * claim that will eventually be stated two ways.
+   *
    * @returns {Promise<string>}
    */
   async summarise() {
-    const contents = await this.contents();
-    if (!contents) {
-      return "No context yet — browse or search and one will start.";
+    return summariseContents(await this.contents());
+  }
+
+  /**
+   * Every node in the database for a URL, across every trail.
+   *
+   * @param {string} url
+   * @returns {Promise<object[]>} Rows, or empty before `attach`.
+   */
+  async crossings(url) {
+    await this.#queue;
+    return this.#store ? this.#store.crossings(url) : [];
+  }
+
+  /** The database trail id for the trail the user is on, or null. */
+  get activeTrailRowId() {
+    return this.#trailIds.get(this.#session?.activeTrailId) ?? null;
+  }
+
+  /** The active context's mark, if it has earned one. */
+  get activeContextMark() {
+    const id = this.activeContextId;
+    return id === null ? null : (this.#marks?.markOf(contextKey(id)) ?? null);
+  }
+
+  /**
+   * In-memory node id → the database row id it was written as.
+   *
+   * @param {?number} nodeId
+   * @returns {?number} Null when the node has not been written yet.
+   */
+  nodeRowId(nodeId) {
+    return nodeId === null ? null : (this.#nodeIds.get(nodeId) ?? null);
+  }
+
+  /**
+   * Database row id → the in-memory node it stands for.
+   *
+   * The reverse of `nodeRowId`, and it is a scan rather than a second map
+   * because a surface asks this once per click while the forward direction is
+   * asked on every reconciliation of every node. Null is a real answer and not
+   * a failure: a row from a trail this session did not restore has no node in
+   * the tree, and a caller has to say something honest about that.
+   *
+   * @param {?number} rowId
+   * @returns {?number}
+   */
+  nodeIdForRow(rowId) {
+    if (rowId === null || rowId === undefined) {
+      return null;
     }
-    const { context, queries, pages, entities } = contents;
-    const label = context.label?.trim() || "an unnamed context";
-    const read = pages.filter(
-      page => page.outcome === "read" || page.outcome === "saved"
-    ).length;
-    const topics = entities
-      .filter(entity => entity.weight >= 0.5)
-      .slice(0, 5)
-      .map(entity => entity.name);
-    const parts = [
-      `${label}: ${plural(queries.length, "question")}, ` +
-        `${plural(pages.length, "page")}, ${read} read`,
-    ];
-    if (topics.length) {
-      parts.push(`about ${topics.join(", ")}`);
+    for (const [memId, written] of this.#nodeIds) {
+      if (written === rowId) {
+        return memId;
+      }
     }
-    return parts.join(" — ");
+    return null;
   }
 
   /**
@@ -654,7 +720,15 @@ export class FOSContextEngine {
       return id;
     });
 
-    bar.actions.register("what", () => this.report(() => this.summarise()));
+    bar.actions.register("what", () =>
+      this.report(async () => {
+        const sentence = await this.summarise();
+        // Opened after the sentence is built, so a surface that throws cannot
+        // cost the user the answer they asked for.
+        await this.#surface?.open();
+        return sentence;
+      })
+    );
 
     bar.actions.register("pack", () =>
       this.report(async () => {
@@ -694,15 +768,6 @@ export class FOSContextEngine {
     this.#bar?.notify(message);
     return message;
   }
-}
-
-/**
- * @param {number} n
- * @param {string} noun Singular.
- * @returns {string}
- */
-function plural(n, noun) {
-  return `${n} ${noun}${n === 1 ? "" : "s"}`;
 }
 
 /**

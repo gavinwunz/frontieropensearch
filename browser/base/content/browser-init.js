@@ -338,6 +338,15 @@ var gBrowserInit = {
       .attach({ session: FOSTrailSession.forWindow(window) })
       .catch(console.error);
 
+    // The sidebar is pillar C's second surface and binds no verb of its own —
+    // wiring it only tells the engine that `what` now has somewhere to show its
+    // answer as well as somewhere to say it. It builds no DOM until first
+    // opened, so a window that never asks pays nothing for this.
+    const { FOSContextSidebar } = ChromeUtils.importESModule(
+      "resource:///modules/FOSContextSidebar.sys.mjs"
+    );
+    FOSContextSidebar.forWindow(window).wire();
+
     // TODO bug 2038578: audit these consumers and move any that don't need
     // to run before SessionStore's per-window init to 'browser-window-load'.
     BrowserUtils.callModulesFromCategory(

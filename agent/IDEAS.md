@@ -974,3 +974,88 @@ initiative for cosmetics, and this fork's whole premise is that it does not do
 that. A card with no picture is honest about never having been seen; a card
 holding a *freshly fetched* picture of a page as it looks now is a lie about
 what you visited. Recorded so it is not reconsidered as an obvious win.
+
+### SearchBar: a persistent task sidebar, and the numbers that settle its design
+
+- **Found:** searching for prior art on "what you know so far" surfaces before
+  building the context sidebar — D. Morris, M. R. Morris and G. Venolia,
+  *SearchBar: A Search-Centric Web History for Task Resumption and Information
+  Re-finding*, CHI 2008. https://cs.stanford.edu/~merrie/papers/searchbar.pdf
+- **What it is:** a permanent browser side pane that passively captures queries
+  and the pages visited after them, grouped into user-named topics, with a
+  per-topic summary page, a "thumbs up" to promote a page, and free-text notes.
+  Deployed in a 16-participant two-session study with a week between sessions.
+- **Verdict:** **adopt**, as the evidence base for pillar C's second surface —
+  and it settles four design questions I would otherwise have guessed at.
+- **Phase:** 2C, built this run as `FOSContextSidebar`.
+
+This is the closest thing to the context sidebar anyone has actually evaluated,
+and almost every number in it is directly usable.
+
+**A third of re-navigation went through the pane, so its rows must be live.**
+Participants used SearchBar for 31.7% of re-querying actions and 31.5% of
+re-navigation actions, rising to 42.2% of re-navigations in week two. That is
+the same argument the rail already won on its own terms — a tree you can only
+look at is a curiosity — but with a measurement behind it. Every row in the
+sidebar re-enters its node.
+
+**Its value appears at resumption, not in the session.** Rated only moderately
+useful in week one (median 3.5) and then 5 in week two (z = -1.91, p = .05):
+"highly valued for resuming longer-term suspended tasks where it was not
+possible to maintain context via unchanging browser state." The consequence for
+this project is a testing discipline, not a feature — the sidebar will look
+thin when driven for ten minutes on a fresh profile, and that is exactly what
+the paper predicts. Judge it across a restart, which this build now survives.
+
+**Persistent context replaced tabs, measurably.** In week one all sixteen
+participants opened a new tab to hold the state of an interrupted task. In week
+two that behaviour was six of eight in the control group and *one* of eight
+with SearchBar (z = -2.44, p < .02). The authors read it as the pane's
+persistent state making the extra tabs unnecessary. This is the strongest
+external evidence this project has that tabs are a workaround for context the
+browser fails to keep, rather than a thing users want — see "Tabs are unfinished
+work, not bookmarks". It is from 2008, and no shipping browser acted on it.
+
+**Manual topics were its one real failure, and we already avoid it.** "It was
+difficult to remember to create a new topic" scored a median 4.0 both weeks;
+three of eight participants created no topics at all, and the mean was 2.0
+topics against a larger number of tasks. The paper's own future work: "Automatic
+creation of new topics based on lexical, semantic, or temporal relationships
+among queries remains as future work." Contexts here are seeded by provenance
+and never asked for, which is that future work answered — and answered without
+the clock, which the search-log literature says would be wrong most of the time
+it mattered. Retrospective support for a decision already made, so nothing
+changes; it is recorded because it is the strongest reason not to revisit it.
+
+**Notes are the feature to leave out.** Note-taking was the lowest-rated part of
+the tool, 3.0 in both weeks, against 4.0/4.5 for topic organisation and 4.0 for
+the per-topic summaries. A context sidebar is under constant temptation to grow
+a notes field; the one study that shipped one found it was the part nobody
+wanted. Not building it, and this is the reason.
+
+**Screen real estate was not resented**, median 2.0 ("took up too much space")
+in both weeks, even in the week it was barely used. So a sidebar meant to be
+stayed in can be persistent, and does not have to apologise for its width.
+
+Two further numbers worth keeping for the README's motivation section: Obendorf
+et al. found browser history initiated **0.2% of all actions** despite revisits
+being 44% of page views, and in SearchBar's own survey (n = 170) only 7.6% of
+people named browser history as a resumption strategy against 36% who named
+*memory* and 14% who named leaving the browser open. In the study itself five
+participants used history and three could not find it — two resorted to the
+help facility. That is the surface this fork is replacing, quantified.
+
+### A sidebar's live rows are its own re-navigation, not a second Field
+
+- **Found:** falls out of the SearchBar adoption above, plus this tree's own
+  rule that marks are a budget of 26 shared by every pillar.
+- **What it is:** the temptation, once the sidebar lists pages, to give those
+  rows marks of their own so `enter <mark>` reaches them.
+- **Verdict:** **reject.**
+- **Why:** a page already has exactly one letter, claimed by its card or its
+  rail row, and a sidebar row is a third presence of the same page. Giving it
+  its own letter spends the alphabet on duplicates — the same argument that
+  stopped `enter` taking a separate "card" kind. The sidebar's rows are
+  clickable and arrow-navigable, and a row for a page that *does* hold a mark
+  shows the letter it already has. Recorded so the "make it addressable"
+  instinct does not spend the budget in three runs' time.

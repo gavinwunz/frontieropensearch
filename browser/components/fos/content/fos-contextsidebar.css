@@ -1,0 +1,210 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* The context sidebar.
+ *
+ * On the platform design tokens for the same reasons as the rail and the
+ * command bar: dark mode, high contrast and forced colours arrive already
+ * mapped, and Phase 3's design system becomes a question of what the tokens
+ * resolve to rather than a hunt through literals. */
+
+.fos-sidebar {
+  position: fixed;
+  inset-block: 0;
+  /* Opposite the trail rail, so both can be open at once. "How did I get here"
+     and "what do I know" are different questions and a user reading one may
+     well want the other. */
+  inset-inline-end: 0;
+  /* Above the toolbox, which carries z-index: 0 and so paints over anything
+     lower however far up the document this is appended. */
+  z-index: 2147483646;
+  /* A measure, not a component size: wide enough for a page title and a time
+     on one line, narrow enough to leave the page readable beside it. No size
+     token expresses that pair. SearchBar's participants disagreed that a pane
+     this wide took up too much room, in both weeks of its study. */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  width: min(24rem, 34vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--background-color-box);
+  color: var(--text-color);
+  border-inline-start: var(--border-width) solid var(--border-color);
+  box-shadow: var(--box-shadow-level-3);
+}
+
+.fos-sidebar[hidden] {
+  display: none;
+}
+
+/* ---- header ------------------------------------------------------------- */
+
+.fos-sidebar-header {
+  padding: var(--space-medium);
+  border-block-end: var(--border-width) solid var(--border-color);
+}
+
+.fos-sidebar-context {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-small);
+  margin: 0;
+  font-size: var(--font-size-large);
+  font-weight: var(--font-weight-bold);
+}
+
+.fos-sidebar-title {
+  overflow-wrap: anywhere;
+}
+
+/* The context's own mark, in the same treatment the rail gives a node's. */
+.fos-sidebar-mark {
+  flex: none;
+  font-family: monospace;
+  font-size: var(--font-size-small);
+  padding-inline: var(--space-xsmall);
+  border-radius: var(--border-radius-small);
+  background: var(--button-background-color);
+  color: var(--button-text-color);
+}
+
+.fos-sidebar-summary {
+  margin-block: var(--space-xsmall) 0;
+  font-size: var(--font-size-small);
+  opacity: var(--opacity-deemphasized-strong);
+}
+
+/* ---- body --------------------------------------------------------------- */
+
+.fos-sidebar-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-small) 0;
+}
+
+.fos-sidebar-body:focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-inset);
+}
+
+.fos-sidebar-section + .fos-sidebar-section {
+  margin-block-start: var(--space-medium);
+}
+
+.fos-sidebar-heading {
+  margin: 0;
+  padding: var(--space-xsmall) var(--space-medium);
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: var(--opacity-deemphasized-strong);
+}
+
+.fos-sidebar-note {
+  margin: 0;
+  padding: 0 var(--space-medium) var(--space-xsmall);
+  font-size: var(--font-size-small);
+}
+
+.fos-sidebar-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fos-sidebar-empty {
+  margin: 0;
+  padding: var(--space-medium);
+  font-size: var(--font-size-small);
+  opacity: var(--opacity-deemphasized-strong);
+}
+
+/* ---- rows --------------------------------------------------------------- */
+
+.fos-sidebar-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-small);
+  padding: var(--space-xsmall) var(--space-medium);
+}
+
+/* Only a row that goes somewhere offers to be clicked. An entity is a topic,
+   not a place, and must not look like one. */
+.fos-sidebar-row[data-enterable] {
+  cursor: default;
+}
+
+.fos-sidebar-row[data-enterable]:hover,
+.fos-sidebar-row[aria-selected="true"] {
+  background: var(--button-background-color-hover);
+}
+
+.fos-sidebar-row[aria-selected="true"] {
+  outline: var(--focus-outline);
+  outline-offset: calc(var(--focus-outline-width) * -1);
+}
+
+.fos-sidebar-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--font-size-small);
+}
+
+.fos-sidebar-detail {
+  flex: none;
+  font-size: var(--font-size-small);
+  opacity: var(--opacity-deemphasized-strong);
+}
+
+.fos-sidebar-rowmark {
+  flex: none;
+  font-family: monospace;
+  font-size: var(--font-size-small);
+  opacity: var(--opacity-deemphasized-strong);
+}
+
+/* The page you are on, in the list of pages you have been on. */
+.fos-sidebar-row[data-current] .fos-sidebar-label {
+  font-weight: var(--font-weight-bold);
+}
+
+/* A dismissed card is not a deleted page: it is dimmed here and still
+   enterable, exactly as it is on the rail. */
+.fos-sidebar-row[data-dismissed] .fos-sidebar-label {
+  opacity: var(--opacity-deemphasized-strong);
+}
+
+/* Outcome is carried by a leading rule rather than by colour alone, so it
+   survives forced colours and does not depend on hue to be read. */
+.fos-sidebar-row[data-outcome] {
+  /* Longhands rather than the shorthand: the initial colour is `transparent`,
+     which is not a border token and cannot be, since the point is a rule that
+     is present in the layout and invisible until an outcome colours it. */
+  border-inline-start-width: var(--border-width);
+  border-inline-start-style: solid;
+  border-inline-start-color: transparent;
+  padding-inline-start: calc(var(--space-medium) - var(--border-width));
+}
+
+.fos-sidebar-row[data-outcome="read"] {
+  border-inline-start-color: var(--border-color-interactive);
+}
+
+.fos-sidebar-row[data-outcome="saved"] {
+  border-inline-start-color: var(--color-accent-primary);
+}
+
+/* A question that opened nothing: shown, because an abandoned line of enquiry
+   is a thing you did, but plainly not somewhere to go. */
+.fos-sidebar-row[data-kind="query"]:not([data-enterable]) .fos-sidebar-label {
+  opacity: var(--opacity-deemphasized-strong);
+  font-style: italic;
+}
+
+/* Entities read as a list of topics rather than a list of destinations. */
+.fos-sidebar-row[data-kind="entity"] {
+  padding-block: 0;
+}
