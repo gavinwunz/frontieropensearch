@@ -220,3 +220,27 @@ branch, bookmark graveyards. Real complaints beat invented personas.
   should hold a reference to the session history entry rather than a bare URL.
 - **Phase:** 2B, and it gates 2A's dismissal gesture. A trail node is an entry reference,
   never just a URL.
+
+### Speech recognition is not on the ML engine's supported-task list
+- **Found:** 2026-08-18, `toolkit/components/ml/docs/extensions.md` "Default models", plus
+  grepping the whole component: outside the vendored Transformers.js bundle there is no
+  reference to Whisper or `automatic-speech-recognition` anywhere in the tree.
+- **What it is:** The in-tree engine documents defaults for about twenty tasks including
+  `text-to-speech` (`Xenova/speecht5_tts`), but `automatic-speech-recognition` is absent.
+  The docs do add that "any model in Hugging Face compatible with Transformers.js should work".
+- **Verdict:** keep voice as the hands-free path, but downgrade it from settled to unproven,
+  and prove it with a spike before anything is built on top.
+- **Why:** This qualifies the earlier "local Whisper on the in-tree runtime" entry, which
+  treated the ML runtime as sufficient evidence. It is not. Transformers.js supports Whisper,
+  so the model side is likely fine, but ASR needs audio capture and a log-mel spectrogram
+  step, and the engine runs in a restricted inference process that may not offer the audio
+  APIs that pipeline expects. That is a criterion-3 risk on the *plumbing*, not the model,
+  and it is exactly the kind of thing that looks free until the week it is built.
+  Two consequences worth having now. First, the spike is small and must come first in the
+  hands-free work: capture a few seconds of microphone audio, get a transcript out of the
+  engine, and nothing else. If it fails, the fallback is a push-to-talk path that shells the
+  audio to a local model outside the engine process — still no cloud, still criterion 3.
+  Second, `text-to-speech` *is* supported out of the box, which makes the output half of a
+  hands-free loop essentially free and is worth using regardless of how input resolves.
+- **Phase:** 2. The ASR spike gates the voice work; TTS for confirmations is independent
+  of it and can land either way.
