@@ -33,7 +33,7 @@ const { FOSVoiceInput, TALK_KEY } = ChromeUtils.importESModule(
 const { FOSCommandBar } = ChromeUtils.importESModule(
   "resource:///modules/FOSCommandBar.sys.mjs"
 );
-const { IDLE, LISTENING } = ChromeUtils.importESModule(
+const { IDLE, LISTENING, TAP_MS } = ChromeUtils.importESModule(
   "resource:///modules/FOSVoiceSession.sys.mjs"
 );
 const { markWord } = ChromeUtils.importESModule(
@@ -115,6 +115,11 @@ function backend({
     },
   };
 
+  // What the room sounds like, which the front end wires to `onLevel` when it
+  // adopts this recorder. Driving it by hand is the only way to test the two
+  // bounds a latched turn has without making a noise at a real microphone.
+  counts.level = loud => recorder.onLevel?.(loud);
+
   const engine = {
     async run(request) {
       counts.requests.push(request);
@@ -142,7 +147,19 @@ function backend({
   return counts;
 }
 
+/**
+ * When the talk key last went down, in the test's own clock.
+ *
+ * A press is a hold or a tap depending on how long it lasts, and these tests
+ * synthesise both halves of the gesture in less time than any hand could. So a
+ * test that means to hold has to actually hold — see `releaseTalkKey`.
+ */
+let pressedAt = 0;
+
 function talkKey(type) {
+  if (type === "keydown") {
+    pressedAt = Date.now();
+  }
   EventUtils.synthesizeKey(`KEY_${TALK_KEY}`, { type }, win);
 }
 
@@ -153,6 +170,21 @@ async function holdTalkKey() {
     () => voice().state === LISTENING,
     "the turn reaches listening"
   );
+}
+
+/**
+ * Wait out whatever is left of the tap window.
+ *
+ * The margin is not superstition. The shell measures the hold from the events'
+ * own timestamps and this measures it from `Date.now()`, and while both count
+ * the same real interval they do not start from the same instant, so a wait of
+ * exactly `TAP_MS` would sit on the boundary it is trying to clear.
+ */
+async function outlastTheTapWindow() {
+  const left = TAP_MS + 100 - (Date.now() - pressedAt);
+  if (left > 0) {
+    await new Promise(resolve => win.setTimeout(resolve, left));
+  }
 }
 
 /**
@@ -181,6 +213,7 @@ async function latchTalkKey() {
 
 /** Let it go, and wait until the turn is over. */
 async function releaseTalkKey() {
+  await outlastTheTapWindow();
   talkKey("keyup");
   await TestUtils.waitForCondition(
     () => voice().state === IDLE,
@@ -285,6 +318,87 @@ add_task(async function test_shift_latches_a_turn_that_no_key_is_holding() {
 
   talkKey("keyup");
   Assert.equal(voice().state, IDLE, "that press's own key-up starts nothing");
+});
+
+add_task(async function test_a_bare_tap_latches_and_the_utterance_ends_it() {
+  // The gesture this browser can now offer that it could not before, and the
+  // one a user with a single reliable finger would actually pick: no modifier,
+  // no chord, no second key. The node tests own the state machine; what needs
+  // a real window is that a real key-up inside the tap window comes out the
+  // other side as a latch rather than as "too short to hear".
+  const mic = backend({ transcript: " what" });
+  const ran = [];
+  bar().actions.register("what", command => {
+    ran.push(command.action);
+    return true;
+  });
+
+  talkKey("keydown");
+  talkKey("keyup");
+  await TestUtils.waitForCondition(
+    () => voice().state === LISTENING,
+    "the tapped turn reaches listening"
+  );
+
+  Assert.ok(
+    mic.open,
+    "the microphone is open with no key held and no modifier"
+  );
+  Assert.equal(mic.stopped, 0, "the key coming up ended nothing");
+  Assert.equal(
+    indicator().hasAttribute("data-latched"),
+    true,
+    "and the indicator says how to stop, as it does for any latched turn"
+  );
+
+  // And the utterance ends the turn, which is the half that makes one gesture
+  // enough. Nobody presses anything again.
+  mic.level(true);
+  mic.level(false);
+  await TestUtils.waitForCondition(
+    () => voice().state === IDLE,
+    "the turn ends itself a beat after the speaking stops"
+  );
+
+  Assert.equal(mic.stopped, 1, "the device closed on its own");
+  Assert.ok(!mic.open);
+  Assert.deepEqual(ran, ["what"], "and the line it heard ran");
+});
+
+add_task(async function test_a_latched_microphone_nobody_spoke_into_closes() {
+  // The objection that kept the bare tap unbuilt for three runs, answered end
+  // to end: a microphone opened by a key nobody meant to press closes itself,
+  // and does it without spending a decode on six seconds of a quiet room.
+  //
+  // This test waits out a real deadline, which is why it is the only one here
+  // that does. The bound is the whole claim, and a bound nothing ever waits for
+  // is a number in a file.
+  const mic = backend();
+  // Open the bar and put a line in it first: what a turn restores is what the
+  // bar was holding when the turn began, and a bar that was closed was holding
+  // nothing.
+  bar().open();
+  bar().input.value = "memex";
+
+  talkKey("keydown");
+  talkKey("keyup");
+  await TestUtils.waitForCondition(
+    () => voice().state === LISTENING,
+    "the mis-tapped turn reaches listening"
+  );
+
+  await TestUtils.waitForCondition(
+    () => voice().state === IDLE,
+    "the microphone closes itself on silence",
+    250,
+    40
+  );
+
+  Assert.ok(!mic.open, "the device is closed");
+  Assert.equal(mic.requests.length, 0, "and the model was never asked");
+  Assert.equal(bar().input.value, "memex", "the line the user had came back");
+  Assert.ok(bar().isOpen, "in the bar the user already had open");
+  bar().close();
 });
 
 add_task(async function test_a_latched_turn_says_how_to_stop() {
