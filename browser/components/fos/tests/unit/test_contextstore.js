@@ -1343,6 +1343,235 @@ add_task(async function test_an_emptied_context_and_trail_are_deleted() {
   await store.close();
 });
 
+// ---- previewing a forget --------------------------------------------------
+//
+// The property under test throughout is that the preview and the delete are
+// the same code. Every test here therefore asserts the preview against the
+// summary the real delete goes on to produce, rather than against a number
+// written out by hand — a hand-written number would still agree with a preview
+// that had quietly stopped tracking `#forget`.
+
+add_task(async function test_a_preview_says_what_the_delete_then_does() {
+  const { store, middle } = await forgettableStore();
+  const doomed = await store.addContext({ label: "the forgotten topic" });
+  await store.addMember(doomed, { nodeId: middle, source: "provenance" });
+  const other = await store.addTrail({ name: "a trail wholly on that host" });
+  await store.addNode({ trailId: other, url: "https://forget.example/alone" });
+
+  const preview = await store.previewForget({ host: "forget.example" });
+  const summary = await store.forgetHost("forget.example");
+
+  for (const key of ["nodes", "queries", "contexts", "trails", "all"]) {
+    Assert.equal(
+      preview[key],
+      summary[key],
+      `the preview's ${key} is the delete's ${key}`
+    );
+  }
+  Assert.deepEqual(preview.nodeIds, summary.nodeIds, "and the same node ids");
+  Assert.deepEqual(
+    preview.contextIds,
+    summary.contextIds,
+    "and the same context ids"
+  );
+  Assert.deepEqual(
+    preview.contextLabels,
+    ["the forgotten topic"],
+    "and it names the context, which is the part a host name cannot be read " +
+      "off"
+  );
+  Assert.deepEqual(
+    preview.trailNames,
+    ["a trail wholly on that host"],
+    "and names the trail that would empty"
+  );
+  await store.close();
+});
+
+add_task(async function test_a_preview_leaves_the_store_untouched() {
+  const { store, middle } = await forgettableStore();
+  const doomed = await store.addContext({ label: "the forgotten topic" });
+  await store.addMember(doomed, { nodeId: middle, source: "provenance" });
+  const before = {
+    nodes: await rowCount(store, "trail_node"),
+    contexts: await rowCount(store, "context"),
+    members: await rowCount(store, "context_member"),
+    trails: await rowCount(store, "trail"),
+  };
+
+  const preview = await store.previewForget({ host: "forget.example" });
+  Assert.greater(preview.nodes, 0, "the preview found something to report");
+
+  Assert.deepEqual(
+    {
+      nodes: await rowCount(store, "trail_node"),
+      contexts: await rowCount(store, "context"),
+      members: await rowCount(store, "context_member"),
+      trails: await rowCount(store, "trail"),
+    },
+    before,
+    "and every row it walked over is still there — the preview runs the real " +
+      "delete and rolls the transaction back, so nothing may survive it"
+  );
+
+  const [row] = await store.connection.execute(
+    `SELECT parent_id FROM trail_node WHERE id = :middle`,
+    { middle }
+  );
+  Assert.equal(
+    row.getResultByName("parent_id"),
+    (
+      await store.connection.execute(`SELECT MIN(id) AS id FROM trail_node`)
+    )[0].getResultByName("id"),
+    "including the reparenting, which is an UPDATE rather than a DELETE and " +
+      "would not be caught by counting rows"
+  );
+  await store.close();
+});
+
+add_task(async function test_previewing_twice_says_the_same_thing() {
+  const { store } = await forgettableStore();
+
+  const first = await store.previewForget({ host: "forget.example" });
+  const second = await store.previewForget({ host: "forget.example" });
+  Assert.deepEqual(
+    second,
+    first,
+    "a rolled-back preview leaves nothing behind for the next one to trip " +
+      "over — the temporary tables it fills included"
+  );
+  await store.close();
+});
+
+add_task(async function test_a_preview_of_nothing_reports_nothing() {
+  const { store } = await forgettableStore();
+
+  Assert.deepEqual(
+    await store.previewForget({ host: "absent.example" }),
+    {
+      nodes: 0,
+      queries: 0,
+      contexts: 0,
+      trails: 0,
+      nodeIds: [],
+      contextIds: [],
+      all: false,
+      contextLabels: [],
+      trailNames: [],
+    },
+    "a host with nothing recorded about it previews as nothing at all, and " +
+      "reaches that answer without ever opening a transaction"
+  );
+  await store.close();
+});
+
+add_task(async function test_a_range_preview_matches_its_delete() {
+  const store = await freshStore();
+  const trailId = await store.addTrail({ name: "the trail" });
+  const early = await store.addNode({
+    trailId,
+    url: "https://keep.example/early",
+    now: 1000,
+  });
+  const inside = await store.addNode({
+    trailId,
+    parentId: early,
+    url: "https://keep.example/inside",
+    now: 5000,
+  });
+  await store.recordQuery({
+    trailNodeId: inside,
+    raw: "what happened at five",
+    now: 5000,
+  });
+
+  const preview = await store.previewForget({ from: 4000, to: 6000 });
+  const summary = await store.forgetRange(4000, 6000);
+  Assert.equal(preview.nodes, summary.nodes, "the same nodes");
+  Assert.equal(preview.queries, summary.queries, "and the same queries");
+  Assert.greater(preview.queries, 0, "and there were some to count");
+  await store.close();
+});
+
+add_task(async function test_previewing_everything_counts_everything() {
+  const { store, middle } = await forgettableStore();
+  const doomed = await store.addContext({ label: "the forgotten topic" });
+  await store.addMember(doomed, { nodeId: middle, source: "provenance" });
+
+  const preview = await store.previewForget({ all: true });
+  Assert.equal(preview.all, true, "and says so, so the sentence can differ");
+  Assert.deepEqual(
+    preview.contextLabels,
+    ["the forgotten topic"],
+    "every label, because every context goes"
+  );
+  Assert.deepEqual(preview.trailNames, ["the trail"], "and every trail name");
+
+  const summary = await store.forgetAll();
+  for (const key of ["nodes", "queries", "contexts", "trails"]) {
+    Assert.equal(
+      preview[key],
+      summary[key],
+      `previewing everything agrees with clearing everything on ${key}`
+    );
+  }
+  await store.close();
+});
+
+add_task(async function test_a_preview_skips_what_was_never_named() {
+  const store = await freshStore();
+  const named = await store.addTrail({ name: "  a trail with a name  " });
+  await store.addNode({ trailId: named, url: "https://forget.example/a" });
+  const unnamed = await store.addTrail({});
+  await store.addNode({ trailId: unnamed, url: "https://forget.example/b" });
+  const blank = await store.addTrail({ name: "   " });
+  await store.addNode({ trailId: blank, url: "https://forget.example/c" });
+
+  const preview = await store.previewForget({ host: "forget.example" });
+  Assert.equal(preview.trails, 3, "all three trails would go");
+  Assert.deepEqual(
+    preview.trailNames,
+    ["a trail with a name"],
+    "and only the one with something to call it is named, trimmed — a trail " +
+      "is walked before it is called anything and quoting an empty string " +
+      "reads as a bug"
+  );
+  await store.close();
+});
+
+add_task(async function test_a_preview_names_the_most_recent_first() {
+  const store = await freshStore();
+  const older = await store.addContext({ label: "older topic", now: 1000 });
+  const newer = await store.addContext({ label: "newer topic", now: 9000 });
+  const trailId = await store.addTrail({});
+  const a = await store.addNode({ trailId, url: "https://forget.example/a" });
+  const b = await store.addNode({ trailId, url: "https://forget.example/b" });
+  await store.addMember(older, { nodeId: a, source: "provenance" });
+  await store.addMember(newer, { nodeId: b, source: "provenance" });
+
+  const preview = await store.previewForget({ host: "forget.example" });
+  Assert.deepEqual(
+    preview.contextLabels,
+    ["newer topic", "older topic"],
+    "the ordering is the store's own recency, so a sentence with room for " +
+      "three names shows the three the user was working in"
+  );
+  await store.close();
+});
+
+add_task(async function test_a_failing_preview_does_not_pass_for_empty() {
+  const { store } = await forgettableStore();
+  await store.close();
+
+  await Assert.rejects(
+    store.previewForget({ host: "forget.example" }),
+    /./,
+    "a preview that cannot run throws rather than reporting zero — the " +
+      "rollback is signalled by an exception, so swallowing exceptions here " +
+      "would turn every real failure into a confident 'nothing will go'"
+  );
+});
+
 add_task(async function test_a_merge_family_is_weighed_whole() {
   const store = await freshStore();
   const trailId = await store.addTrail({});

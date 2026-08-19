@@ -46,6 +46,11 @@
         <li data-l10n-id="cclear-data-for-site-permissions"></li>
       </ul>
       <p data-l10n-id="clear-data-for-site-exceptions"></p>
+      <!-- Frontier OpenSearch: what forgetting this site will take out of the
+         - Context Engine. Filled by FOSForgetPreview and hidden while empty.
+         - Its own paragraph rather than a bullet in the list above: the list
+         - names categories, and this names the specific things that go. -->
+      <p id="fosForgetPreview" hidden="hidden"></p>
     </div>
 
     <script src="chrome://browser/content/places/clearDataForSite.js" />

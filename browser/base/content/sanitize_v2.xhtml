@@ -117,6 +117,16 @@
             data-l10n-id="item-history-and-downloads-description2"
             class="sanitizeCheckboxDescription text-deemphasized"
           />
+          <!-- Frontier OpenSearch: what clearing will take out of the Context
+             - Engine. Filled by FOSForgetPreview and hidden while empty, which
+             - covers every profile that has recorded nothing. Both range
+             - groupboxes carry one; init() removes all but the live groupbox
+             - before anything looks the id up. -->
+          <description
+            id="fosForgetPreview"
+            class="sanitizeCheckboxDescription text-deemphasized"
+            hidden="true"
+          />
         </vbox>
       </hbox>
       <hbox class="checkboxWithDescription">
@@ -231,6 +241,16 @@
             id="browsing-history-downloads-description"
             data-l10n-id="item-history-and-downloads-description2"
             class="sanitizeCheckboxDescription text-deemphasized"
+          />
+          <!-- Frontier OpenSearch: what clearing will take out of the Context
+             - Engine. Filled by FOSForgetPreview and hidden while empty, which
+             - covers every profile that has recorded nothing. Both range
+             - groupboxes carry one; init() removes all but the live groupbox
+             - before anything looks the id up. -->
+          <description
+            id="fosForgetPreview"
+            class="sanitizeCheckboxDescription text-deemphasized"
+            hidden="true"
           />
         </vbox>
       </hbox>

@@ -1396,9 +1396,12 @@ export class FOSContextStore {
    * Forget everything the store knows about a host and its subdomains.
    *
    * @param {string} host A bare host, with or without a leading dot.
+   * @param {object} [options]
+   * @param {boolean} [options.preview] Roll back instead of committing. See
+   *   `previewForget`, which is the only caller that passes it.
    * @returns {Promise<ForgetSummary>}
    */
-  async forgetHost(host) {
+  async forgetHost(host, { preview = false } = {}) {
     const target = String(host ?? "")
       .toLowerCase()
       .replace(/^\.+/, "");
@@ -1417,7 +1420,7 @@ export class FOSContextStore {
         nodeIds.push(row.getResultByName("id"));
       }
     }
-    return this.#forget({ nodeIds });
+    return this.#forget({ nodeIds, preview });
   }
 
   /**
@@ -1430,9 +1433,11 @@ export class FOSContextStore {
    *
    * @param {number} from Epoch ms, inclusive.
    * @param {number} to Epoch ms, inclusive.
+   * @param {object} [options]
+   * @param {boolean} [options.preview] Roll back instead of committing.
    * @returns {Promise<ForgetSummary>}
    */
-  async forgetRange(from, to) {
+  async forgetRange(from, to, { preview = false } = {}) {
     const nodeRows = await this.#connection.execute(
       `SELECT id FROM trail_node
         WHERE (created_at BETWEEN :from AND :to)
@@ -1446,6 +1451,7 @@ export class FOSContextStore {
     return this.#forget({
       nodeIds: nodeRows.map(row => row.getResultByName("id")),
       queryIds: queryRows.map(row => row.getResultByName("id")),
+      preview,
     });
   }
 
@@ -1478,6 +1484,96 @@ export class FOSContextStore {
       }
     });
     return summary;
+  }
+
+  /**
+   * What a forget would take, without taking it.
+   *
+   * The preview **is** the delete. `forgetHost` and `forgetRange` are run for
+   * real, against the real graph, inside their own transaction, and the
+   * transaction is then rolled back — so the numbers shown to the user cannot
+   * drift from the numbers the button produces, whatever `#forget` learns to
+   * do next. The obvious alternative, a second set of counting queries beside
+   * the deleting ones, is a duplicate of the four rules in `#forget` that
+   * nothing would ever fail a test for getting wrong: it would go stale
+   * silently, and it would go stale in a dialog whose whole job is to be
+   * believed.
+   *
+   * Rolling back means throwing, because `executeTransaction` commits unless
+   * the body rejects. `ForgetPreviewRollback` is that throw and is caught
+   * here; anything else is a real failure and is rethrown.
+   *
+   * Forgetting everything is the one case that needs no rollback, because
+   * `forgetAll`'s summary *is* `#forgetCounts()` — the same call, so the same
+   * property holds for free.
+   *
+   * The labels and names are the point rather than a garnish. A count says a
+   * context will go; only the label says it was the one called "reverse
+   * mortgage rates", and that is the part of this store whose loss a user
+   * cannot guess from a host name or a time range. They are on the preview and
+   * deliberately **not** on `ForgetSummary`: that summary is broadcast on an
+   * observer topic after the delete, and a notification naming what was just
+   * forgotten is a record of the thing the user asked to have no record of.
+   *
+   * @param {object} target One of `{ host }`, `{ from, to }` or `{ all: true }`.
+   * @returns {Promise<ForgetPreview>}
+   */
+  async previewForget(target) {
+    if (target?.all) {
+      const names = await this.#forgetNames();
+      return {
+        ...(await this.#forgetCounts()),
+        all: true,
+        contextLabels: pickNames(names.contexts, names.contexts.keys()),
+        trailNames: pickNames(names.trails, names.trails.keys()),
+      };
+    }
+    try {
+      if (target?.host !== undefined) {
+        await this.forgetHost(target.host, { preview: true });
+      } else {
+        await this.forgetRange(target.from, target.to, { preview: true });
+      }
+    } catch (e) {
+      if (e instanceof ForgetPreviewRollback) {
+        return e.preview;
+      }
+      throw e;
+    }
+    // `#forget` returns without opening a transaction when nothing matched, so
+    // there was no rollback to throw. Nothing would go.
+    return { ...emptyForgetSummary(), contextLabels: [], trailNames: [] };
+  }
+
+  /**
+   * Every context label and trail name in the store, most recent first.
+   *
+   * Taken before the delete because that is the only time they exist. The
+   * ordering is the store's own sense of recency rather than the caller's, so
+   * a preview that can only show three names shows the three the user was
+   * working in rather than the three with the lowest row ids.
+   *
+   * Both tables are small — one row per research topic and one per trail, not
+   * one per page — so this is a scan the preview can afford and a join it
+   * cannot, since the rows it wants are the ones about to be deleted.
+   *
+   * @returns {Promise<{contexts: Map<number, ?string>, trails: Map<number, ?string>}>}
+   */
+  async #forgetNames() {
+    const contexts = new Map();
+    for (const row of await this.#connection.execute(
+      `SELECT id, label FROM context
+        ORDER BY COALESCE(active_at, updated_at) DESC, id DESC`
+    )) {
+      contexts.set(row.getResultByName("id"), row.getResultByName("label"));
+    }
+    const trails = new Map();
+    for (const row of await this.#connection.execute(
+      `SELECT id, name FROM trail ORDER BY updated_at DESC, id DESC`
+    )) {
+      trails.set(row.getResultByName("id"), row.getResultByName("name"));
+    }
+    return { contexts, trails };
   }
 
   /** Row counts of the four things a summary reports. */
@@ -1532,14 +1628,20 @@ export class FOSContextStore {
    * @param {object} options
    * @param {number[]} [options.nodeIds]
    * @param {number[]} [options.queryIds] Queries to forget whatever their node.
+   * @param {boolean} [options.preview] Do all of it and roll it back, throwing
+   *   `ForgetPreviewRollback` with what would have gone. See `previewForget`.
    * @returns {Promise<ForgetSummary>}
    */
-  async #forget({ nodeIds = [], queryIds = [] }) {
+  async #forget({ nodeIds = [], queryIds = [], preview = false }) {
     const nodes = [...new Set(nodeIds)];
     const queries = [...new Set(queryIds)];
     if (!nodes.length && !queries.length) {
       return emptyForgetSummary();
     }
+
+    // Before the transaction rather than inside it: nothing has been deleted
+    // yet either way, and a preview is a read of a moving store in any case.
+    const names = preview ? await this.#forgetNames() : null;
 
     const summary = emptyForgetSummary();
     await this.#connection.executeTransaction(async () => {
@@ -1611,13 +1713,28 @@ export class FOSContextStore {
 
       summary.contextIds = await this.#deleteEmptyContexts();
       summary.contexts = summary.contextIds.length;
-      summary.trails = await this.#count(
-        `SELECT COUNT(*) AS n FROM trail
-          WHERE id NOT IN (SELECT trail_id FROM trail_node)`
-      );
+      // The ids and not merely the count, because a preview names the trails
+      // it would take and this is the last statement at which they exist.
+      const doomedTrails = (
+        await this.#connection.execute(
+          `SELECT id FROM trail WHERE id NOT IN (SELECT trail_id FROM trail_node)`
+        )
+      ).map(row => row.getResultByName("id"));
+      summary.trails = doomedTrails.length;
       await this.#connection.execute(
         `DELETE FROM trail WHERE id NOT IN (SELECT trail_id FROM trail_node)`
       );
+
+      if (preview) {
+        // Everything above has run. Throwing is how `executeTransaction` is
+        // told to roll back, and the summary rides out on the exception
+        // because nothing else survives the rollback.
+        throw new ForgetPreviewRollback({
+          ...summary,
+          contextLabels: pickNames(names.contexts, summary.contextIds),
+          trailNames: pickNames(names.trails, doomedTrails),
+        });
+      }
 
       await this.#connection.execute(`DELETE FROM fos_forget_node`);
       await this.#connection.execute(`DELETE FROM fos_forget_query`);
@@ -1829,6 +1946,67 @@ function bindList(values, prefix) {
  * @property {number[]} contextIds The `context` rows deleted. Empty when `all`.
  * @property {boolean} all Whether everything went.
  */
+
+/**
+ * A `ForgetSummary` for a delete that has not happened, plus the names.
+ *
+ * `contextLabels` and `trailNames` exist here and not on the summary because
+ * this object is shown to the user who is deciding, and that one is broadcast
+ * after the fact. Both lists are already ordered most-recent-first and hold
+ * only the rows that were actually named — an unlabelled context still counts
+ * in `contexts` and contributes nothing here, which is the honest rendering of
+ * a topic the engine never found a name for.
+ *
+ * @typedef {object} ForgetPreview
+ * @property {number} nodes Trail nodes that would go.
+ * @property {number} queries Queries that would go.
+ * @property {number} contexts Contexts that would go.
+ * @property {number} trails Trails that would go.
+ * @property {number[]} nodeIds The `trail_node` rows that would go.
+ * @property {number[]} contextIds The `context` rows that would go.
+ * @property {boolean} all Whether this is a clear of everything.
+ * @property {string[]} contextLabels Labels of the contexts that would go.
+ * @property {string[]} trailNames Names of the trails that would go.
+ */
+
+/**
+ * Thrown to roll a preview's transaction back. Never escapes `previewForget`.
+ *
+ * An `Error` rather than a bare sentinel value so that `executeTransaction`'s
+ * own logging, which formats whatever the body rejected with, has something
+ * ordinary to format.
+ */
+class ForgetPreviewRollback extends Error {
+  /** @param {ForgetPreview} preview */
+  constructor(preview) {
+    super("FOSContextStore: rolling back a forget preview");
+    this.name = "ForgetPreviewRollback";
+    this.preview = preview;
+  }
+}
+
+/**
+ * The names of the given ids, in the map's order, skipping the unnamed.
+ *
+ * `label` and `name` are both nullable and both start out null — a context is
+ * clustered before it is described and a trail is walked before it is called
+ * anything — so a preview that rendered them would show empty quotes for the
+ * newest and most relevant rows.
+ *
+ * @param {Map<number, ?string>} named Ids to names, in display order.
+ * @param {Iterable<number>} ids The ids that would go.
+ * @returns {string[]}
+ */
+function pickNames(named, ids) {
+  const wanted = new Set(ids);
+  const out = [];
+  for (const [id, name] of named) {
+    if (wanted.has(id) && typeof name === "string" && name.trim()) {
+      out.push(name.trim());
+    }
+  }
+  return out;
+}
 
 /** @returns {ForgetSummary} */
 function emptyForgetSummary() {

@@ -72,9 +72,13 @@ export const FORGOTTEN_TOPIC = "fos-context-forgotten";
  * second connection to the same file: two connections would take their own
  * locks and the delete would contend with the recorder writing behind it.
  *
+ * Exported because the preview in `FOSForgetPreview` has to ask exactly the
+ * same question — a dialog that opened and migrated a database in order to
+ * report that it holds nothing would be absurd twice over.
+ *
  * @returns {Promise<?object>} The open store, or null.
  */
-async function storeIfPresent() {
+export async function contextStoreIfPresent() {
   if (!lazy.FOSContextEngine.storeIsOpen) {
     const path = PathUtils.join(
       PathUtils.profileDir,
@@ -104,7 +108,7 @@ async function storeIfPresent() {
 async function forget(work) {
   let store;
   try {
-    store = await storeIfPresent();
+    store = await contextStoreIfPresent();
   } catch (e) {
     console.error("FOSForget: cannot open the store to clear it", e);
     return;

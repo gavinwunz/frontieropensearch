@@ -18,6 +18,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   AIWindow:
     "moz-src:///browser/components/aiwindow/ui/modules/AIWindow.sys.mjs",
   DownloadUtils: "resource://gre/modules/DownloadUtils.sys.mjs",
+  FOSForgetPreview: "resource:///modules/FOSForgetPreview.sys.mjs",
   SiteDataManager: "resource:///modules/SiteDataManager.sys.mjs",
 });
 
@@ -227,6 +228,40 @@ var gSanitizePromptDialog = {
     } else {
       this.warningBox.hidden = true;
     }
+
+    this._fosForgetPreview = document.getElementById("fosForgetPreview");
+    this.updateForgetPreview();
+  },
+
+  /**
+   * Frontier OpenSearch: say what clearing will take from the Context Engine.
+   *
+   * Not awaited by `init` and deliberately so — the dialog must not wait on a
+   * database read to be shown, and the line appears when it appears. Also not
+   * shown at all unless browsing history is one of the boxes ticked, because
+   * the Context Engine is cleared under `CLEAR_HISTORY` and nothing here is
+   * touched when that box is clear; a line describing a delete that is not
+   * going to happen is worse than no line.
+   *
+   * @returns {Promise<void>}
+   */
+  updateForgetPreview() {
+    if (!this._fosForgetPreview) {
+      return Promise.resolve();
+    }
+    let range = Sanitizer.getClearRange(this.selectedTimespan);
+    let clearingHistory = Array.from(this._allCheckboxes).some(
+      cb => cb.id == "browsingHistoryAndDownloads" && cb.checked
+    );
+    // `getClearRange` deals in microseconds and the store in milliseconds; no
+    // range at all is what "Everything" looks like.
+    let target = range
+      ? { from: Math.floor(range[0] / 1000), to: Math.ceil(range[1] / 1000) }
+      : { all: true };
+    return lazy.FOSForgetPreview.show(
+      this._fosForgetPreview,
+      clearingHistory ? target : null
+    );
   },
 
   updateAcceptButtonState() {
@@ -259,6 +294,8 @@ var gSanitizePromptDialog = {
 
       // make sure the sizes are updated
       await this.updateDataSizesInUI();
+
+      this.updateForgetPreview();
       return;
     }
 
@@ -277,6 +314,8 @@ var gSanitizePromptDialog = {
 
     // Update data sizes to display
     await this.updateDataSizesInUI();
+
+    this.updateForgetPreview();
   },
 
   sanitize(event) {
@@ -364,6 +403,12 @@ var gSanitizePromptDialog = {
 
     // Update the warning prompt if needed
     this.prepareWarning();
+
+    // Frontier OpenSearch: ticking or clearing the history box changes whether
+    // the Context Engine is in scope at all.
+    if (this._inited) {
+      this.updateForgetPreview();
+    }
 
     return undefined;
   },
