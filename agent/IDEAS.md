@@ -2825,3 +2825,42 @@ negatives, not a guarantee. Recall 0.5 rests on **eight** positives and is a
 noisy estimate; read it as "about half". And the size probe doubled a context
 from two queries to four, which is evidence the floor travels, not proof it
 travels to forty.
+
+### Driving it: three things the measurement could not say
+
+`browser_zzmergeoffer.js` runs the real `mergeOffer` against a real engine on
+contexts built by *browsing*, because the ordinary suite covers the surface with
+the offer doubled and that is the arrangement that hid a broken presence check
+for thirteen runs. It found three things, none of them visible in a table.
+
+**The floor behaves as measured, in both directions.** Two halves of the Lisbon
+enquiry score **0.812** — far above the floor rather than near it — and a
+sourdough context against two keyboard contexts is offered nothing at all. The
+gap between those is much wider than the corpus's best-threshold arithmetic
+suggested, which is the reassuring version of a precision-first floor.
+
+**Recall 0.5 is not a statistic, it is specific enquiries.** The corpus's
+`memex` and `sqlite` halves fall *under* the floor and are never offered. Those
+are exactly the two enquiries run 36 identified as the model's weak spots —
+proper nouns and adjacent technical vocabulary — so the misses are not spread
+evenly across topics, they are concentrated on a kind of topic. Worth stating
+plainly: **this feature works on what you were shopping for and not on what you
+were reading about.** Not asserted in a test, because freezing a limitation into
+a requirement means the test fails when the model gets better.
+
+**A fixture is a measurement, not a piece of writing — again.** Run 37 recorded
+this after the `related` tier's first fixture scored 0.159 against a floor of
+0.173, and the same trap caught the same project a second time. Needing an
+enquiry that clears the floor, I wrote two fresh ones in the corpus's style —
+cycling and coffee — on the reasoning that common-noun consumer topics are where
+the model is strong. Driven: neither matched its own other half, and **coffee
+matched cycling at 0.267**, over the floor, a false positive between two
+enquiries no person would confuse. Invented text has no measured similarity, and
+a bag-of-tokens model's opinion of it cannot be estimated by reading it. The
+fixtures are now drawn only from the scored corpus.
+
+That last one also puts a number on the floor's real-world precision that the
+sweep could not: 0.267 is a false positive at a floor of 0.244, from a pair the
+corpus never contained. Precision 1.0 over 112 negatives remains what was
+measured; it is not what should be expected of arbitrary enquiries, and the
+margin between them is thinner than the sweep implies.
