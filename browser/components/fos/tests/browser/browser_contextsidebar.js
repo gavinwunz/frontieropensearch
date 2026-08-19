@@ -160,15 +160,17 @@ add_task(async function test_a_row_re_enters_the_page_it_names() {
   );
   ok(target, "the first page has a row");
 
-  const loaded = BrowserTestUtils.browserLoaded(
-    gBrowser.selectedBrowser,
-    false,
-    PAGE_A
-  );
+  // Not `browserLoaded`: a node that is still an entry of this tab's own
+  // session history is re-entered by traversing to it, and a page coming back
+  // out of the bfcache fires no load event — so waiting for one times out
+  // rather than failing, which reads as a hung harness rather than a wrong
+  // answer. The traversal is the point: re-entry is instant and keeps the
+  // page's state instead of rebuilding the tab from a stored blob.
+  const landed = BrowserTestUtils.waitForLocationChange(gBrowser, PAGE_A);
   target.dispatchEvent(
     new MouseEvent("mousedown", { bubbles: true, cancelable: true })
   );
-  await loaded;
+  await landed;
 
   is(
     gBrowser.selectedBrowser.currentURI.spec,
@@ -272,14 +274,11 @@ add_task(async function test_a_page_reports_the_questions_it_provoked() {
 
   // It goes to where the question *landed*, not back to the page it was asked
   // from — which is the page already on screen. That page is on the trail the
-  // question was asked on, so `enter` restores it into the tab that owns that
-  // trail rather than dragging this one onto it: the load to wait for is the
-  // asking tab's, not the selected one's.
-  const entered = BrowserTestUtils.browserLoaded(
-    asking.linkedBrowser,
-    false,
-    PAGE_B
-  );
+  // question was asked on, so `enter` selects the tab that owns that trail
+  // rather than dragging this one onto it, and then traverses that tab's own
+  // session history to reach the entry: no load event, so the thing to wait
+  // for is the location change after the tab switch.
+  const entered = BrowserTestUtils.waitForLocationChange(gBrowser, PAGE_B);
   row.dispatchEvent(
     new MouseEvent("mousedown", { bubbles: true, cancelable: true })
   );
