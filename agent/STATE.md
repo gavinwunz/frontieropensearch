@@ -23,7 +23,7 @@ one.
 
 ## Done
 
-**Moved to `agent/BUILT.md`** — 44 entries, newest first, verbatim. It had become
+**Moved to `agent/BUILT.md`** — 45 entries, newest first, verbatim. It had become
 a log inside a file that says at the top it is not one, and every run paid to
 read it before picking up a task.
 
@@ -36,36 +36,48 @@ Shipped since the phase plan ran out, in order: the cross-trail merge offer, the
 embedding tier and its measurement, the model-download verb and the consent rule
 behind it, the voice path with both gestures and its silence bounds, `done` and
 the re-entry resume it forced, the Field's arrangement surviving a restart,
-"This page made you ask" as the sidebar's second page-scoped section, and — this
-run — **forgetting**: the store's first delete of any kind, joined to Clear
-Recent History and Forget About This Site.
+"This page made you ask" as the sidebar's second page-scoped section,
+**forgetting** — the store's first delete of any kind, joined to Clear Recent
+History and Forget About This Site — and, this run, **forgetting reaching the
+live session**: the window now stops showing what the store has just deleted.
 
 ## In progress
 
 Nothing waits on a person. **Nothing is running — the harness is free.**
 
-Run 44 did not take an item off the last run's list. It took a new lens, as the
-list itself asked for, and the lens found a defect rather than an idea: **the
-Context Engine had no delete of any kind, and `nsIClearDataService` had never
-heard of it.** Clear Recent History and Forget About This Site cleared Places
-and left the richer record — every query, the page each was typed from, every
-dwell time — intact beside it. Two documents and a shipped menu item all said
-otherwise, so this was a false claim rather than a missing feature, and that is
-what made it beat everything on the list.
+Run 45 took item 1 off the last run's list: **forgetting now reaches the live
+session.** The store had learned to forget and the window had not, so a page
+forgotten while it was on screen stayed there until restart and every later
+navigation from it wrote rows pointing at a node that was gone.
 
-Built: `forgetHost` / `forgetRange` / `forgetAll` on the store, and
-`FOSForget.sys.mjs` registering it as a `CLEAR_HISTORY` cleaner. The four rules
-a delete follows are in `context-engine/SCHEMA.md` §Forgetting — reparent past a
-forgotten node rather than delete its subtree, a query goes with the page it
-landed on, a surviving query's `source_node_id` is nulled, and an emptied
-context is deleted with its merge family weighed whole.
+The decision the work needed first — what happens to the tab you are looking at
+— came out of Gecko's own source rather than out of reasoning.
+`SessionStore.onPurgeDomainData` removes every *closed* tab and every tab of a
+*closed* window matching the domain and does not touch an open one, so **the tab
+is not closed**; it is left *unrecorded* instead, and navigating onward records
+again because forgetting is a delete and not a blocklist.
 
-Green: **304 node checks, 188 xpcshell subtests (up from 172), 857
-browser-chrome checks, 0 failures** — up from 850. **Thirteen mutations, all
-thirteen caught**: eleven against the store's delete graph and two against the
-wiring only a real browser reaches.
+Built: `TrailStore.forget`, `FOSTrailSession.forget`, `FieldModel.drop` and the
+Field pass that uses it, `ForgetSummary` carrying `nodeIds`/`contextIds`/`all`,
+and an observer on `fos-context-forgotten` in every window's engine. `FOSForget`
+waits for every window's write queue to drain before deleting — the one place
+the "recording never blocks browsing" rule is deliberately suspended. The
+invariant is in `SCHEMA.md` §Forgetting: the tree and the engine's id map move
+together, and the map alone is the trap.
 
-`agent/run44full.sh` is the whole FOS suite. Older gated jobs, unchanged and not
+Also, unplanned and load-bearing: **nothing had ever torn an engine down.** A
+`WeakMap` made that survivable; a strong observer reference held by a service
+that outlives every window does not. `attach` now listens for `unload`, and the
+`detach` it triggers also closes the visit open on the window — a dwell time
+that used to be dropped.
+
+Green: **311 node checks, 193 xpcshell subtests in the store file (plus 75 in
+the field file), 880 browser-chrome checks, 0 failures** — up from 857.
+**Fourteen mutations, thirteen caught, one genuinely equivalent.** Five browser
+mutations survived the first pass and three were real gaps; see the journal for
+what each one taught.
+
+`agent/run45full.sh` is the whole FOS suite. Older gated jobs, unchanged and not
 needed this run: `run36`/`run37` (embedding measurement and the tier on it),
 `run39` (the merge offer), `run29`/`run30` (the speech latency measurement and
 the voice path in a real browser), `run43` (the three-file alphabetical prefix
@@ -81,39 +93,36 @@ against. The real level path — an analyser actually reading a microphone — h
 never been observed working, only reasoned about; the first machine with audio
 hardware should run that file and check the positive branch is taken.
 
-**A second thing is now unverified in the same way**: forgetting has never been
-watched happening in a live session. What the store does is covered at both
-levels; what the *window* does while a page it is showing is forgotten is
-reasoned about below and has not been observed. That is the next task.
+Run 44's second unverified item is now closed: forgetting has been watched
+happening in a live window, in `browser_zzforget.js`, with the tab, the tree,
+the cards, the region, the marks and `back` all asserted on.
 
 `main` is at `phase-3`. `agent/dev` is pushed through this run's commits.
 
 ## Next task
 
-*Going looking* has now beaten the standing list four runs running, and this run
-says something about why: the last three lenses all pointed inward at the
-component, and the one that paid pointed at the seam between the component and
-Firefox. Prefer a lens of that shape next.
+Two runs running, the highest-value item has been the *seam* between the
+component and Firefox rather than anything inside the component. Item 1 below is
+the direct continuation of that and should be preferred.
 
-1. **Forgetting has to reach the live session.** This run's own leftover and the
-   clear first choice. The store is cleared; the Field's cards and the rail's
-   tree are in-memory and are not, so a page forgotten while it is on screen
-   stays on screen until restart, and further activity on it writes rows
-   pointing at a node that is gone. **Do not "fix" this by emptying the engine's
-   id map** — `#nodeIds` missing an entry is what makes reconciliation *create* a
-   node, so clearing it would write back everything just forgotten, on the next
-   settle. The real answer prunes the session tree and the Field alongside the
-   store, and it needs a decision first: what happens to the tab you are looking
-   at when you forget the site it is on. Closing it is a data-loss surprise;
-   leaving it loaded but unrecorded is probably right and should be stated
-   rather than fallen into.
-
-2. **Re-run this run's lens against the other integration points.** Every Gecko
+1. **Re-run run 44's lens against the other integration points.** Every Gecko
    surface the fork has never implemented is a claim it is silently making.
-   Named and unchecked: session restore, profile migration,
-   `about:preferences`' data panel, and sanitize-on-shutdown — which is the
-   nastiest of the four, because a user who sets "clear history when I close the
-   browser" has asked for exactly this and would get it for Places only.
+   Named and unchecked: **session restore**, **profile migration**,
+   **`about:preferences`' data panel**, and **sanitize-on-shutdown** — which is
+   the nastiest of the four, because a user who sets "clear history when I close
+   the browser" has asked for exactly this and would get it for Places only.
+   Now cheap to test as well as to find: `browser_zzforget.js` already drives
+   the real `nsIClearDataService` end to end, and the summary and the observer
+   are in place for any of them to hang off.
+
+2. **Show what a delete will take before it takes it.** `IDEAS.md` run 45. The
+   blast radius here is not guessable the way a flat history's is — forgetting
+   one host removes pages from the middle of several trails, strands the
+   questions asked from them, and can delete a context whose label named an
+   afternoon's work. The counts are already computed by `#forget`, so a dry run
+   reported into the dialog Firefox already shows is small. Not novel as an
+   interaction; useful here because the store is associative. Do **not** build
+   an undo window instead — rejected with reasons in `IDEAS.md`.
 
 3. **Sustained resize of the crowded overview.** Recorded in `IDEAS.md` run 32
    and not solved: the burst is fixed (53ms → 1.19ms) but one rebuild is 18.27ms
@@ -131,37 +140,39 @@ Firefox. Prefer a lens of that shape next.
 
 ## Found this run, not yet chased
 
-- **A mutation that does not apply reads exactly like a mutation that
-  survived.** Two of this run's thirteen came back "SURVIVED" and both were
-  string replacements that had silently matched nothing, because Prettier had
-  reflowed the target across lines after it was written. A survivor is supposed
-  to be the interesting result, so a silent no-op is the worst possible failure
-  mode for this technique — it manufactures a coverage gap that is not there and
-  costs a chase. **Assert the replacement applied before running the suite.**
-  Cheap, and it turned two false gaps into two caught mutations immediately.
+- **A survived mutation is sometimes a comment to fix rather than a test to
+  write.** Two of this run's fourteen were equivalent mutants, and one of them
+  disproved a claim the code made about itself: the order of the session prune
+  and the id-map clean was documented as load-bearing and is not, because
+  reconciliation is only reached through the `#changed` that `session.forget`
+  fires at its end. The comment now states the invariant that is actually true.
+  Worth generalising — an equivalent mutant against a line the comments call
+  essential means the comment is wrong, not that the mutation was uninteresting.
 
-- **Thinking about a mutation found a coverage gap before the mutation ran.**
-  Listing what to break included "reparent to the direct parent rather than
-  climbing", and writing that down was enough to notice the fixture had only one
-  forgotten node in the chain, so the climb was never exercised. The test was
-  added first and the mutation then caught it. Worth doing deliberately: the
-  list of mutations you would like to run is a coverage audit that costs nothing
-  to write.
+- **A gap can need a sharper fixture rather than a sharper assertion.** The
+  `back`-after-forgetting mutation survived because the fixture could not tell
+  the two behaviours apart: a forgotten page has to sit *between* two surviving
+  ones before "skip past it" and "refuse to move" differ at all. Adding the page
+  before it fixed the mutation and improved a second assertion for free —
+  reparenting now climbs past two forgotten pages onto a real survivor instead
+  of onto null.
 
-- **The fork's own boundary discipline is what hid this run's defect.**
-  `ARCHITECTURE.md` §7 keeps the list of files touched outside
-  `browser/components/fos/` short, and treats the shortness as a virtue — which
-  it is, for build times. But it also means the fork habitually asks "what does
-  my component do" and never "what does Firefox already do *to* my component's
-  data". Every integration point Gecko exposes and the fork has not implemented
-  is a claim it is silently making. That is item 2 on the next-task list and it
-  is a repeatable audit, not a one-off.
+- **`ChromeUtils.defineESModuleGetters` resolves each key to the export of that
+  name, not to the module namespace.** `lazy.FOSForget.FORGOTTEN_TOPIC` was
+  undefined and `addObserver` threw. `FOSForget.sys.mjs` has a comment saying
+  exactly this about its own keys, and it was read past. Cost one suite run;
+  worth remembering as the shape of mistake that documentation does not prevent.
 
-- **`spoken` on a sidebar query row is set and never read.** Unchanged from run
-  43. The view model carries `input_mode === "voice"` on every question row and
-  no renderer looks at it; the rail does use its equivalent. Noted rather than
-  chased — it is a view-model field, so nothing is accumulating and nothing is
-  unrecoverable.
+- **The upstream tree beats the web for "what does Firefox already do here".**
+  The search results for whether Forget About This Site closes open tabs are
+  support-forum guesswork. Forty lines of `SessionStore.sys.mjs` are definitive
+  and took less time to find.
+
+- **`spoken` on a sidebar query row is set and never read.** Unchanged from runs
+  43 and 44. The view model carries `input_mode === "voice"` on every question
+  row and no renderer looks at it; the rail does use its equivalent. Noted
+  rather than chased — it is a view-model field, so nothing is accumulating and
+  nothing is unrecoverable.
 
 ## Background jobs
 
@@ -190,15 +201,15 @@ None.
 
 ## Known staged state, not a defect
 
-**Forgetting clears the store and not the live session.** The Field's cards and
-the rail's tree are in-memory objects built during the session, so a page
-forgotten while it is on screen stays on screen until the browser restarts, and
-further activity on it writes rows referencing a node that is gone. Nothing is
-resurrected — `#nodeIds` still holds the mapping, so reconciliation sees the
-node as already written and does not re-add it — which is exactly why emptying
-that map is the wrong repair. Staged rather than defective only because the
-durable record is what the privacy claim is about and it is correct; the visible
-half is item 1 on the next-task list.
+**Forgetting takes the record and not the tab.** A page open when its site is
+forgotten keeps its document, its scroll position and anything typed into it;
+the tab is left *unrecorded* — its browser loses its trail node, so nothing
+further is written for what is still on screen — and navigating onward records
+again. This is Firefox's own rule rather than the fork's invention
+(`SessionStore.onPurgeDomainData`), and it is stated in `SCHEMA.md` §Forgetting
+and asserted in `browser_zzforget.js`. Do not "improve" it into a per-site
+never-record toggle: that is a fourth verb nobody asked for, and a private
+window is the shipped answer to "record nothing".
 
 **Reparenting past a forgotten node leaves an inference.** After forgetting the
 middle of A → B → C the trail reads A → C, a navigation that never happened. The

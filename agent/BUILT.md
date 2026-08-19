@@ -10,6 +10,39 @@ this, and what was decided when it was built" — the reasoning in full is in
 `design/` and `context-engine/`. Nothing here is waiting on anybody; what is,
 is in `STATE.md`.
 
+- **Forgetting reaches the live session.** Run 44 shipped the store's delete and
+  left the window showing what it had just deleted: the rail's tree and the
+  Field's cards are in-memory objects built during the session, so a page
+  forgotten while it was on screen stayed there until restart and went on
+  accruing visits against a row that was gone. `ForgetSummary` now carries
+  `nodeIds`, `contextIds` and `all` as well as counts; every window's engine
+  observes `fos-context-forgotten` and prunes its own tree, cards and id maps;
+  and `TrailStore.forget` applies the store's own rules to the in-memory copy —
+  a surviving child climbs to its nearest surviving ancestor, an emptied trail
+  goes with its last page.
+
+  **The tab is not closed.** That decision came from Gecko's own source rather
+  than from first principles: `SessionStore.onPurgeDomainData` drops every
+  closed tab and every tab of a closed window matching the domain and does not
+  touch an open one. The tab is left *unrecorded* instead — its browser loses
+  its node, so nothing further is written for a page still on screen — and
+  navigating onward records again, because forgetting is a delete and not a
+  blocklist. A user who wants a session that records nothing has a private
+  window.
+
+  The invariant that makes it safe: the tree and the engine's id map move
+  together. A node missing from `#nodeIds` is what makes reconciliation decide
+  it has never been written and add it, so clearing the map while the tree
+  still held the nodes would write every forgotten page straight back.
+  `FOSForget` also waits for every window's queue to drain before deleting, so
+  a write already in flight cannot land on the far side of the delete.
+
+  A second thing fell out of it: nothing had ever torn an engine down. A
+  `WeakMap` made that survivable; a strong observer reference held by a service
+  that outlives every window does not, so `attach` now listens for `unload` and
+  `detach` runs — which also closes the visit that was open on the window, a
+  dwell time that used to be dropped.
+
 - **The bare tap is built, and the standing list's item 1 is closed.** Tapping
   F4 — no modifier — latches a turn; holding it is still push-to-talk. What
   unblocked it was noticing the objection was mis-scoped: "a mis-tap opens the
