@@ -299,6 +299,7 @@ test("ordinary queries that open with an action word still search", () => {
     "up arrow unicode",
     "context switching in linux",
     "pack rat",
+    "model railway",
     "enter the dragon",
   ]) {
     const r = parse(q);

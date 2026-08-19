@@ -22,6 +22,8 @@ support-files = [
 
 ["browser_locationdisplay.js"]
 
+["browser_modeldownload.js"]
+
 ["browser_suggest.js"]
 
 ["browser_trailrail.js"]

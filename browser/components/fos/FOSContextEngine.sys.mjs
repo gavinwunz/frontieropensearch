@@ -1016,7 +1016,80 @@ export class FOSContextEngine {
       })
     );
 
+    // The consent step for the `related` tier, and the only verb in the table
+    // that changes what the browser is allowed to fetch rather than where the
+    // user is. It lives here rather than in `FOSEmbeddings` because that
+    // module is process-wide and has no window to speak into: the engine is
+    // shared, but the account of it is owed to the bar the verb was typed in.
+    bar.actions.register("model", () => this.#downloadModel());
+
     return this;
+  }
+
+  /**
+   * Fetch the model the `related` tier needs, saying what is being fetched.
+   *
+   * Four outcomes, and each of them is a sentence rather than a silence,
+   * because a verb the user reached for deliberately is the one place in this
+   * component where nothing-happened is not an acceptable answer. That is the
+   * opposite of the tier itself, which is allowed to be quietly absent — see
+   * `FOSEmbeddings` for why the two differ.
+   *
+   * @returns {Promise<boolean>} Whether the tier is on when this returns.
+   */
+  async #downloadModel() {
+    const embeddings = lazy.FOSEmbeddings;
+    if (embeddings.downloading) {
+      this.#bar?.notify("The search model is already downloading.");
+      return false;
+    }
+
+    const present = await embeddings.present();
+    if (present && embeddings.enabled) {
+      this.#bar?.notify(
+        "The search model is already here — suggestions rank by meaning."
+      );
+      return true;
+    }
+
+    // Said before the fetch rather than after it, and it names the host: this
+    // fork disables update and telemetry so that it never contacts Mozilla
+    // behind the user's back, and the honest way to make the one exception is
+    // to write down who is being contacted while it happens. `present` above
+    // is what keeps this off the screen when nothing is being transferred.
+    if (!present) {
+      this.#bar?.notify(
+        `Downloading the search model — about ${embeddings.weightsMB}MB, ` +
+          `once, from ${embeddings.hubHost}. It runs on this machine ` +
+          `afterwards and sends nothing back.`
+      );
+    }
+
+    let shown = -1;
+    const engine = await embeddings.download(report => {
+      const percent = Math.round(Number(report?.progress));
+      // Only on a whole-percent change: the runtime reports every chunk, and
+      // rewriting the same sentence a hundred times a second is a live region
+      // a screen reader would read a hundred times.
+      if (!Number.isFinite(percent) || percent === shown) {
+        return;
+      }
+      shown = percent;
+      this.#bar?.notify(
+        `Downloading the search model — ${percent}% of about ` +
+          `${embeddings.weightsMB}MB, once.`
+      );
+    });
+
+    if (!engine) {
+      this.#bar?.notify("The search model could not be downloaded.");
+      return false;
+    }
+    this.#bar?.notify(
+      "Search model ready — suggestions now rank by meaning as well as " +
+        "spelling."
+    );
+    return true;
   }
 
   /**

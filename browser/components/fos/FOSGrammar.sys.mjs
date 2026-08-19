@@ -126,6 +126,25 @@ export const ACTIONS = Object.freeze({
     text: false,
     summary: "Report what the engine has on the active context",
   },
+  // The one verb that is about what the browser may fetch rather than about
+  // the session. `FOSEmbeddings` has why the `related` suggestion tier ships
+  // switched off: turning it on authorises a ~30MB model download, and a fork
+  // that disables update and telemetry precisely so it never contacts anyone
+  // unasked cannot make that request on a keystroke into the command bar.
+  //
+  // Making the consent an action rather than a checkbox is what keeps §5's one
+  // code path: it is discoverable in the list the bar opens with, it is
+  // sayable, and it is the same token stream as everything else. The summary
+  // below is the disclosure *before* the fetch — it is on screen the moment
+  // the bar opens — and the notice the handler raises carries the size and the
+  // host *during* it.
+  model: {
+    pillar: "context",
+    target: "none",
+    accepts: [],
+    text: false,
+    summary: "Download the local model that ranks suggestions by meaning",
+  },
 
   // The escape. GRAMMAR.md §3 makes search the unmarked default, which leaves
   // one gap: a query that happens to begin with an action word. Rather than a

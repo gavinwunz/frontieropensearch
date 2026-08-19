@@ -124,10 +124,10 @@ sentences: it says prose is anything not *beginning* with an action word, so
 hit `is`, and came back a syntax error. The user asked the most natural question
 they could and got nothing.
 
-This is not a corner case, because eight of the twelve action words are ordinary
-English. `back pain`, `field of view`, `branch prediction`, `up arrow unicode`,
-`context switching in linux`, `pack rat`, `name generator`, `enter the dragon` —
-all of them collided.
+This is not a corner case, because nine of the thirteen action words are
+ordinary English. `back pain`, `field of view`, `branch prediction`, `up arrow
+unicode`, `context switching in linux`, `pack rat`, `name generator`, `model
+railway`, `enter the dragon` — all of them collided.
 
 So the test is the whole line, not the first word:
 
@@ -181,6 +181,28 @@ list is deliberately small — every action must be worth a word.
 - `context <mark>` — switch the active context, re-ranking the bar's suggestions
 - `pack` — export the active context as a markdown brief
 - `what` — what the engine has on the active context, spoken or shown
+- `model` — download the local model that ranks suggestions by meaning
+
+**Consent is a verb, not a setting.** `model` is the odd one out: every other
+word here moves the user through their own material, and this one changes what
+the browser is allowed to fetch. It earns a word anyway, and the alternative is
+what makes the case. The `related` suggestion tier needs ~30MB of weights, and
+this fork switches off update and telemetry precisely so that it never contacts
+anyone unasked — so the tier cannot fetch them on a keystroke, and it ships
+switched off. Left there, the choice would have to live somewhere with no
+grammar at all: a preferences pane this browser does not have, or `about:config`,
+which is not a surface and has no spoken form. Putting it in the action table
+makes the disclosure discoverable — the summary is on screen in the list the bar
+opens with, before the verb is ever run — and reachable by voice like everything
+else, at the cost of one word out of twenty-six.
+
+It is one-way on purpose. Running it again once the weights are here reports
+that they are, and there is no verb to un-download them: the tier's absence is a
+shorter suggestion list rather than a broken promise, so a user who wants it
+gone is doing configuration, not navigation. The pref it sets means *the weights
+are here and wanted* — never *a fetch was attempted* — which is why a download
+that fails leaves it alone rather than arming the next session to retry the
+request nobody would be asked about a second time.
 
 `what` and the `pack` confirmation are the reason text-to-speech matters: it is
 already supported on the in-tree ML runtime with no spike required, so the output
@@ -294,9 +316,9 @@ A palette that opens to a bare input is the most reported failure of the
 pattern, and it would be worse here than in an editor. The usual form of that
 critique — a palette must not withhold what the menus already expose — does not
 apply, because there are no menus. But that is not a reprieve: it means a user
-who does not know the twelve words has nowhere else to learn them. This is the
-one surface in the product that has to teach, and twelve is small enough to show
-entire.
+who does not know the thirteen words has nowhere else to learn them. This is
+the one surface in the product that has to teach, and thirteen is small enough
+to show entire.
 
 ### A prefix is offered, never triggered
 
