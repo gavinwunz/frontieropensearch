@@ -999,3 +999,58 @@ bush propose" against a page about the memex — says where this model is weak.
 Proper nouns and abstractions; a static table has no row connecting a name to
 what the name is known for. Common-noun topical language is where it is strong,
 which for this fork is the right way round.
+
+
+## Run 38 — 2026-08-19 — the download the user asks for, and the check that never worked
+
+**Phase:** post-plan. **Task:** STATE's item 1, the surfaced model download.
+**Tests:** 242 node, 706 browser-chrome, xpcshell green, and the gated
+`run37.sh` green at 14/14 against real weights.
+
+`model` is the thirteenth verb. It says the size and names the host before
+bytes move, counts megabytes as they arrive, and sets the consent pref only
+once the engine has loaded — the pref means *the weights are here and wanted*,
+never *a fetch was attempted*, so a download that failed leaves it alone rather
+than arming the next session to retry a request nobody would be asked about a
+second time.
+
+**The research changed the design rather than confirming it.** Chrome was taken
+apart in May 2026 for writing a 4GB model to disk unasked, and the complaint
+that recurs in every write-up is not the first download but the second: deleting
+the file got it downloaded again. This fork had built exactly that. `ensure`
+called `createEngine` on a keystroke whenever the pref was on, and `createEngine`
+fetches what it lacks — so a user who consented in March and cleared the cache
+in August would have had the weights back on the next keystroke. `ensure` now
+checks the cache and never fetches; `download` is the only method that may. **A
+stored yes is consent to a state, never to an action.**
+
+That also settled what *not* to build. Firefox Translations offers a delete for
+its language models and can afford to, because it has a preferences pane; this
+browser has none by design and every verb costs a word out of a table
+`GRAMMAR.md` §4 keeps small enough to teach entire. There is no un-download
+verb, and the decision above is what makes that honest: deleting the cache by
+hand now works and stays worked.
+
+**Three failed gated runs, all on things a stub could not see.** The presence
+check answered "no weights" on a machine holding the weights, for two reasons
+`ModelHub.sys.mjs` documents wrongly — `listFiles` resolves to
+`{files, metadata}` rather than an array, and the cache keys a model by
+`hostname/organization/name` rather than the configured id. Two JSDoc blocks in
+that file disagree about the second, thirty lines apart. **The voice path has
+carried the first since run 25**: thirteen runs of a spurious "Downloading the
+speech model" on the first press of every session, followed by a `createEngine`
+that read the cache and worked, which is exactly why it went unseen. Both fixed.
+
+The reason it went unseen has a name. `browser_voice.js` doubles `listFiles` and
+returned an array, because an array was easy to write — so the double asserted
+the wrong contract and the production code matching it looked right, in a green
+suite, for thirteen runs. **A double is a claim about somebody else's API, and it
+goes stale in the direction of whatever was convenient.** For every external API
+this fork doubles, one test somewhere has to use the real thing.
+
+**And one measurement nobody would think to make.** The runtime reports
+`progress` as a percentage *of the file in flight*, and this model is two files:
+driving the real download gave 0% → 100% → 0% → done. A bar that runs backwards
+is worse than no bar. `totalLoaded` is the cumulative field, so the line counts
+megabytes instead. The 30MB itself is measured too — 29,836,775 plus 478,156,
+the only two files the backend requests at d256.

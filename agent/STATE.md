@@ -513,6 +513,22 @@ one.
   The measurement now skips with an explanation when no hub is set rather than
   taking the browser down with it.
 
+- **The model download is the user's decision, and nothing else fetches.**
+  `model` is the thirteenth verb: it names the size (30MB, measured — both
+  files, not the headline table) and the host, counts megabytes as they
+  arrive, and sets `browser.fos.suggest.semanticTier` only once the engine has
+  loaded. The pref means *the weights are here and wanted*, never *a fetch was
+  attempted*. Research made the rule bigger than the feature: `ensure` no
+  longer fetches at all, because Chrome's May 2026 4GB-model affair turned on
+  the complaint that deleting the file got it downloaded again, and this fork
+  had built the same thing — a pref set in March standing in for consent to a
+  transfer in August. **A stored yes is consent to a state, never to an
+  action.** Deleting the model cache now degrades the bar to five tiers until
+  the user asks again, which is what makes refusing to build an un-download
+  verb honest rather than a corner cut. `IDEAS.md` run 38 has the sources, the
+  Firefox Translations comparison, and why the weights come from Mozilla and
+  not Hugging Face.
+
 ## In progress
 
 Nothing waits on a person. **Nothing is running — the harness is free.**
@@ -522,6 +538,11 @@ all finished green. The last of them left the pictures in `agent/reports/`
 current with the tree. `run36` is the embedding measurement and `run37` drives
 the tier built on it; both finished green. Their numbers are in `IDEAS.md`
 rather than in a picture.
+
+`run37.sh` now also covers the `model` verb against a real cache, and that is
+where it earns its keep: it failed three times this run on things no stub could
+see. The gated file is the only place in the tree that can ask "did the thing
+we just downloaded end up somewhere we can find it again".
 
 The static embedding weights live beside the speech ones at
 `/data/ml-models/onnx-models/mozilla/static-embeddings/`, put there by
@@ -542,32 +563,21 @@ pointed at it, because mochitest kills the process on a non-local connection.
 The phase plan is complete, so nothing pulls the next run in a particular
 direction. Ordered by value.
 
-1. **The surfaced model download.** The related tier works and nobody can turn
-   it on: `browser.fos.suggest.semanticTier` is off by default and only a
-   pref edit flips it. What is missing is the step that makes the download the
-   user's decision — a command in the bar that says what it fetches, how big it
-   is and where from, sets the pref, and reports progress. The voice path
-   settled the pattern (run 25's option 2, run 30's ordering: a download
-   outranks every other notice a turn can raise) and this is the same shape
-   with a lower stake, because a suggestion tier that is absent is a shorter
-   list rather than a broken promise. Until it exists the tier is dead weight
-   on an ordinary profile.
-
-2. **Offering a cross-trail context merge.** The measurement refuses to do it
+1. **Offering a cross-trail context merge.** The measurement refuses to do it
    silently — best precision 0.756, so one in four merges above the threshold
    would be wrong — and `context_member.source` is what keeps an accepted offer
    tellable apart from provenance. This is the second consumer of the same
    engine and needs no new infrastructure.
 
-3. **The two narrow defects.** The active card can have no thumbnail, and
+2. **The two narrow defects.** The active card can have no thumbnail, and
    closing the rail while the Field is open leaves Escape with nowhere to go.
    Both small, both real, both cheap.
 
-4. **The bare tap for a voice turn.** `GRAMMAR.md` §9 carries it. Deliberately
+3. **The bare tap for a voice turn.** `GRAMMAR.md` §9 carries it. Deliberately
    unbuilt: a mis-tap opens the microphone for the whole thirty-second
    deadline, and how often that happens is a question about use.
 
-5. **Sustained resize of the crowded overview.** Recorded in `IDEAS.md` run 32
+4. **Sustained resize of the crowded overview.** Recorded in `IDEAS.md` run 32
    and *not* solved: the burst is fixed (53ms → 1.19ms) but one rebuild is
    18.27ms p50, longer than a frame, so continuous resizing of the worst case
    the design permits still costs ~21ms a frame over the control. The fix is to
@@ -575,21 +585,43 @@ direction. Ordered by value.
    value — it is the deliberate worst case, and dragging a window edge with the
    overview up is rare.
 
-6. **Why this build has no remote tabs.** Three upstream urlbar files fail on it
+5. **Why this build has no remote tabs.** Three upstream urlbar files fail on it
    and the fork is not what breaks them. The next step is
    `UrlbarProviderRemoteTabs.isActive` in a driven browser with
    `services.sync.username` set, not more reading.
 
-7. **The rails still overlay the page.** Run 32 took them off the *toolbar*,
+6. **The rails still overlay the page.** Run 32 took them off the *toolbar*,
    which was never a deliberate trade; covering the page still is, and STATE has
    always said it belongs with the Field's restructure rather than piecemeal.
    `--fos-chrome-block-start` makes taking layout space a smaller step than it
    was, which is worth knowing when that restructure comes.
 
-8. **The 17 timed-out urlbar files, if they are ever worth it**, and **a
+7. **The 17 timed-out urlbar files, if they are ever worth it**, and **a
    region's height is a ratchet** (`FIELD.md` §6, open rather than a defect).
 
 ## Found this run, not yet chased
+
+- **A test double is a claim about somebody else's API, and it goes stale in
+  the direction of whatever was convenient to write.** `browser_voice.js`
+  doubled `ModelHub.listFiles` as an array because an array was easy to write;
+  the real one resolves to `{files, metadata}`. The production code was written
+  to match the double, so the presence check answered "no weights" on every
+  machine for thirteen runs and the test agreed with it every time. Nothing in
+  a suite of doubles can catch this. What caught it was one gated file asking
+  the same question of a real cache — which is the general defence: for every
+  external API this fork doubles, one test somewhere must use the real thing.
+
+- **Two JSDoc blocks in one file disagreed, and both were load-bearing.**
+  `ModelHub.listFiles` documents its `model` parameter as `organization/name`
+  in one place and `hostname/organization/name` in another, thirty lines apart;
+  the cache uses the second. Reading the nearer one cost this run three failed
+  gated attempts. Worth an upstream bug: the return type is documented wrong
+  too.
+
+- **A progress percentage that restarts is worse than none.** The ML runtime's
+  `progress` field is per-file and this model is two files, so a bar driven by
+  it runs 0→100→0. `totalLoaded` is the cumulative field. Anything else in this
+  tree that reports download progress should be checked against the same trap.
 
 - **A suite built one component at a time has nowhere to put a relation.** Every
   assertion in this directory measures a surface; none of them asks what that
@@ -1274,6 +1306,21 @@ repeated failure even when each run has a new explanation for it.
 
 ## Decisions taken
 
+- 2026-08-19 — **A stored yes is consent to a state, never to an action.**
+  `browser.fos.suggest.semanticTier` being on does not authorise a transfer
+  now; it records that the weights are here and wanted. So `ensure` never
+  fetches, `download` is the only method that may, and clearing the model cache
+  is a supported way to reclaim the 30MB rather than a fight with the browser.
+  From Chrome's May 2026 4GB download — `IDEAS.md` run 38.
+- 2026-08-19 — **There is no verb to un-download the model.** Firefox
+  Translations offers a delete and can afford to, because it has a preferences
+  pane; this browser has none by design, and `GRAMMAR.md` §4 keeps the table
+  small enough to teach entire. A second word for 30MB does not clear that bar.
+  Safe only because of the decision above. Revisit if a larger model lands.
+- 2026-08-19 — **The search model comes from `model-hub.mozilla.org`**, unlike
+  the speech model. Not a preference — `Mozilla/static-embeddings` on Hugging
+  Face is the build repository and carries no weights. The line on screen names
+  the host because of it.
 - 2026-08-18 — **The voice front end never repairs a misheard word.** A repair
   pass would have to know where free text begins, since `name` and `search`
   take the rest of the utterance verbatim, and that is grammar knowledge

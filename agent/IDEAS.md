@@ -2577,3 +2577,112 @@ model is. Reaching it means embedding all of Places, which at 1.27ms a page is
 a vector store with persistence and staleness rules: the thing Firefox's own
 semantic history search built, and a different feature from this one. Recorded
 as the honest boundary rather than left as an implied capability.
+
+
+## Run 38 — consent for a model download, and what the search found in it
+
+**The question.** The `related` tier shipped in run 37 and no ordinary profile
+could turn it on. What was missing was the step that makes the download the
+user's decision. The voice path had already settled the shape (run 25's option
+2, run 30's ordering), so this looked like execution rather than research. The
+search is what changed the design twice.
+
+### Chrome's 4GB Gemini Nano download, May 2026 — **adopt, as a constraint**
+
+Chrome was found writing a ~4GB on-device model to disk with no prompt, no
+notification and no setting. The reporting is unanimous on the first complaint
+and it is the obvious one. The complaint that matters here is the *second* one,
+which recurs in every write-up and which I had not thought of:
+
+> If the user deletes it, Chrome re-downloads it.
+
+Sources: [Tom's Hardware](https://www.tomshardware.com/tech-industry/cyber-security/google-chrome-silently-downloads-4gb-ai-model-to-your-device-without-permission-report-claims-researcher-says-practice-may-violate-eu-law-waste-thousands-of-kilowatts-of-energy),
+[Malwarebytes](https://www.malwarebytes.com/blog/news/2026/05/google-chrome-silent-4gb-ai-download-problem),
+[Cybernews](https://cybernews.com/security/google-chrome-ai-model-device-no-consent/),
+[Tom's Guide](https://www.tomsguide.com/ai/check-your-storage-chrome-may-be-downloading-a-4gb-ai-model-heres-what-we-know).
+
+**This fork had built exactly that, and the search is the only reason it did
+not ship.** As first written, `FOSEmbeddings.ensure` called `createEngine` on a
+keystroke whenever the pref was on, and `createEngine` fetches what it does not
+have. A user who ran `model` in March, then cleared the model cache in August
+to get the 30MB back, would have had it silently fetched again by the next
+keystroke into the command bar — with the pref still on from March standing in
+for consent to a transfer happening now.
+
+The fix is one line of policy and it is worth stating as a rule, because it
+generalises past this feature: **a stored yes is consent to a state, never to
+an action.** `ensure` now checks the cache and never fetches; `download` is the
+only method in the module that may put bytes on the wire; deleting the weights
+degrades the bar to five tiers until the user asks again. Verdict: adopt, and
+it is now the first thing said in that method's comment.
+
+### Firefox Translations' own download UI — **adapt, partially; reject the pane**
+
+In-tree prior art, found by reading rather than searching:
+`settings-translations-subpage-download-language-option = { $language }
+({ $size }MB)`. Firefox discloses the size per language and offers a **delete**
+(`settings-translations-subpage-download-delete-confirm`).
+
+Size disclosure: adopted, and gone further — the line names the host too, which
+Firefox's does not, because for this fork *who is contacted* is the whole
+promise and Mozilla is who it is.
+
+Deletion: **rejected as a verb, and the reason is the grammar rather than the
+feature.** Firefox can afford a delete because it has a preferences pane to put
+it in; this browser deliberately has none, and every capability costs a word
+out of a table `GRAMMAR.md` §4 says must stay small enough to teach entire.
+A second word to un-download 30MB — one-fifteenth of the browser's own install
+— does not clear that bar. What makes the rejection safe is the rule adopted
+above: because nothing re-fetches, deleting the cache by hand is a *supported*
+way to get the space back rather than a fight with the browser, which is
+precisely the property Chrome lacks. Revisit if a second, larger model lands.
+
+### The weights are not on Hugging Face — **finding, forced a decision**
+
+Run 25 decided the speech model comes from Hugging Face rather than Mozilla's
+mirror, on the argument that this fork should not lean on Firefox's
+infrastructure for a file it can get from the model's own home. That argument
+does not survive here. `Mozilla/static-embeddings` on Hugging Face is the build
+repository — scripts, four READMEs, no weights — and the `.npy.zst` tables the
+static-embeddings backend loads exist only on `model-hub.mozilla.org`. Checked
+against the HF tree API at `v1.0.0`: 29 files, not one a weight.
+
+So this fork does contact Mozilla, once, for this one file, and the answer is
+to say so on screen rather than to drop the feature or hide the host.
+
+### The size is measured, and so is the progress field
+
+29,836,775 bytes of `fp16.d256.npy.zst` plus 478,156 of `tokenizer.json.zst` —
+the only two files `StaticEmbeddingsPipeline` requests at d256. Hence "about
+30MB", not a number copied off a model card.
+
+Driving the real download found the second measurement. The runtime's progress
+report carries `progress` as a percentage **of the file in flight**, and this
+model is two files: the observed sequence was 0% → 100% → 0% → done. A
+percentage that restarts is worse than no percentage. `totalLoaded` is
+documented as the sum across every callback, so it is the one field that only
+grows, and the line now counts megabytes rather than percent.
+
+### Two traps in `ModelHub.listFiles`, and one in our own test double
+
+Both make a presence check that compiles, runs, and answers "no weights" on a
+machine holding the weights.
+
+1. It resolves to `{files, metadata}`. Its JSDoc promises an array.
+2. The cache keys a model by `hostname/organization/name`. The `model`
+   parameter is documented as `organization/name` in one block and as
+   `hostname/organization/name` in another, thirty lines apart in the same
+   file. Under the local hub the stored key is
+   `localhost/mozilla/static-embeddings`; in a shipped build it is
+   `model-hub.mozilla.org/mozilla/static-embeddings`.
+
+The voice path has carried trap 1 since run 25 — thirteen runs of a spurious
+"Downloading the speech model" on the first press of every session, followed by
+a `createEngine` that read the cache and worked, which is exactly why nobody
+noticed. It was found by making the same mistake somewhere it mattered more.
+
+The third trap is ours. `browser_voice.js` doubles `listFiles` and returned an
+array, so the double asserted the wrong contract and the production code
+matching it looked correct. **A double is a claim about somebody else's API,
+and it goes stale in the direction of whatever was convenient to write.** The
+double now returns the real shape.
