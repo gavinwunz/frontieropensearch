@@ -351,3 +351,224 @@ add_task(async function test_an_initial_page_does_not_stay_pending() {
     "an initial page stops being pending once it arrives, like any other page"
   );
 });
+
+/**
+ * Giving up on a page that was asked for and has not come.
+ *
+ * The other half of the same field, and it had to exist the moment the first
+ * half did. Firefox splits an abandon in two: Escape over the page runs
+ * `Browser:Stop`, and Escape *in the address bar* runs `handleRevert`, which
+ * nulls the pending value and repaints the bar with the page you are on. This
+ * fork's address bar takes no focus, so `handleRevert` is unreachable from
+ * anywhere in the build — and nothing in the grammar reached the other half
+ * either, so a hands-free user could not abandon a load at all.
+ *
+ * The tests below therefore assert two different things and it is worth saying
+ * which is which. That the pending value ends up cleared is largely Firefox's
+ * own doing: the tab progress listener nulls it at `STATE_STOP` with a failure
+ * status, for the reason its comment gives — *"restore the current document's
+ * location in case the request was stopped before the location changed"*. What
+ * is this fork's is that the state is correct *synchronously*, before that
+ * event can arrive, and that a verb reaches it at all.
+ */
+
+/** `slow.sjs` holds its body for three seconds. */
+const SLOW_DELAY_MS = 3000;
+
+function notice() {
+  return document.querySelector(".fos-report");
+}
+
+/**
+ * Ask for the slow page and wait until the request has actually gone out.
+ *
+ * The wait is the difference between abandoning a request and abandoning a
+ * load. Before `STATE_START` there is no channel to stop and the assertion
+ * would pass on a browser that had done nothing at all.
+ *
+ * @returns {Promise<object>} The selected browser, mid-load.
+ */
+async function startSlowLoad() {
+  await goTo(LANDING_PAGE);
+  const browser = gBrowser.selectedBrowser;
+  bar().run(SLOW_PAGE);
+  Assert.equal(pending(), SLOW_PAGE, "the slow page is pending");
+  await TestUtils.waitForCondition(
+    () => browser.didStartLoadSinceLastUserTyping(),
+    "the request went out and the page has not arrived"
+  );
+  return browser;
+}
+
+add_task(async function test_stop_gives_up_on_the_page_that_has_not_come() {
+  const browser = await startSlowLoad();
+
+  bar().run("stop");
+
+  // Synchronously, which is the whole of what this fork adds. The progress
+  // listener would get here too, one event round trip later and only if the
+  // stop produced a failed `STATE_STOP` — which a request abandoned before its
+  // channel opened never does.
+  Assert.equal(pending(), null, "nothing is pending any more");
+  Assert.ok(
+    gURLBar.value.includes("xanadu"),
+    `the bar says where you are again, not where you were going: ${gURLBar.value}`
+  );
+  Assert.equal(
+    gURLBar.getAttribute("pageproxystate"),
+    "valid",
+    "and takes back the identity it withheld while the request was in flight"
+  );
+  Assert.equal(
+    browser.currentURI.spec,
+    LANDING_PAGE,
+    "the browser never left the page it was on"
+  );
+
+  // The part that separates stopping from merely forgetting. The fixture's
+  // body is three seconds behind its headers, so a verb that cleared the field
+  // without aborting the channel would look identical to this one until the
+  // page it gave up on arrived and navigated the window anyway.
+  /* eslint-disable-next-line mozilla/no-arbitrary-setTimeout */
+  await new Promise(resolve => setTimeout(resolve, SLOW_DELAY_MS + 1000));
+  Assert.equal(
+    browser.currentURI.spec,
+    LANDING_PAGE,
+    "and the abandoned page does not turn up later over whatever came next"
+  );
+  Assert.equal(pending(), null, "with nothing left pending behind it");
+});
+
+add_task(async function test_stop_names_what_it_gave_up_on() {
+  await startSlowLoad();
+
+  bar().run("stop");
+
+  // Giving up has to be cheap, and it is only cheap if the request survives
+  // being given up on. The user who stops a load that turns out to have been
+  // nearly finished should be able to ask for it again from what is on screen
+  // rather than from memory.
+  const report = notice();
+  Assert.ok(report && !report.hidden, "stopping is answered in a sentence");
+  Assert.ok(
+    report.textContent.includes(SLOW_PAGE),
+    `and the sentence names what was dropped: ${report.textContent}`
+  );
+  Assert.equal(
+    report.getAttribute("aria-live"),
+    "polite",
+    "spoken as well as shown, since a hands-free user is the reason this verb " +
+      "exists"
+  );
+  bar().dismissNotice();
+});
+
+add_task(async function test_stop_with_nothing_loading_says_so() {
+  await goTo(LANDING_PAGE);
+  await TestUtils.waitForCondition(
+    () => pending() === null,
+    "the page has settled and nothing is pending"
+  );
+
+  bar().run("stop");
+
+  const report = notice();
+  Assert.ok(report && !report.hidden, "a verb that did nothing still answers");
+  Assert.equal(
+    report.textContent,
+    "Nothing was loading.",
+    "and says that nothing was there rather than reporting a success"
+  );
+  Assert.equal(
+    gBrowser.selectedBrowser.currentURI.spec,
+    LANDING_PAGE,
+    "the settled page is not disturbed by being stopped"
+  );
+  bar().dismissNotice();
+});
+
+add_task(async function test_the_session_forgets_an_abandoned_request() {
+  // The reason clearing the field matters even with nobody looking at the bar.
+  // `_restoreTabEntry` prefers a pending request over the history entry
+  // underneath it, so a request left behind by an abandoned load is a browser
+  // that comes back from a crash loading the page its user gave up on.
+  const browser = await startSlowLoad();
+
+  const during = TabState.collect(gBrowser.selectedTab);
+  Assert.equal(
+    during.userTypedValue,
+    SLOW_PAGE,
+    "mid-load the session carries the request, as it should"
+  );
+
+  bar().run("stop");
+
+  const after = TabState.collect(gBrowser.selectedTab);
+  Assert.ok(
+    !after.userTypedValue,
+    `an abandoned request is not carried into the session: ${after.userTypedValue}`
+  );
+  Assert.equal(
+    browser.currentURI.spec,
+    LANDING_PAGE,
+    "and what is left is the page that is actually there"
+  );
+});
+
+add_task(async function test_the_stop_button_abandons_the_request_too() {
+  // The nav-bar kept its stop button and Escape over the page is still
+  // `key_stop`; both dispatch `Browser:Stop`. Two stops with different
+  // outcomes would be a worse defect than the one the verb fixes and an
+  // invisible one, since both routes look like they worked.
+  const browser = await startSlowLoad();
+
+  document.getElementById("Browser:Stop").doCommand();
+
+  Assert.equal(
+    pending(),
+    null,
+    "the request goes with the load however the load was stopped"
+  );
+  Assert.ok(
+    gURLBar.value.includes("xanadu"),
+    `and the bar says where you are: ${gURLBar.value}`
+  );
+  Assert.equal(
+    browser.currentURI.spec,
+    LANDING_PAGE,
+    "on the page that was never left"
+  );
+});
+
+add_task(async function test_abandoning_takes_the_declaration_with_it() {
+  // `#markAsPending` writes two things, and giving up has to drop both.
+  // `initialPageLoadedFromUserAction` is the claim that the user asked for this
+  // initial page by name, which is how the pending value survives the tab
+  // progress listener's carve-out for pages chrome loads by itself. The
+  // listener deletes it at `STATE_START`, so ordinarily it is gone in a
+  // millisecond — but a request abandoned before its load starts never reaches
+  // `STATE_START`, and the claim would then outlive the request that justified
+  // it and be read against whatever chrome loaded next over the blank tab.
+  //
+  // Both lines below run before the load can have started, which is what makes
+  // this the case the deletion exists for rather than a restatement of what
+  // the listener already does.
+  await goTo("about:blank");
+  const browser = gBrowser.selectedBrowser;
+
+  bar().run(BLANK_TAB);
+  Assert.equal(
+    browser.initialPageLoadedFromUserAction,
+    BLANK_TAB,
+    "asking for an initial page by name declares that it was asked for"
+  );
+
+  bar().run("stop");
+
+  Assert.ok(
+    !browser.initialPageLoadedFromUserAction,
+    `giving up withdraws the declaration too: ${browser.initialPageLoadedFromUserAction}`
+  );
+  Assert.equal(pending(), null, "along with the request it described");
+  bar().dismissNotice();
+});

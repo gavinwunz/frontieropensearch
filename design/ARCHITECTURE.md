@@ -381,6 +381,40 @@ section went unnoticed for fifty runs — the module that wrote the state and th
 module that depended on it could not see each other. `browser_zzpending.js`
 asserts all of it.
 
+**Writing that field created a state with no way out of it, and closing that is
+the `stop` verb.** Firefox has two halves of giving up on a request: Escape over
+the page runs `Browser:Stop`, which aborts the load, and Escape in the address
+bar runs `handleRevert`, which nulls the pending value and repaints the bar.
+This fork's address bar takes no focus, so nothing in the build could reach
+`handleRevert`; and nothing in the grammar reached the other half either, so a
+load could be abandoned by key and not by voice — which §5 of `GRAMMAR.md`
+forbids. `FOSActionDispatcher.abandon` is both halves in one call, because
+neither is any use alone, and the command bar registers the verb rather than the
+dispatcher because the sentence it says back is the bar's to say.
+
+Two things about it are worth stating so they are not later mistaken for
+redundancy or for scope.
+
+The clearing is *not* the only thing that clears. Firefox's tab progress
+listener nulls the pending value at a failed `STATE_STOP`, with the comment
+*"restore the current document's location in case the request was stopped
+(possibly from a content script) before the location changed"*. What the fork
+adds is that the state is right synchronously rather than an event round trip
+later, and the interval matters for two readers: the address bar is on screen
+throughout it, and `TabState.collect` runs on a timer and at shutdown. Removing
+`clearPending` leaves three assertions failing in that window and one — the same
+field, four seconds on — passing, which is exactly the shape of a second
+mechanism arriving late, and is recorded here rather than left for the next
+audit to rediscover.
+
+The other two routes to `Browser:Stop` are hooked, and that is deliberate rather
+than defensive. This build kept the nav-bar, so the stop button is still there,
+and `key_stop` still binds Escape over the page. A verb that took the request
+back while the button did not would ship two stops with different outcomes, both
+of which look like they worked. The hook is a listener on the command element —
+the same event `mainCommandSet` already handles — so nothing about what upstream
+does changes.
+
 Upstream Firefox guidance in `AGENTS.md` and `docs/` still applies to everything
 below that line.
 

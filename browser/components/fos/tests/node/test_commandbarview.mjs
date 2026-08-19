@@ -60,15 +60,23 @@ test("the empty state teaches the whole action table", () => {
   // The failure mode the research is unanimous on is a palette that opens to a
   // bare input. This bar is the only entry surface in the product, so there is
   // no menu to learn the verbs from instead — if this list is ever empty, the
-  // twelve words become unlearnable.
+  // fifteen words become unlearnable.
   assert.equal(v.rows.length, Object.keys(ACTIONS).length);
   assert.ok(v.rows.every(row => row.kind === R_ACTION));
   assert.ok(v.rows.every(row => row.detail));
 
-  // Grouped by pillar, so the list reads as three small sets rather than one
-  // list of twelve.
-  const groups = [...new Set(v.rows.map(row => row.group))];
-  assert.deepEqual(groups, ["The Field", "Trails", "Context"]);
+  // Grouped, so the list reads as four small sets rather than one long one.
+  // Three of the four are the pillars; the fourth is the two verbs the entry
+  // surface owns, `search` and `stop` — one asks for a page and one gives up
+  // on asking.
+  //
+  // Contiguity rather than membership, because the grouping is drawn by
+  // walking the rows once: a group whose verbs are not adjacent in the action
+  // table is drawn as two headings with the same name, and nothing about the
+  // set of groups would show it.
+  const order = v.rows.map(row => row.group);
+  const runs = order.filter((group, i) => group !== order[i - 1]);
+  assert.deepEqual(runs, ["The Field", "Trails", "Context", "The page"]);
 });
 
 test("prose is a query and is always runnable", () => {

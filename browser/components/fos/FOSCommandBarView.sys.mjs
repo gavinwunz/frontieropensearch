@@ -28,7 +28,7 @@
  * an inverted way. The usual critique is that a palette must not withhold what
  * the menus already expose — but this bar *is* the only entry surface, so there
  * are no menus to fall back to. Incompleteness is therefore not our risk;
- * the risk is a user who does not know the twelve words having nowhere at all
+ * the risk is a user who does not know the fifteen words having nowhere at all
  * to learn them. So the empty state is the action table itself, grouped by
  * pillar, and it is the one screen in the product that has to teach.
  *
@@ -76,11 +76,19 @@ export const R_ACTION = "action";
 export const R_MARK = "mark";
 export const R_COMMAND = "command";
 
-/** Human-facing names for the pillars, used as group headings. */
+/**
+ * Human-facing names for the pillars, used as group headings.
+ *
+ * Four headings for three pillars, because two verbs belong to the entry
+ * surface itself: `search` asks for a page and `stop` gives up on asking. The
+ * key is `page` rather than `bar` so the heading names what the verbs act on,
+ * which is what the other three do.
+ */
 const PILLAR_NAMES = Object.freeze({
   field: "The Field",
   trails: "Trails",
   context: "Context",
+  page: "The page",
 });
 
 /**

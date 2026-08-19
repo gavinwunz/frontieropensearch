@@ -124,10 +124,10 @@ sentences: it says prose is anything not *beginning* with an action word, so
 hit `is`, and came back a syntax error. The user asked the most natural question
 they could and got nothing.
 
-This is not a corner case, because nine of the thirteen action words are
+This is not a corner case, because ten of the fifteen action words are
 ordinary English. `back pain`, `field of view`, `branch prediction`, `up arrow
 unicode`, `context switching in linux`, `pack rat`, `name generator`, `model
-railway`, `enter the dragon` — all of them collided.
+railway`, `enter the dragon`, `stop motion animation` — all of them collided.
 
 So the test is the whole line, not the first word:
 
@@ -239,6 +239,54 @@ request nobody would be asked about a second time.
 already supported on the in-tree ML runtime with no spike required, so the output
 half of a hands-free loop is available regardless of how speech *recognition*
 resolves.
+
+**The page (no pillar)**
+- `search <text>` — §3's escape, above
+- `stop` — give up on the page being loaded and say where you are again
+
+These two belong to the entry surface rather than to a pillar, and the bar
+groups them under their own heading for that reason: one asks for a page and the
+other gives up on asking. `search` sat in the context group before `stop`
+existed, for want of a fourth heading rather than because the context engine
+owned it.
+
+**`stop` is the verb that had to exist once the fork started saying where it was
+going.** A request that has been made and not answered is held on the browser
+element as `userTypedValue`; the bar shows it in place of the current URL, and
+session restore reissues it after a crash. Firefox splits giving up on it in
+two — Escape over the page runs `Browser:Stop`, Escape *in the address bar* runs
+`handleRevert` — and this fork can reach neither by grammar and only the first
+by key, because its address bar takes no focus. So the state was reachable and
+the exit from it was not.
+
+It is one verb rather than Firefox's two because the two halves were never
+separately useful: stopping the load while the browser goes on naming the
+destination is the same wrong answer with the spinner switched off, and
+forgetting the request without stopping it means the page lands a minute later
+over whatever the user did instead. So `stop` aborts the load *and* takes the
+request back, and the two other routes to `Browser:Stop` this build kept — the
+toolbar button and Escape — are made to leave the same state behind, because two
+stops with different outcomes is a worse defect than the one this fixes, and an
+invisible one.
+
+**What it adds over Firefox is synchrony, and it is worth being exact about
+that rather than overclaiming.** Firefox's own tab progress listener nulls the
+pending value at a failed `STATE_STOP`, for the reason its comment gives:
+*"restore the current document's location in case the request was stopped before
+the location changed"*. That arrives an event round trip after the user asked,
+and in the interval the bar still names a page nobody is going to and
+`TabState.collect` still records the request — both asserted, and both restored
+by mutation when the fork's own clearing is removed. The verb is what makes
+giving up reachable at all; the synchronous clearing is what makes it true
+immediately.
+
+**Naming what was dropped is what makes stopping cheap.** The notice says which
+page was abandoned, so a user who stops a load that turns out to have been
+nearly finished asks for it again from what is on screen rather than from
+memory. A stop with nothing to stop says so too, because silence is the one
+answer this surface never gives to a verb reached for deliberately — and because
+a screen-reader user has no other way to know a load was in flight at all, which
+is a gap NVDA has an open request about rather than a hypothetical.
 
 ## 5. One code path
 

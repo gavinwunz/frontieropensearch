@@ -147,6 +147,35 @@ export class FOSActionDispatcher {
   constructor(window) {
     this.#window = window;
     this.register("search", cmd => this.openQuery(cmd.text));
+    // `stop` is registered by the command bar rather than here, because the
+    // only part of it that is not this class's business is the sentence it
+    // says, and the bar is what can say one. `abandon` below is the whole of
+    // the mechanism.
+    this.#watchStopCommand();
+  }
+
+  /**
+   * Clear the pending request whenever anything else stops the load.
+   *
+   * `stop` is not the only way to abandon a load in this build: the nav-bar
+   * kept its stop button and Escape over the page is still `key_stop`, and
+   * both go through the `Browser:Stop` command. Leaving those two alone would
+   * ship two stops with different outcomes — the verb takes the request back
+   * and the button leaves the bar still promising a page that will now never
+   * arrive — which is a worse defect than the one `stop` exists to fix, and an
+   * invisible one, because both routes look like they worked.
+   *
+   * A listener on the command element rather than a fork of
+   * `BrowserCommands.stop`: the command event is what both the key and the
+   * button dispatch, it bubbles to the same `mainCommandSet` handler upstream
+   * uses, and adding to it changes nothing about what upstream does. It runs
+   * before that handler, which is the target-phase listener firing before the
+   * ancestor's; the order does not matter here, since forgetting the request
+   * and aborting it touch nothing in common.
+   */
+  #watchStopCommand() {
+    const command = this.#window.document?.getElementById("Browser:Stop");
+    command?.addEventListener("command", () => this.clearPending());
   }
 
   /**
@@ -313,6 +342,72 @@ export class FOSActionDispatcher {
       }
     }
     this.#load(uri, null);
+    return true;
+  }
+
+  /**
+   * Give up on the page that was asked for and has not arrived.
+   *
+   * The counterpart of `#markAsPending`, and it had to exist the moment that
+   * did. Firefox splits an abandon in two: Escape over the page stops the
+   * load, and Escape in the address bar calls `handleRevert`, which nulls
+   * `userTypedValue` and repaints the bar with the page you are actually on.
+   * This fork inherited the first — the nav-bar's stop button and `key_stop`
+   * are both still here — and cannot reach the second at all, because the
+   * address bar is a display that takes no focus, so nothing in the build
+   * could call `handleRevert`. A load that stalled therefore left the bar
+   * naming a destination permanently, and left `TabState.collect` recording a
+   * request that session restore would reissue on the next start.
+   *
+   * Both halves in one verb, because neither half is any use alone: stopping
+   * the load while the browser goes on saying it is going there is the same
+   * lie with the spinner switched off, and forgetting the request without
+   * stopping it just means the page lands a minute later over whatever the
+   * user did instead.
+   *
+   * @returns {?string} What was abandoned, in the form it was shown, or null
+   *   if nothing was pending. The caller says it back to the user, so that
+   *   giving up costs nothing: the request is on screen to be asked for again.
+   */
+  abandon() {
+    const abandoned = this.#window.gBrowser.selectedBrowser.userTypedValue;
+    // Firefox's own stop, not a second copy of it. Going through
+    // `BrowserCommands` rather than `webNavigation.stop` keeps this verb a way
+    // of pressing the button the toolbar already has, which is what makes the
+    // two routes agree by construction instead of by inspection.
+    this.#window.BrowserCommands.stop();
+    this.clearPending();
+    return abandoned ?? null;
+  }
+
+  /**
+   * Forget the request in flight, and repaint the bar with where you are.
+   *
+   * Public because the verb is not the only route to it: anything that stops a
+   * load has to leave the same state behind, and `#watchStopCommand` is how
+   * the stop button and Escape get here.
+   *
+   * `initialPageLoadedFromUserAction` goes with it. `#markAsPending` writes the
+   * pair, and the tab progress listener deletes that half itself at
+   * `STATE_START` — but a request abandoned before its load starts never
+   * reaches `STATE_START`, and the declaration would then outlive the request
+   * it described and apply to whatever chrome loaded next over the blank tab.
+   * Deleting rather than nulling, because deleting is what the listener does
+   * and the property is read with `!=` against a spec.
+   *
+   * @returns {boolean} Whether there was a request to forget.
+   */
+  clearPending() {
+    const browser = this.#window.gBrowser.selectedBrowser;
+    if (browser.userTypedValue == null) {
+      return false;
+    }
+    browser.userTypedValue = null;
+    delete browser.initialPageLoadedFromUserAction;
+    // Same reason the write has one: this fork's address bar is a display, and
+    // nothing else repaints it between here and the next location change —
+    // which, for a load that was stopped before it committed, never comes.
+    this.#window.gURLBar.setURI();
     return true;
   }
 

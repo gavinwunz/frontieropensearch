@@ -158,6 +158,35 @@ export const ACTIONS = Object.freeze({
     summary: "Download the local model that ranks suggestions by meaning",
   },
 
+  // The page — the two verbs the entry surface owns rather than a pillar. One
+  // asks for a page and one gives up on asking; they are grouped together, and
+  // apart from the three pillars, because that is what they have in common and
+  // because the alternative was filing `stop` under "Context", which is a
+  // heading the user reads and would be simply untrue. `search` moves here with
+  // it: it was in the context group for want of a fourth, not because the
+  // context engine owns it.
+  //
+  // Abandoning a request became reachable-by-nothing the moment the fork
+  // started writing `browser.userTypedValue` (see `FOSActions.#markAsPending`).
+  // Firefox has two halves of an abandon — Escape over the page stops the load,
+  // Escape *in the address bar* reverts the pending value — and this fork
+  // inherited the first and lost the second, because its bar cannot be focused
+  // and so `handleRevert` cannot be reached. A load that stalls therefore left
+  // the bar claiming a destination for good, and left session restore ready to
+  // reissue a request the user had given up on.
+  //
+  // It is one verb rather than the two Firefox has because the two were never
+  // separately useful: nobody wants the load stopped while the browser goes on
+  // saying it is going there. So `stop` does both, and the notice names what
+  // was abandoned so the user can ask for it again if stopping was a mistake.
+  stop: {
+    pillar: "page",
+    target: "none",
+    accepts: [],
+    text: false,
+    summary: "Give up on the page being loaded and say where you are again",
+  },
+
   // The escape. GRAMMAR.md §3 makes search the unmarked default, which leaves
   // one gap: a query that happens to begin with an action word. Rather than a
   // bolted-on escape character with no spoken form, the escape is an ordinary
@@ -165,7 +194,7 @@ export const ACTIONS = Object.freeze({
   // reachable in both modalities like everything else. The typed `?` prefix is
   // sugar for exactly this.
   search: {
-    pillar: "context",
+    pillar: "page",
     target: "none",
     accepts: [],
     text: "required",

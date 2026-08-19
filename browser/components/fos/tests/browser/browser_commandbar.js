@@ -105,15 +105,16 @@ add_task(async function test_empty_state_teaches_the_verbs() {
 
   // A bar that opens to nothing is the single most reported command-palette
   // failure, and it would be fatal here: this surface is the only place the
-  // twelve words exist.
+  // fifteen words exist.
   Assert.greater(rowKeys().length, 0, "the empty state lists the actions");
   Assert.ok(rowKeys().includes("enter"), "including `enter`");
   Assert.ok(rowKeys().includes("pack"), "and `pack`");
 
   Assert.equal(
     window.document.querySelectorAll(".fos-commandbar-group").length,
-    3,
-    "grouped by pillar, not dumped as one list of twelve"
+    4,
+    "grouped, not dumped as one long list: the three pillars, plus the two " +
+      "verbs the bar itself owns"
   );
 
   commandBar.close();

@@ -107,6 +107,27 @@ export class FOSCommandBar {
   constructor(window) {
     this.#window = window;
     this.actions = new FOSActionDispatcher(window);
+
+    // The one verb the bar itself registers, and it is here rather than in the
+    // dispatcher for one reason: the mechanism is the dispatcher's, but the
+    // sentence is the bar's, and `notify` is the bar's to call.
+    //
+    // It is worth a sentence when nothing was pending as much as when
+    // something was. A stop with nothing to stop is otherwise silent, and
+    // silence is the one answer this surface never gives to a verb the user
+    // reached for deliberately. The pending case names what was dropped, which
+    // is what makes stopping cheap: the request is on screen to be asked for
+    // again, so the user is not punished for stopping a load that turned out
+    // to be nearly finished.
+    this.actions.register("stop", () => {
+      const abandoned = this.actions.abandon();
+      this.notify(
+        abandoned
+          ? `Stopped. ${abandoned} was not loaded.`
+          : "Nothing was loading."
+      );
+      return abandoned;
+    });
   }
 
   get isOpen() {

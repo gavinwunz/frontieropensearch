@@ -75,7 +75,7 @@
  *
  * WHY THERE IS NO ZERO-PREFIX LIST
  *
- * An empty bar shows the twelve verbs, not a list of pages. That decision was
+ * An empty bar shows the fifteen verbs, not a list of pages. That decision was
  * taken when the bar was built (this is the only surface that can teach the
  * vocabulary, because there are no menus), and nothing found since argues
  * against it: zero-prefix suggestion lists as practised are ranked from a cache

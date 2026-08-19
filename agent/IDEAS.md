@@ -4311,3 +4311,111 @@ Web: [bug 610357](https://bugzilla.mozilla.org/show_bug.cgi?id=610357),
 [MFSA 2013-04](https://www.mozilla.org/en-US/security/advisories/mfsa2013-04/),
 [the 2020 mobile address-bar spoofing sweep](https://thehackernews.com/2020/10/browser-address-spoofing-vulnerability.html),
 [CVE-2016-1707](https://xlab.tencent.com/en/2016/10/10/cve-2016-1707-chrome-address-bar-url-spoofing-on-ios/).
+
+---
+
+## Run 52 — the exit from the state run 51 created
+
+### The probe, and why it was the one left
+
+Run 51's lens — *for every Firefox surface this fork replaced, enumerate what
+that surface wrote, not just what it read* — left three probes. Two belong with
+the Field's restructure (the tab title during a load) or are very likely
+non-issues (`SessionStore` search mode, in a fork with no search mode). The one
+that stood alone was `UrlbarInput.handleRevert`: Firefox's Escape reverts the
+bar and clears `userTypedValue`, and this fork's bar is read-only, so there was
+nothing to revert *in the bar* — but run 51 had just created a pending value
+with no way to abandon it short of the load finishing.
+
+### What was actually true, checked rather than assumed
+
+The probe's framing was half wrong, and finding out how is the useful part.
+
+Firefox does **not** rely on `handleRevert` to recover from a stopped load. The
+tab progress listener nulls `userTypedValue` and repaints the bar at a failed
+`STATE_STOP`, and says why in its own comment: *"restore the current document's
+location in case the request was stopped (possibly from a content script) before
+the location changed"*. So the fork inherited a recovery it did not write, and a
+change built on "there is no way out of this state" would have been built on a
+false premise.
+
+What is actually missing is narrower and more interesting:
+
+- **No grammar reaches it.** `Browser:Stop` is bound to the toolbar button and
+  to `key_stop` (Escape over the page). Both are gestures. `GRAMMAR.md` §5 says
+  no action may exist that only one modality can reach, and abandoning a load
+  was exactly that — reachable by hand, unreachable by voice. Worth noting that
+  this is not a fork-specific oversight: **talonhub/community's browser command
+  set, the most-used hands-free browser vocabulary that exists, has `reload it`
+  and `refresh it` and no stop-loading command at all.**
+- **The recovery is a round trip late.** Between the user asking and the failed
+  `STATE_STOP` arriving, the bar still names a page nobody is going to and
+  `TabState.collect` still records the request. Mutation-tested rather than
+  argued: dropping the fork's own `clearPending` fails three assertions
+  synchronously and passes the same field's assertion four seconds later.
+
+**Adopt** — one verb, `stop`, doing both halves of an abandon, with the other
+two routes to `Browser:Stop` hooked so all three leave the same state.
+
+### Why one verb and not two
+
+Firefox splits it because its two halves live on two surfaces. Here they were
+never separately useful. Stopping the load while the browser goes on naming the
+destination is the same wrong answer with the spinner off; forgetting the
+request without stopping it means the page lands a minute later over whatever
+the user did instead. The second of those is not hypothetical — it is a caught
+mutation, and it is why the test spends four seconds waiting for a page that
+must not arrive.
+
+### The verb budget, and a heading that was already wrong
+
+`stop` is the fifteenth verb, and placing it exposed something already off: the
+bar's teach list groups by pillar, and `search` had been filed under "Context"
+for want of a fourth heading rather than because the context engine owns it.
+Filing `stop` there too would have been a user-visible heading that is simply
+untrue. So there is now a fourth group, **"The page"**, holding the two verbs
+the entry surface owns — one asks for a page, one gives up on asking. The
+heading names what the verbs act on, which is what the other three do.
+
+The collision cost is the ordinary one and the whole-line rule already covers
+it: `stop motion animation` is prose, because `stop` takes no target and no
+text so the next token cannot continue the parse.
+
+### A spoken "stop" is safe here, and it was not obvious
+
+Voice turns in this fork end on a key press, not a keyword, so a spoken "stop"
+arrives as a transcript *after* the turn it was said in has ended and executes
+the verb. That is a hazard worth having looked at — a user saying "stop" meaning
+"stop listening" gets a load aborted — and it is acceptable for the reason
+`GRAMMAR.md` §7 gives for having no confirmation step at all: every verb in the
+table is cheap and reversible, and this one names what it dropped, so asking
+again is reading a sentence off the screen.
+
+### The accessibility half is a documented gap, not a guess
+
+NVDA carries an open request (nvaccess/nvda#16960) for any indication at all
+that a page is loading: today the screen reader "will either say nothing" or
+keeps reading the old page. Run 51 made this fork say where it is going; this
+run makes it say when it has stopped going there, in the same polite live
+region. A stop with nothing to stop says so too — silence would be
+indistinguishable from a verb that failed.
+
+**Sources:** `browser/components/tabbrowser/Tabbrowser.sys.mjs` (the
+`STATE_STOP` branch), `browser/components/urlbar/content/UrlbarInputBase.mjs`
+(`handleRevert`), `browser/base/content/browser-sets.js` (`Browser:Stop`),
+https://github.com/talonhub/community (browser command set),
+https://github.com/nvaccess/nvda/issues/16960
+
+### Not chased, same lens
+
+- **The tab title during a load** — `setInitialTabTitle` is the third thing the
+  listener does inside the phishing-guarded branch. Still the Field's problem:
+  the question is what a card shows for a page asked for and not arrived.
+- **`SessionStore` search mode** — still unchecked, still very likely a
+  non-issue in a build with no search mode.
+- **`Browser:Reload` is now the asymmetry.** `stop` reaches the load through the
+  grammar; reload does not, and it is the other half of the same toolbar
+  control. It was left alone deliberately — reload has no state to leave behind,
+  so it fails the "what did the replaced surface *write*" test that produced
+  this run's finding — but it is now the only nav-bar verb with no spoken form,
+  and that is a §5 question rather than a lens one.
