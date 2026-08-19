@@ -117,6 +117,7 @@ export class FOSActionDispatcher {
   #window;
   #handlers = new Map();
   #queryListeners = new Set();
+  #loads = 0;
 
   constructor(window) {
     this.#window = window;
@@ -140,6 +141,23 @@ export class FOSActionDispatcher {
   onQuery(listener) {
     this.#queryListeners.add(listener);
     return () => this.#queryListeners.delete(listener);
+  }
+
+  /**
+   * How many page loads this dispatcher has asked for.
+   *
+   * Only ever compared with itself, across a line the command bar just ran, to
+   * answer one question: did that line put a new page in front of the user?
+   * The bar needs it to decide where the keyboard goes when it closes —
+   * `field` leaves the user on a surface, `wikipedia` leaves them on a page,
+   * and the difference is not visible in the verbs because a search reaches
+   * the dispatcher as bare prose. Every load goes through one funnel, so
+   * counting there is the whole of it.
+   *
+   * @returns {number}
+   */
+  get loads() {
+    return this.#loads;
   }
 
   /**
@@ -279,6 +297,7 @@ export class FOSActionDispatcher {
    * @param {?nsIInputStream} postData
    */
   #load(uri, postData) {
+    this.#loads++;
     this.#window.gBrowser.selectedBrowser.loadURI(uri, {
       triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
       postData,

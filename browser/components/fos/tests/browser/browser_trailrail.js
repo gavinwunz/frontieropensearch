@@ -24,6 +24,12 @@ const { FOSTrailRail } = ChromeUtils.importESModule(
 const { FOSCommandBar } = ChromeUtils.importESModule(
   "resource:///modules/FOSCommandBar.sys.mjs"
 );
+const { FOSFieldSurface } = ChromeUtils.importESModule(
+  "resource:///modules/FOSFieldSurface.sys.mjs"
+);
+const { LEVEL } = ChromeUtils.importESModule(
+  "resource:///modules/FOSFieldView.sys.mjs"
+);
 
 const PAGE_A = "https://example.com/";
 const PAGE_B = "https://example.org/";
@@ -521,5 +527,61 @@ add_task(async function a_background_arrival_does_not_move_where_you_are() {
   );
 
   BrowserTestUtils.removeTab(background);
+  BrowserTestUtils.removeTab(tab);
+});
+
+/**
+ * Closing a panel must not hand the keyboard past a surface that is still up.
+ *
+ * Every FOS surface takes focus when it opens and used to give it to the
+ * content area when it closes, which is right only when the surface was the
+ * one thing on screen. Open the rail, open the Field, shut the rail: focus
+ * went to the page behind the Field, so Escape stopped zooming out and none of
+ * the Field's keys did anything, on a surface still filling the window. Found
+ * by a screenshot test rather than by any assertion here, because nothing in
+ * this directory looked at where focus went after a close.
+ *
+ * The custody stack in `FOSChrome` is the fix, and the claim is exactly the
+ * two assertions below: the surface still open gets the keyboard, and when
+ * none is, the page does.
+ */
+add_task(async function test_closing_a_panel_returns_the_keyboard_upwards() {
+  const tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, PAGE_A);
+  const field = FOSFieldSurface.forWindow(window);
+
+  rail().open();
+  field.open();
+  Assert.ok(
+    field.stage.matches(":focus-visible"),
+    "the Field took the keyboard when it opened"
+  );
+
+  rail().close();
+  Assert.ok(field.isOpen, "shutting the rail left the Field open");
+  Assert.equal(
+    window.document.activeElement,
+    field.stage,
+    "and the keyboard went back to the Field, not past it to the page"
+  );
+  Assert.ok(
+    field.stage.matches(":focus-visible"),
+    "with the ring still drawn, because the Field still owns every keystroke"
+  );
+
+  // And Escape, which is the thing that was actually broken: from the region
+  // level it zooms out rather than leaving, and it cannot do either from a
+  // stage that does not have the keyboard.
+  field.showRegion(session().store.getNode(session().currentNodeId).trail_id);
+  EventUtils.synthesizeKey("KEY_Escape", {}, window);
+  Assert.ok(field.isOpen, "Escape zoomed out");
+  Assert.equal(field.level, LEVEL.OVERVIEW, "to the overview");
+
+  field.close();
+  Assert.equal(
+    window.document.activeElement,
+    gBrowser.selectedBrowser,
+    "and with nothing left open the page gets the keyboard back"
+  );
+
   BrowserTestUtils.removeTab(tab);
 });

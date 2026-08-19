@@ -34,7 +34,7 @@ import {
 } from "./FOSCommandBarView.sys.mjs";
 import { R_PAGE } from "./FOSSuggest.sys.mjs";
 
-import { ensureStylesheet } from "./FOSChrome.sys.mjs";
+import { ensureStylesheet, releaseFocus, takeFocus } from "./FOSChrome.sys.mjs";
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const STYLESHEET = "chrome://browser/content/fos/fos-commandbar.css";
@@ -138,12 +138,17 @@ export class FOSCommandBar {
     this.#build();
     this.#root.hidden = false;
     this.#input.value = initialValue;
-    this.#input.focus();
+    takeFocus(this.#window, this, this.#input);
     this.#input.select();
     this.#update();
   }
 
-  close() {
+  /**
+   * @param {object} [options]
+   * @param {boolean} [options.toPage] Whether the line that closed this bar
+   *   navigated. See `releaseFocus`.
+   */
+  close({ toPage = false } = {}) {
     if (!this.#root) {
       return;
     }
@@ -153,9 +158,7 @@ export class FOSCommandBar {
     this.#suggestions = [];
     this.#suggestedFor = null;
     this.#suggestToken++;
-    // Focus has to go somewhere the user can keep browsing from. The content
-    // area is the only honest answer while there is no tab strip to return to.
-    this.#window.gBrowser?.selectedBrowser?.focus();
+    releaseFocus(this.#window, this, { toPage });
   }
 
   /**
@@ -170,7 +173,7 @@ export class FOSCommandBar {
 
     if (result.type === QUERY) {
       const resolved = this.actions.openQuery(result.query);
-      this.close();
+      this.close({ toPage: !!resolved });
       return { type: QUERY, resolved };
     }
 
@@ -182,8 +185,13 @@ export class FOSCommandBar {
       return { type: result.type, ran: [] };
     }
 
+    // Where the keyboard goes depends on what the line did, not on what was
+    // open before it. A line that loaded a page hands over to the page; a line
+    // that opened the Field, or renamed a trail, hands back to whatever
+    // surface the user was on.
+    const loads = this.actions.loads;
     const ran = this.actions.runAll(result.commands);
-    this.close();
+    this.close({ toPage: this.actions.loads !== loads });
     return { type: result.type, ran };
   }
 

@@ -28,7 +28,12 @@ import {
 } from "./FOSTrailRailView.sys.mjs";
 import { FOSTrailSession, nodeKey } from "./FOSTrailSession.sys.mjs";
 
-import { ensureStylesheet, trackChromeInset } from "./FOSChrome.sys.mjs";
+import {
+  ensureStylesheet,
+  releaseFocus,
+  takeFocus,
+  trackChromeInset,
+} from "./FOSChrome.sys.mjs";
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const STYLESHEET = "chrome://browser/content/fos/fos-trailrail.css";
@@ -112,12 +117,7 @@ export class FOSTrailRail {
       this.#unsubscribe = this.#session.subscribe(() => this.render());
     }
     this.render();
-    // `focusVisible: true` rather than a bare focus: this surface takes the
-    // keyboard off the page the moment it opens, so it has to show where the
-    // keyboard went — and a plain programmatic focus inherits whatever mode
-    // the window is already in, which after a click or a drag means no ring at
-    // all on a surface that now owns every keystroke.
-    this.#list.focus({ focusVisible: true });
+    takeFocus(this.#window, this, this.#list);
   }
 
   close() {
@@ -127,7 +127,7 @@ export class FOSTrailRail {
     this.#root.hidden = true;
     this.#unsubscribe?.();
     this.#unsubscribe = null;
-    this.#window.gBrowser?.selectedBrowser?.focus();
+    releaseFocus(this.#window, this);
   }
 
   /**

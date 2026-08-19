@@ -124,3 +124,72 @@ export function trackChromeInset(window) {
     once: true,
   });
 }
+
+/** Windows to the surfaces that have held their keyboard, oldest first. */
+const custody = new WeakMap();
+
+/**
+ * Give a surface the keyboard, and remember that it has it.
+ *
+ * Every FOS surface takes focus the moment it opens, because each one owns
+ * every keystroke while it is up. What none of them could answer alone is
+ * where the keyboard goes when they close: each one handed it to the content
+ * area, which is right when the surface was the only thing on screen and wrong
+ * whenever it was not. Open the rail, open the Field, shut the rail — the
+ * keyboard went to the page behind the Field, so Escape no longer zoomed out
+ * and the Field's own keys did nothing, on a surface still filling the window.
+ *
+ * So custody is a window-level fact and it is kept here, where the other
+ * things every surface shares are. A stack rather than a ranking: the surface
+ * that most recently took the keyboard is the one that gets it back, which
+ * needs no invented precedence between panels and is what the user just did.
+ *
+ * `focusVisible: true` rather than a bare focus, for the same reason at every
+ * call site: a programmatic focus inherits whatever mode the window is already
+ * in, so a surface opened after a click or a drag would draw no focus ring at
+ * all while owning every keystroke.
+ *
+ * @param {Window} window A chrome window.
+ * @param {object} surface The surface taking the keyboard. Must expose
+ *   `isOpen`.
+ * @param {Element} element The element within it to focus.
+ */
+export function takeFocus(window, surface, element) {
+  const held = (custody.get(window) ?? []).filter(e => e.surface !== surface);
+  held.push({ surface, element });
+  custody.set(window, held);
+  element.focus({ focusVisible: true });
+}
+
+/**
+ * Hand the keyboard on after a surface closes.
+ *
+ * The next surface down that is still open gets it; if there is none, the
+ * content area does, which is the only honest answer while there is no tab
+ * strip to return to.
+ *
+ * Surfaces are asked `isOpen` rather than trusted to have released, because
+ * closing is not the only way a surface stops being on screen and a stale
+ * entry must not be able to swallow the keyboard.
+ *
+ * @param {Window} window A chrome window.
+ * @param {object} surface The surface that has just closed.
+ * @param {object} [options]
+ * @param {boolean} [options.toPage] Skip the stack and go to the content
+ *   area. For a surface that closed *because* it put a new page in front of
+ *   the user: the stack answers "what was on screen before this", and after a
+ *   navigation that is the wrong question.
+ */
+export function releaseFocus(window, surface, { toPage = false } = {}) {
+  const held = (custody.get(window) ?? []).filter(e => e.surface !== surface);
+  custody.set(window, held);
+  if (!toPage) {
+    for (let i = held.length - 1; i >= 0; i--) {
+      if (held[i].surface.isOpen) {
+        held[i].element.focus({ focusVisible: true });
+        return;
+      }
+    }
+  }
+  window.gBrowser?.selectedBrowser?.focus();
+}
