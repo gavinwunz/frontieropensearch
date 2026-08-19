@@ -1150,6 +1150,342 @@ export class FOSContextStore {
   // ---- plumbing -----------------------------------------------------------
 
   /**
+   * Forget everything the store knows about a host and its subdomains.
+   *
+   * @param {string} host A bare host, with or without a leading dot.
+   * @returns {Promise<ForgetSummary>}
+   */
+  async forgetHost(host) {
+    const target = String(host ?? "")
+      .toLowerCase()
+      .replace(/^\.+/, "");
+    if (!target) {
+      return emptyForgetSummary();
+    }
+    // No host column exists, and adding one would be a migration that has to
+    // re-parse every URL already stored. The table is small and forgetting is
+    // rare, so a scan is the cheaper trade in both senses.
+    const rows = await this.#connection.execute(
+      `SELECT id, url FROM trail_node`
+    );
+    const nodeIds = [];
+    for (const row of rows) {
+      if (hostMatches(row.getResultByName("url"), target)) {
+        nodeIds.push(row.getResultByName("id"));
+      }
+    }
+    return this.#forget({ nodeIds });
+  }
+
+  /**
+   * Forget everything recorded in a time window.
+   *
+   * Queries are selected on their own `created_at` rather than through their
+   * node, because a search typed inside the window is inside the window even
+   * when it landed on a page first seen long before it. That is the row a user
+   * clearing the last hour is actually thinking of.
+   *
+   * @param {number} from Epoch ms, inclusive.
+   * @param {number} to Epoch ms, inclusive.
+   * @returns {Promise<ForgetSummary>}
+   */
+  async forgetRange(from, to) {
+    const nodeRows = await this.#connection.execute(
+      `SELECT id FROM trail_node
+        WHERE (created_at BETWEEN :from AND :to)
+           OR (last_visited_at BETWEEN :from AND :to)`,
+      { from, to }
+    );
+    const queryRows = await this.#connection.execute(
+      `SELECT id FROM query WHERE created_at BETWEEN :from AND :to`,
+      { from, to }
+    );
+    return this.#forget({
+      nodeIds: nodeRows.map(row => row.getResultByName("id")),
+      queryIds: queryRows.map(row => row.getResultByName("id")),
+    });
+  }
+
+  /**
+   * Forget everything, leaving the schema and its version in place.
+   *
+   * Not `#forget` over every id: this is the one case with no survivors to
+   * reparent and no families to weigh, so the graph walk has nothing to decide
+   * and a table-by-table delete says exactly what it does.
+   *
+   * @returns {Promise<ForgetSummary>}
+   */
+  async forgetAll() {
+    const summary = await this.#forgetCounts();
+    await this.#connection.executeTransaction(async () => {
+      for (const table of [
+        "field_placement",
+        "embedding",
+        "context_member",
+        "context_merge_declined",
+        "entity_mention",
+        "entity",
+        "visit",
+        "query",
+        "context",
+        "trail_node",
+        "trail",
+      ]) {
+        await this.#connection.execute(`DELETE FROM ${table}`);
+      }
+    });
+    return summary;
+  }
+
+  /** Row counts of the four things a summary reports. */
+  async #forgetCounts() {
+    const [row] = await this.#connection.execute(
+      `SELECT (SELECT COUNT(*) FROM trail_node) AS nodes,
+              (SELECT COUNT(*) FROM query) AS queries,
+              (SELECT COUNT(*) FROM context) AS contexts,
+              (SELECT COUNT(*) FROM trail) AS trails`
+    );
+    return plain(row, ["nodes", "queries", "contexts", "trails"]);
+  }
+
+  /**
+   * Delete a set of nodes and everything that only they anchored.
+   *
+   * Four decisions are worth stating, because each one had a plausible
+   * alternative that loses more than it should.
+   *
+   * **A forgotten node's children are reparented onto its nearest surviving
+   * ancestor, not deleted with it.** Deleting the subtree would mean that
+   * forgetting one page forgets everything you went on to find from it, and
+   * those pages are usually on other sites entirely — so "forget about this
+   * site" would take an afternoon of unrelated research with it. The cost is
+   * real and is an inference rather than a leak: the trail afterwards reads as
+   * a direct navigation that never happened. Nothing is recoverable from that
+   * edge — it does not say what was removed, or that anything was — but it
+   * does keep the shape of the branch, and a caller wanting the shape gone too
+   * should forget the range rather than the host.
+   *
+   * **A query is deleted with the page it landed on, or — if it never landed —
+   * with the page it was typed from.** `trail_node_id` is what the query is
+   * about; `source_node_id` is merely where the user was standing. A query
+   * that landed somewhere still remembered is still an answer the user has,
+   * and deleting it would forget a page that was never asked about.
+   *
+   * **A surviving query's `source_node_id` is nulled rather than left.** That
+   * is the backlink "This page made you ask" reads, so leaving it would keep a
+   * forgotten page addressable through the query table — the one place the
+   * fork records an association that exists nowhere else.
+   *
+   * **An emptied context is deleted, and merge families are weighed whole.**
+   * A context's `label` is derived from its own material, so a context whose
+   * every member has just gone is a label naming the thing that was forgotten,
+   * with nothing left to justify it. Members are counted across the merge
+   * family because a merged context keeps its own membership rows, so judging
+   * one row of `context` alone would delete half a live enquiry.
+   *
+   * @param {object} options
+   * @param {number[]} [options.nodeIds]
+   * @param {number[]} [options.queryIds] Queries to forget whatever their node.
+   * @returns {Promise<ForgetSummary>}
+   */
+  async #forget({ nodeIds = [], queryIds = [] }) {
+    const nodes = [...new Set(nodeIds)];
+    const queries = [...new Set(queryIds)];
+    if (!nodes.length && !queries.length) {
+      return emptyForgetSummary();
+    }
+
+    const summary = emptyForgetSummary();
+    await this.#connection.executeTransaction(async () => {
+      // Ids go into temporary tables rather than into bound parameters. An
+      // `IN` list of ids is limited by SQLITE_MAX_VARIABLE_NUMBER and a host
+      // with a thousand nodes is unremarkable, so the parameter form would
+      // work in testing and fail on exactly the histories most worth
+      // forgetting. Every statement below then needs no bindings at all.
+      await this.#connection.execute(
+        `CREATE TEMP TABLE IF NOT EXISTS fos_forget_node (id INTEGER PRIMARY KEY)`
+      );
+      await this.#connection.execute(
+        `CREATE TEMP TABLE IF NOT EXISTS fos_forget_query (id INTEGER PRIMARY KEY)`
+      );
+      await this.#connection.execute(`DELETE FROM fos_forget_node`);
+      await this.#connection.execute(`DELETE FROM fos_forget_query`);
+      await this.#fillForgetTable("fos_forget_node", nodes);
+      await this.#fillForgetTable("fos_forget_query", queries);
+
+      await this.#reparentPastForgotten();
+
+      await this.#connection.execute(
+        `INSERT OR IGNORE INTO fos_forget_query (id)
+           SELECT id FROM query
+            WHERE trail_node_id IN (SELECT id FROM fos_forget_node)
+               OR (trail_node_id IS NULL
+                   AND source_node_id IN (SELECT id FROM fos_forget_node))`
+      );
+      await this.#connection.execute(
+        `UPDATE query SET source_node_id = NULL
+          WHERE source_node_id IN (SELECT id FROM fos_forget_node)
+            AND id NOT IN (SELECT id FROM fos_forget_query)`
+      );
+
+      summary.nodes = await this.#count(
+        `SELECT COUNT(*) AS n FROM fos_forget_node`
+      );
+      summary.queries = await this.#count(
+        `SELECT COUNT(*) AS n FROM fos_forget_query`
+      );
+
+      for (const sql of [
+        `DELETE FROM entity_mention WHERE query_id IN (SELECT id FROM fos_forget_query)`,
+        `DELETE FROM context_member WHERE query_id IN (SELECT id FROM fos_forget_query)`,
+        `DELETE FROM embedding WHERE ref_kind = 'query'
+           AND ref_id IN (SELECT id FROM fos_forget_query)`,
+        `DELETE FROM query WHERE id IN (SELECT id FROM fos_forget_query)`,
+        `DELETE FROM visit WHERE trail_node_id IN (SELECT id FROM fos_forget_node)`,
+        `DELETE FROM entity_mention WHERE trail_node_id IN (SELECT id FROM fos_forget_node)`,
+        `DELETE FROM context_member WHERE trail_node_id IN (SELECT id FROM fos_forget_node)`,
+        `DELETE FROM field_placement WHERE trail_node_id IN (SELECT id FROM fos_forget_node)`,
+        `DELETE FROM embedding WHERE ref_kind = 'trail_node'
+           AND ref_id IN (SELECT id FROM fos_forget_node)`,
+        `DELETE FROM trail_node WHERE id IN (SELECT id FROM fos_forget_node)`,
+        // An entity is a name with no independent existence: it is worth
+        // storing only for the mentions that point at it, so the last mention
+        // going takes it too.
+        `DELETE FROM entity WHERE id NOT IN (SELECT entity_id FROM entity_mention)`,
+      ]) {
+        await this.#connection.execute(sql);
+      }
+
+      summary.contexts = await this.#deleteEmptyContexts();
+      summary.trails = await this.#count(
+        `SELECT COUNT(*) AS n FROM trail
+          WHERE id NOT IN (SELECT trail_id FROM trail_node)`
+      );
+      await this.#connection.execute(
+        `DELETE FROM trail WHERE id NOT IN (SELECT trail_id FROM trail_node)`
+      );
+
+      await this.#connection.execute(`DELETE FROM fos_forget_node`);
+      await this.#connection.execute(`DELETE FROM fos_forget_query`);
+    });
+    return summary;
+  }
+
+  /**
+   * Attach every surviving child of a forgotten node to its nearest surviving
+   * ancestor.
+   *
+   * The walk is done here rather than in SQL because the ancestor is only
+   * found by climbing: a forgotten node's parent may itself be forgotten, and
+   * a recursive CTE that expressed the same thing would be harder to read than
+   * the loop and no faster at these sizes. `parent_id` never leaves its trail,
+   * so this cannot move a node between trails.
+   */
+  async #reparentPastForgotten() {
+    const rows = await this.#connection.execute(
+      `SELECT id, parent_id FROM trail_node
+        WHERE id IN (SELECT id FROM fos_forget_node)`
+    );
+    const parents = new Map();
+    for (const row of rows) {
+      parents.set(row.getResultByName("id"), row.getResultByName("parent_id"));
+    }
+    for (const id of parents.keys()) {
+      let ancestor = parents.get(id) ?? null;
+      const seen = new Set([id]);
+      while (ancestor !== null && parents.has(ancestor)) {
+        if (seen.has(ancestor)) {
+          // A cycle cannot be produced by the recorder, and a corrupt row must
+          // not hang a delete.
+          ancestor = null;
+          break;
+        }
+        seen.add(ancestor);
+        ancestor = parents.get(ancestor) ?? null;
+      }
+      await this.#connection.execute(
+        `UPDATE trail_node SET parent_id = :ancestor
+          WHERE parent_id = :id AND id NOT IN (SELECT id FROM fos_forget_node)`,
+        { ancestor, id }
+      );
+    }
+  }
+
+  /**
+   * Delete every context whose merge family has no members left.
+   *
+   * @returns {Promise<number>} How many `context` rows went.
+   */
+  async #deleteEmptyContexts() {
+    const roots = await this.mergeRoots();
+    const contextRows = await this.#connection.execute(
+      `SELECT id FROM context`
+    );
+    const memberRows = await this.#connection.execute(
+      `SELECT context_id, COUNT(*) AS n FROM context_member GROUP BY context_id`
+    );
+    const perFamily = new Map();
+    for (const row of memberRows) {
+      const id = row.getResultByName("context_id");
+      const root = roots.get(id) ?? id;
+      perFamily.set(
+        root,
+        (perFamily.get(root) ?? 0) + row.getResultByName("n")
+      );
+    }
+    const doomed = [];
+    for (const row of contextRows) {
+      const id = row.getResultByName("id");
+      const root = roots.get(id) ?? id;
+      if (!perFamily.get(root)) {
+        doomed.push(id);
+      }
+    }
+    if (!doomed.length) {
+      return 0;
+    }
+    const { names, params } = bindList(doomed, "c");
+    for (const sql of [
+      `DELETE FROM context_merge_declined
+        WHERE low_id IN (${names}) OR high_id IN (${names})`,
+      `DELETE FROM embedding WHERE ref_kind = 'context' AND ref_id IN (${names})`,
+      `DELETE FROM context_member WHERE context_id IN (${names})`,
+      `DELETE FROM context WHERE id IN (${names})`,
+    ]) {
+      await this.#connection.execute(sql, params);
+    }
+    return doomed.length;
+  }
+
+  /**
+   * @param {string} table A temporary forget table.
+   * @param {number[]} ids
+   */
+  async #fillForgetTable(table, ids) {
+    const CHUNK = 200;
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const chunk = ids.slice(i, i + CHUNK);
+      const { names, params } = bindList(chunk, "i");
+      await this.#connection.execute(
+        `INSERT OR IGNORE INTO ${table} (id)
+           VALUES ${names
+             .split(", ")
+             .map(name => `(${name})`)
+             .join(", ")}`,
+        params
+      );
+    }
+  }
+
+  /**
+   * @param {string} sql A statement selecting a single column named `n`.
+   * @returns {Promise<number>}
+   */
+  async #count(sql) {
+    const [row] = await this.#connection.execute(sql);
+    return row.getResultByName("n");
+  }
+  /**
    * Run an INSERT and return the new row's `id`.
    *
    * `RETURNING` rather than a following `SELECT last_insert_rowid()`, and this
@@ -1162,9 +1498,9 @@ export class FOSContextStore {
    *
    * What that produced was a database that pointed at rows which did not exist:
    * nodes on a `trail_id` no trail had, `context_member` rows naming node ids
-   * nothing had ever written. Nothing deletes rows here, so those references
-   * were never going to resolve, and every read through them silently returned
-   * less than it should — an exported pack missing pages it holds membership
+   * nothing had ever written. Only `forget` deletes rows here and it deletes
+   * whole references at once, so those were never going to resolve, and every
+   * read through them silently returned less than it should — an exported pack missing pages it holds membership
    * rows for, which is how this was finally caught.
    *
    * Every table this inserts into declares `id INTEGER PRIMARY KEY`, so
@@ -1216,6 +1552,43 @@ function bindList(values, prefix) {
     return `:${prefix}${i}`;
   });
   return { names: names.join(", "), params };
+}
+
+/**
+ * @typedef {object} ForgetSummary
+ * @property {number} nodes Trail nodes deleted.
+ * @property {number} queries Queries deleted.
+ * @property {number} contexts Contexts deleted.
+ * @property {number} trails Trails deleted.
+ */
+
+/** @returns {ForgetSummary} */
+function emptyForgetSummary() {
+  return { nodes: 0, queries: 0, contexts: 0, trails: 0 };
+}
+
+/**
+ * Whether a stored URL belongs to a host or one of its subdomains.
+ *
+ * Subdomains are included because that is what every Firefox surface reaching
+ * this code already means by a host: `deleteByHost` is documented that way and
+ * `HistoryCleaner` implements it by filtering on `"." + host`. A user who asks
+ * to forget `example.org` and keeps `docs.example.org` has not been listened
+ * to.
+ *
+ * @param {string} url
+ * @param {string} host Lowercased, no leading dot.
+ * @returns {boolean}
+ */
+function hostMatches(url, host) {
+  let hostname;
+  try {
+    hostname = new URL(url).hostname.toLowerCase();
+  } catch (e) {
+    // `about:` and `data:` URLs have no host and belong to nobody.
+    return false;
+  }
+  return hostname === host || hostname.endsWith(`.${host}`);
 }
 
 /**

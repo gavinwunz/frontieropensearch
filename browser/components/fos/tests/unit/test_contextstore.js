@@ -1064,3 +1064,336 @@ add_task(async function test_resuming_an_open_trail_leaves_it_alone() {
   );
   await store.close();
 });
+
+// ---- forget -----------------------------------------------------------------
+
+/**
+ * Count rows in a table.
+ *
+ * @param {object} store
+ * @param {string} table
+ * @param {string} [where] A bare condition, without `WHERE`.
+ * @returns {Promise<number>}
+ */
+async function rowCount(store, table, where = "1") {
+  const [row] = await store.connection.execute(
+    `SELECT COUNT(*) AS n FROM ${table} WHERE ${where}`
+  );
+  return row.getResultByName("n");
+}
+
+/**
+ * A profile with two hosts on one trail, so forgetting one leaves the other.
+ *
+ * The tree is deliberately three deep with the middle node on the host being
+ * forgotten, because reparenting is the decision most easily got wrong and it
+ * is invisible in a two-node fixture.
+ *
+ * @returns {Promise<object>} The store and the ids the tests assert on.
+ */
+async function forgettableStore() {
+  const store = await freshStore();
+  const trailId = await store.addTrail({ name: "the trail" });
+  const root = await store.addNode({
+    trailId,
+    url: "https://keep.example/start",
+    now: 1000,
+  });
+  const middle = await store.addNode({
+    trailId,
+    parentId: root,
+    url: "https://forget.example/hub",
+    now: 2000,
+  });
+  const leaf = await store.addNode({
+    trailId,
+    parentId: middle,
+    url: "https://keep.example/answer",
+    now: 3000,
+  });
+  return { store, trailId, root, middle, leaf };
+}
+
+add_task(async function test_forgetting_a_host_reparents_rather_than_orphans() {
+  const { store, root, middle, leaf } = await forgettableStore();
+
+  const summary = await store.forgetHost("forget.example");
+  Assert.equal(summary.nodes, 1, "one node went");
+
+  const [row] = await store.connection.execute(
+    `SELECT parent_id FROM trail_node WHERE id = :leaf`,
+    { leaf }
+  );
+  Assert.equal(
+    row.getResultByName("parent_id"),
+    root,
+    "the child of a forgotten node hangs off its grandparent, so the page it " +
+      "led to is still on a connected trail"
+  );
+  Assert.equal(
+    await rowCount(store, "trail_node", `id = ${middle}`),
+    0,
+    "the forgotten node itself is gone"
+  );
+  await store.close();
+});
+
+add_task(async function test_forgetting_a_host_takes_subdomains() {
+  const store = await freshStore();
+  const trailId = await store.addTrail({});
+  await store.addNode({ trailId, url: "https://docs.forget.example/a" });
+  await store.addNode({ trailId, url: "https://forget.example/b" });
+  await store.addNode({ trailId, url: "https://notforget.example/c" });
+
+  const summary = await store.forgetHost("forget.example");
+  Assert.equal(
+    summary.nodes,
+    2,
+    "the host and its subdomain, and nothing else"
+  );
+  Assert.equal(
+    await rowCount(store, "trail_node"),
+    1,
+    "a host that merely ends in the same letters is not a subdomain"
+  );
+  await store.close();
+});
+
+add_task(async function test_a_query_goes_with_the_page_it_landed_on() {
+  const { store, middle, leaf } = await forgettableStore();
+
+  const landed = await store.recordQuery({
+    raw: "how do hubs work",
+    trailNodeId: middle,
+  });
+  const survivor = await store.recordQuery({
+    raw: "what is the answer",
+    trailNodeId: leaf,
+    sourceNodeId: middle,
+  });
+  const stranded = await store.recordQuery({
+    raw: "never landed anywhere",
+    sourceNodeId: middle,
+  });
+
+  const summary = await store.forgetHost("forget.example");
+  Assert.equal(summary.queries, 2, "the landed one and the stranded one");
+
+  Assert.equal(
+    await rowCount(store, "query", `id = ${landed}`),
+    0,
+    "a query that landed on the forgotten page goes with it"
+  );
+  Assert.equal(
+    await rowCount(store, "query", `id = ${stranded}`),
+    0,
+    "a query that never landed goes with the page it was typed from"
+  );
+  Assert.equal(
+    await rowCount(store, "query", `id = ${survivor}`),
+    1,
+    "a query that landed on a page still kept is an answer the user still has"
+  );
+
+  const [row] = await store.connection.execute(
+    `SELECT source_node_id FROM query WHERE id = :survivor`,
+    { survivor }
+  );
+  Assert.equal(
+    row.getResultByName("source_node_id"),
+    null,
+    "but its backlink to the forgotten page is severed, or the page stays " +
+      "addressable through the table that reads it"
+  );
+  await store.close();
+});
+
+add_task(async function test_forgetting_takes_everything_hanging_off_a_node() {
+  const { store, middle } = await forgettableStore();
+
+  const visit = await store.startVisit(middle, 2000);
+  await store.endVisit(visit, { dwellMs: 5000, outcome: "read" });
+  await store.placeCard(middle, { x: 3, y: 4, pinned: true });
+  await store.recordEntities(extractEntities("Ada Lovelace wrote the notes"), {
+    nodeId: middle,
+  });
+  await store.connection.execute(
+    `INSERT INTO embedding (ref_kind, ref_id, model, dim, vector, created_at)
+     VALUES ('trail_node', :middle, 'test', 2, x'0000', 1)`,
+    { middle }
+  );
+
+  await store.forgetHost("forget.example");
+
+  for (const [table, where] of [
+    ["visit", `trail_node_id = ${middle}`],
+    ["field_placement", `trail_node_id = ${middle}`],
+    ["entity_mention", `trail_node_id = ${middle}`],
+    ["embedding", `ref_kind = 'trail_node' AND ref_id = ${middle}`],
+  ]) {
+    Assert.equal(
+      await rowCount(store, table, where),
+      0,
+      `${table} keeps nothing about a forgotten node`
+    );
+  }
+  Assert.equal(
+    await rowCount(store, "entity"),
+    0,
+    "an entity whose last mention has gone is a name with nothing behind it"
+  );
+  await store.close();
+});
+
+add_task(async function test_an_emptied_context_and_trail_are_deleted() {
+  const { store, middle, leaf } = await forgettableStore();
+  const doomed = await store.addContext({ label: "the forgotten topic" });
+  await store.addMember(doomed, { nodeId: middle, source: "provenance" });
+
+  const other = await store.addTrail({ name: "a trail wholly on that host" });
+  const only = await store.addNode({
+    trailId: other,
+    url: "https://forget.example/alone",
+  });
+  const kept = await store.addContext({ label: "a topic with more to it" });
+  await store.addMember(kept, { nodeId: only, source: "provenance" });
+  await store.addMember(kept, { nodeId: leaf, source: "provenance" });
+
+  const summary = await store.forgetHost("forget.example");
+
+  Assert.equal(
+    await rowCount(store, "context", `id = ${doomed}`),
+    0,
+    "a context whose every member has gone is a label naming what was forgotten"
+  );
+  Assert.equal(
+    await rowCount(store, "context", `id = ${kept}`),
+    1,
+    "a context that loses one member of several is not emptied"
+  );
+  Assert.equal(
+    await rowCount(store, "trail", `id = ${other}`),
+    0,
+    "and a trail with no nodes left is a name with nothing under it"
+  );
+  Assert.equal(
+    summary.trails,
+    1,
+    "the trail that emptied, not the one that did not"
+  );
+  await store.close();
+});
+
+add_task(async function test_a_merge_family_is_weighed_whole() {
+  const store = await freshStore();
+  const trailId = await store.addTrail({});
+  const doomedNode = await store.addNode({
+    trailId,
+    url: "https://forget.example/a",
+  });
+  const keptNode = await store.addNode({
+    trailId,
+    url: "https://keep.example/b",
+  });
+
+  const a = await store.addContext({ label: "one half" });
+  const b = await store.addContext({ label: "the other half" });
+  await store.addMember(a, { nodeId: doomedNode, source: "provenance" });
+  await store.addMember(b, { nodeId: keptNode, source: "provenance" });
+  await store.mergeContexts(a, b);
+
+  await store.forgetHost("forget.example");
+
+  Assert.equal(
+    await rowCount(store, "context", `id = ${a}`),
+    1,
+    "a merged context with no members of its own is half a live enquiry, " +
+      "not an empty one — judging its row alone would delete it"
+  );
+  await store.close();
+});
+
+add_task(
+  async function test_forgetting_a_range_takes_the_searches_typed_in_it() {
+    const store = await freshStore();
+    const trailId = await store.addTrail({});
+    const old = await store.addNode({
+      trailId,
+      url: "https://keep.example/old",
+      now: 1000,
+    });
+    await store.addNode({
+      trailId,
+      url: "https://keep.example/new",
+      now: 50_000,
+    });
+    const typedLater = await store.recordQuery({
+      raw: "a search about an old page",
+      trailNodeId: old,
+      now: 60_000,
+    });
+
+    const summary = await store.forgetRange(40_000, 70_000);
+
+    Assert.equal(summary.nodes, 1, "the node created inside the window");
+    Assert.equal(
+      await rowCount(store, "query", `id = ${typedLater}`),
+      0,
+      "a search typed inside the window goes even though it landed on a page " +
+        "first seen long before it"
+    );
+    Assert.equal(
+      await rowCount(store, "trail_node", `id = ${old}`),
+      1,
+      "and the page it was about stays, because it is not in the window"
+    );
+    await store.close();
+  }
+);
+
+add_task(
+  async function test_forget_all_empties_every_table_but_keeps_the_schema() {
+    const { store, middle } = await forgettableStore();
+    await store.recordQuery({ raw: "anything at all", trailNodeId: middle });
+    const context = await store.addContext({ label: "a topic" });
+    await store.addMember(context, { nodeId: middle, source: "provenance" });
+
+    const summary = await store.forgetAll();
+    Assert.greater(summary.nodes, 0, "the summary reports what went");
+
+    for (const table of [
+      "trail",
+      "trail_node",
+      "query",
+      "visit",
+      "entity",
+      "entity_mention",
+      "context",
+      "context_member",
+      "embedding",
+      "field_placement",
+    ]) {
+      Assert.equal(await rowCount(store, table), 0, `${table} is empty`);
+    }
+    Assert.equal(
+      await store.connection.getSchemaVersion(),
+      SCHEMA_VERSION,
+      "and the database is still a database, not a deleted file"
+    );
+    await store.close();
+  }
+);
+
+add_task(async function test_forgetting_nothing_is_not_an_error() {
+  const store = await freshStore();
+  const trailId = await store.addTrail({});
+  await store.addNode({ trailId, url: "https://keep.example/a" });
+
+  Assert.deepEqual(
+    await store.forgetHost("absent.example"),
+    { nodes: 0, queries: 0, contexts: 0, trails: 0 },
+    "a host with nothing recorded about it forgets nothing and says so"
+  );
+  Assert.equal(await rowCount(store, "trail_node"), 1, "and touches nothing");
+  await store.close();
+});
