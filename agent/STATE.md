@@ -43,78 +43,137 @@ History and Forget About This Site — **forgetting reaching the live session**,
 surviving a profile refresh, and surviving being unreadable**, and, this run,
 **a page the command bar was asked for being recorded as a typed visit** — the
 fork's first audit of what it writes into *Firefox's* data rather than what
-Firefox does to its own.
+Firefox does to its own — and, this run, **the page being asked for being shown
+and remembered while it is still in flight**, that lens' second finding and the
+first one that was not in a database at all.
 
 ## In progress
 
 Nothing waits on a person. **Nothing is running — the harness is free.**
 
-Run 50 took item 3 off the list — the new lens — and it paid on the first
-question asked.
+Run 51 took item 3 off the list — `browser.userTypedValue` — which run 50 had
+filed as "real but small". It was real. It was not small: "small" came from
+reading only the session-restore half of it.
 
-**The fork never told Places that it asked for a page.**
-`nsINavHistoryService.markPageAsTyped` is how a piece of chrome declares that
-it, and not a link on a page, wanted a URL; the method's own comment states the
-default in one line — *"if this is not called visits will be marked as
-TRANSITION_LINK"*. Firefox declares it from four surfaces (address bar, history
-menu, history sidebar, places organiser); this fork replaced all four with
-`FOSActionDispatcher` and declared it from none. Measured, not reasoned:
-`moz_historyvisits.visit_type` was 1 where 2 was due.
+**The address bar wrote three things on every load and the dispatcher that
+replaced it wrote none of them.** Run 50 fixed the first (`markPageAsTyped`).
+This run fixed the other two, which had to go in together.
 
-It was never cosmetic. `SQLFunctions.cpp` scores a typed visit a tier above a
-link visit on every visit, and `FOSPlacesFloor` ranks the command bar's fifth
-tier by exactly that column — deliberately, on the grounds that re-sorting
-would be inventing an opinion about a score it did not build. Which was right,
-and is what hid this: **the dispatcher demoted the pages the user named and the
-floor read the demotion back as though it were Places' opinion.** Neither
-module could see the other.
+`browser.userTypedValue` is a field on the browser element holding a request
+made and not yet answered. `Tabbrowser.addTab` says why it exists better than
+any doc comment in the tree — *"pretend the user typed this so it'll be
+available till the document successfully loads"* — and two things read it.
+`UrlbarInputBase.setURI` opens with `let value = this.userTypedValue` and shows
+that instead of the current URI, so Firefox's bar says where you are going from
+the moment you ask; this fork's bar went on claiming you were still where you
+were for the whole of every load, and for good if the load stalled.
+`TabState.collect` copies it out with `userTypedClear`, and `_restoreTabEntry`
+branches on the pair: with both set it reissues the *request*, without them it
+restores the history entry. So a browser killed mid-load came back to the page
+being left, having discarded the one asked for.
 
-Fixed with both halves, because half is worse than none. A *result page* is
-marked typed like anything else and kept off the typed weight by the visit's
-source, which `History.cpp` reads from a `triggeringSearchEngine` attribute
-`Tabbrowser._updateTriggerMetadataForLoad` puts on the browser element from
-`globalHistoryOptions`. Marking typed without passing the engine would lift
-every result page above the pages found from it. Passing `undefined` for a
-plain URL is equally load-bearing — the attribute lives on the browser element,
-not on the load, so a URL after a search would otherwise be filed under the
-last engine used.
+**The value was already computed.** Firefox's rule is one branch — the search
+terms for a search, the decoded URL otherwise — and `resolveInput` has produced
+exactly that split as `display` since the command bar's "Go to …" / "Search
+for …" row needed it. Punycode goes through `displaySpec`, which routes to the
+IDN service's spoof-checked conversion rather than decoding unconditionally.
 
-**The private guard is not the docshell's, and looks redundant until it isn't.**
-The typed mark is not a write and not private state: `MarkPageAsTyped` inserts
-into one *global* in-memory map keyed by URL spec, `RECENT_EVENT_THRESHOLD` =
-fifteen minutes. Mark from a private window, open the same page in an ordinary
-one inside that window, and the profile gets a typed visit that private
-browsing put there. Removing the guard fails
-`test_a_private_window_does_not_mark_the_profile` with `2 == 1`.
+**`initialPageLoadedFromUserAction` is the half that made it one change rather
+than two.** The fork does not clear the field; the tab progress listener does,
+on the location change ending the load, via `didStartLoadSinceLastUserTyping()`.
+That flag is raised at `STATE_START` — except for an initial page arriving over
+a blank tab, deliberately, because that load is chrome's doing and must not wipe
+what a user was typing. Writing the pending value without opting out of that
+carve-out leaves `about:newtab` in the address bar permanently, over a page that
+finished loading: worse than the staleness the change fixes.
 
-Green: **949 FOS browser-chrome checks** (up from 904; the file adds 17), 322
-node checks, xpcshell clean, 0 failures across the suite. **Three mutations,
-all three caught** — the mark dropped (3 tasks fail), the private guard removed
-(the leak appears), the search condition inverted (6 checks fail, including the
-clearing one). Lint clean on every changed file.
+**No private guard, unlike the typed mark, and the asymmetry is deliberate.**
+The typed mark writes a process-global map an ordinary window reads back; this
+writes one field on one browser element, and session store never persists a
+private window to disk. A guard would only blind a private window's bar to its
+own pending loads.
+
+**The redraw is the one thing here Firefox does not do.** Its bar is the surface
+that was typed into and is already showing the value before the field is set;
+this fork moved entry to the command bar and left the bar as a display, so
+without an explicit `gURLBar.setURI()` the field would be set, read by session
+store, and never once seen. Checked rather than assumed, because showing a URL
+the browser is not at is the shape of a real vulnerability family (MFSA 2013-04,
+CVE-2016-1707, the 2020 mobile sweep) and bug 610357 still carries the phishing
+constraint in a source comment. It does not bind: every one of those bugs is web
+content choosing the URL and the timing, and this field is written only by
+`FOSActionDispatcher`, whose callers are the command bar and the context
+sidebar. The safety is `pageproxystate="invalid"`, which `identity-block.css`
+and `browser-siteIdentity.js` use to hide the identity box and refuse the
+identity panel — verified in the tree and asserted in the test.
+
+Green: **965 FOS browser-chrome checks** (up from 949; the file adds 16), 322
+node checks, xpcshell clean, 0 failures across the suite. **Five mutations, four
+caught** — the pending write dropped (10 checks fail), a search made pending as
+its result URL, the initial-page declaration dropped, the redraw dropped — and
+**one deliberate survivor**, below. Lint clean on every changed file.
 
 `main` is at `phase-3`. `agent/dev` is pushed through this run's commits.
 
 ## Next task
 
-1. **Why this build has no remote tabs.** Unchanged. Next step is
-   `UrlbarProviderRemoteTabs.isActive` in a driven browser with
+1. **Why this build has no remote tabs.** Unchanged for several runs. Next step
+   is `UrlbarProviderRemoteTabs.isActive` in a driven browser with
    `services.sync.username` set, not more reading.
 
 2. **The rails still overlay the page**, and **the 17 timed-out urlbar files**,
    and **a region's height is a ratchet** (`FIELD.md` §6) — all unchanged, all
    belonging with the Field's restructure rather than piecemeal.
 
-3. **`browser.userTypedValue`, the same lens' next probe.** The urlbar sets it
-   before a load and SessionStore persists it, so a tab caught mid-load of a
-   typed URL restores to what was asked for rather than to what was there. The
-   fork never sets it. Real but small, and it tangles with trail re-entry
-   restoring through `setTabState`, which is a different owner — so it wants
-   its own look rather than a rider on something else. `IDEAS.md` run 50 has
-   the two probes and the one thing that lens rejected (`moz_inputhistory`,
-   deliberately not written, because provenance replaced the adaptive signal).
+3. **The lens has one probe left that is not the Field's.** `IDEAS.md` run 51
+   lists three, and two of them are the Field's problem: the tab title during a
+   load belongs with the restructure, and `SessionStore` search mode is very
+   likely a genuine non-issue given the fork has no search mode. The one that
+   stands on its own is **abandoning a pending request**. Firefox's Escape
+   reverts the bar and clears `userTypedValue`; this fork's bar is read-only so
+   there is nothing to revert *in the bar*, but a pending value now exists with
+   no way to abandon it short of the load finishing. It wants to be the command
+   bar's own cancel rather than a second Escape handler, which makes it a
+   grammar question as much as a plumbing one — read `GRAMMAR.md` first.
 
 ## Found this run, not yet chased
+
+- **A fixture that crashes clears the thing you are measuring.** The
+  initial-page test first used `about:newtab`, and removing
+  `initialPageLoadedFromUserAction` failed only the assertion that the attribute
+  was set — the assertion on the *consequence* kept passing. Not a weak test:
+  `about:newtab`'s content process segfaults on this configuration (the known
+  x11/24.04 family) and a crashed browser clears the field by an unrelated
+  route. `chrome://browser/content/blanktab.html` is a static document with no
+  script, is in `gInitialPages`, and does not crash; with it the mutation fails
+  the consequence too. General rule, worth keeping: **a mutation caught only by
+  an assertion on the implementation, while the assertion on the consequence
+  still passes, usually means a second mechanism is producing the same outcome.
+  Find it before rewriting the assertion.**
+
+- **A second deliberate surviving mutation, this run.** Moving `#markAsPending`
+  below `loadURI` survives the whole suite. The ordering is right — the
+  `userTypedValue` setter resets the change tracker the listener raises at load
+  start — but with a remote browser the load goes out over IPC, so `STATE_START`
+  cannot land between two statements of one synchronous block and no honest test
+  can see the difference. Recorded in the source beside the call so it is not
+  "simplified" later. Joins run 46's `detach` survivor.
+
+- **`state.entries[state.index - 1]` races SessionStore's cache.** An assertion
+  on which history entry a mid-load `TabState.collect` would restore passed
+  clean twice and then failed under an unrelated mutation, because the cache is
+  updated asynchronously from the content process. Dropped rather than made to
+  wait: it asserted SessionStore's bookkeeping, not this fork's. Do not add it
+  back.
+
+- **An sjs that delays a response must use `timer.init`, not
+  `initWithCallback`.** `fixtures/slow.sjs` is the fork's first delaying
+  fixture. Written with `initWithCallback` and an early partial `response.write`
+  it did not delay at all — the page arrived immediately, which reads exactly
+  like a test asserting the wrong thing rather than a broken fixture, and cost
+  two runs of the file to tell apart. The working form is
+  `browser_637020_slow.sjs`'s: `processAsync`, headers only, then
+  `timer.init(fn, ms, TYPE_ONE_SHOT)` with the timer held on the scope.
 
 - **`node --test <directory>` does not work on this machine's node.** Every
   file in `tests/node/` carries a comment saying to run
@@ -165,7 +224,7 @@ clearing one). Lint clean on every changed file.
 
 ## Background jobs
 
-**Nothing is running.** `fossuite49b` was the last, and it finished — 904
+**Nothing is running.** `fossuite51` was the last, and it finished — 965
 browser-chrome checks, 0 failures.
 
 `agent/mutate.sh` is new: apply one replacement, **assert it applied**, run a

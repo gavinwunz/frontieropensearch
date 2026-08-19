@@ -10,6 +10,22 @@ this, and what was decided when it was built" — the reasoning in full is in
 `design/` and `context-engine/`. Nothing here is waiting on anybody; what is,
 is in `STATE.md`.
 
+- **The page being asked for is shown and remembered while it is in flight.**
+  The second missing write found by run 50's lens, and not in a database:
+  `browser.userTypedValue` holds a request that has been made and not answered,
+  and `FOSActionDispatcher` set it never. Two readers were both wrong — the
+  address bar kept claiming the user was still on the page being left for the
+  whole of every load, and `TabState.collect` had nothing to carry, so a
+  browser killed mid-load came back to the page it was leaving rather than the
+  one asked for. The value is the split `resolveInput` already computes: the
+  words for a search, the decoded URL for a URL. It goes in with
+  `initialPageLoadedFromUserAction`, without which the progress listener skips
+  the started-load flag for an initial page over a blank tab and nothing ever
+  clears the value again. The redraw is in the dispatcher rather than the
+  location display because Firefox's address bar is the surface that was typed
+  into and this fork's is not; `setURI` puts it in `pageproxystate="invalid"`,
+  which is what withholds the identity box from a page that has not loaded.
+
 - **A page the command bar was asked for is recorded as a typed visit.** The
   fork replaced the address bar, the history menu and the history sidebar with
   one dispatcher and dropped what all three told Places on the way:
