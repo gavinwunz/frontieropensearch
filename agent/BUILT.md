@@ -10,6 +10,34 @@ this, and what was decided when it was built" — the reasoning in full is in
 `design/` and `context-engine/`. Nothing here is waiting on anybody; what is,
 is in `STATE.md`.
 
+- **Private browsing stays out of the database.** A private window wired its
+  context engine to the profile's store like any other window, so every URL,
+  every line typed at the command bar, every dwell time and every derived
+  context label from a private session was written to a file — the mode whose
+  entire promise is that nothing is written down was the one place the fork
+  recorded most freely. Nothing in `browser/components/fos/` had ever asked
+  which kind of window it was in. Private windows now record to a memory
+  database: `FOSContextStore.open({memory: true})`, the same schema and the same
+  queries, held by `FOSContextEngine.privateStore()` and shared by every private
+  window, so the rail, the Field and the sidebar work exactly as they do
+  elsewhere and none of it is ever a file. Recording nothing was rejected — the
+  browser this forks keeps history, downloads and an address bar working in a
+  private window and only declines to persist them, and a private window with an
+  empty rail would send the user back to a normal one. Dropped at
+  `last-pb-context-exited`, but only when no private window is left, because
+  that topic can arrive after a new session has started. Two lines in
+  `Sqlite.sys.mjs` so a memory connection can be wrapped at all, both
+  connections closed rather than just the wrapper, and private engines ignore
+  `fos-context-forgotten` because the two databases number their rows from 1
+  independently. `SCHEMA.md` §Private browsing; run 46.
+
+- **Clear-on-shutdown is watched reaching the store.** The nastiest of the four
+  integration points run 44 named turned out to need no work — shutdown
+  sanitization clears `CLEAR_HISTORY`, which is the flag the cleaner registers
+  under, and it runs at `profile-change-teardown`, before the phase where
+  `Sqlite.sys.mjs` closes connections. `browser_zzzshutdown.js` executes it
+  anyway. Run 46.
+
 - **Forgetting reaches the live session.** Run 44 shipped the store's delete and
   left the window showing what it had just deleted: the rail's tree and the
   Field's cards are in-memory objects built during the session, so a page

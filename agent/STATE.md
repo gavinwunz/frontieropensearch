@@ -38,99 +38,77 @@ behind it, the voice path with both gestures and its silence bounds, `done` and
 the re-entry resume it forced, the Field's arrangement surviving a restart,
 "This page made you ask" as the sidebar's second page-scoped section,
 **forgetting** — the store's first delete of any kind, joined to Clear Recent
-History and Forget About This Site — and, this run, **forgetting reaching the
-live session**: the window now stops showing what the store has just deleted.
+History and Forget About This Site — **forgetting reaching the live session**,
+and, this run, **private browsing being kept out of the database at all.**
 
 ## In progress
 
 Nothing waits on a person. **Nothing is running — the harness is free.**
 
-Run 45 took item 1 off the last run's list: **forgetting now reaches the live
-session.** The store had learned to forget and the window had not, so a page
-forgotten while it was on screen stayed there until restart and every later
-navigation from it wrote rows pointing at a node that was gone.
+Run 46 did not take item 1 off the last run's list so much as find what that
+item was pointing at. The list said to re-run run 44's lens against session
+restore, profile migration, the preferences data panel and sanitize-on-shutdown.
+The same lens asked one notch earlier — what does Firefox decide about a *window*
+before this component ever sees it — found **private browsing**, and it was
+worse than anything on the list: a private window got the profile's store like
+any other, so every URL, every line typed at the command bar, every dwell time
+and every derived context label from a private session was written to a file.
+Run 44's defect was a record the user could not delete; this one was a record
+that should never have existed. The only mention of private browsing anywhere in
+the component was in `FOSActions`, suppressing *Places* keyword logging — the
+fork was careful about upstream's recording and not about its own.
 
-The decision the work needed first — what happens to the tab you are looking at
-— came out of Gecko's own source rather than out of reasoning.
-`SessionStore.onPurgeDomainData` removes every *closed* tab and every tab of a
-*closed* window matching the domain and does not touch an open one, so **the tab
-is not closed**; it is left *unrecorded* instead, and navigating onward records
-again because forgetting is a delete and not a blocklist.
+Private windows now record to a memory database and never to a file: same store,
+same migrations, same queries, so the rail, the Field and the sidebar work as
+they do everywhere else. Recording nothing was the other option and was
+rejected; the reasoning and the sources are in `IDEAS.md` run 46, and the rules
+are in `SCHEMA.md` §Private browsing.
 
-Built: `TrailStore.forget`, `FOSTrailSession.forget`, `FieldModel.drop` and the
-Field pass that uses it, `ForgetSummary` carrying `nodeIds`/`contextIds`/`all`,
-and an observer on `fos-context-forgotten` in every window's engine. `FOSForget`
-waits for every window's write queue to drain before deleting — the one place
-the "recording never blocks browsing" rule is deliberately suspended. The
-invariant is in `SCHEMA.md` §Forgetting: the tree and the engine's id map move
-together, and the map alone is the trap.
+Three things fell out of the work rather than being planned, and all three came
+from running the thing rather than reading it:
 
-Also, unplanned and load-bearing: **nothing had ever torn an engine down.** A
-`WeakMap` made that survivable; a strong observer reference held by a service
-that outlives every window does not. `attach` now listens for `unload`, and the
-`detach` it triggers also closes the visit open on the window — a dwell time
-that used to be dropped.
+- `Sqlite.sys.mjs` cannot wrap a memory connection — two lines, now the second
+  edit outside `browser/`.
+- Closing the wrapper does not close the database, so a private session's pages
+  would have outlived it in the process. A mutation found that one.
+- **`last-pb-context-exited` is a trigger, not an event.** It can arrive when a
+  new private window is already open, and dropping the store there takes the
+  rail out from under a live window. Guarded; the test waits on the store being
+  gone rather than on the topic firing.
 
-Green: **311 node checks, 193 xpcshell subtests in the store file (plus 75 in
-the field file), 880 browser-chrome checks, 0 failures** — up from 857.
-**Fourteen mutations, thirteen caught, one genuinely equivalent.** Five browser
-mutations survived the first pass and three were real gaps; see the journal for
-what each one taught.
+Also closed, and it needed no code: **sanitize-on-shutdown already reaches the
+store**, because shutdown sanitization clears `CLEAR_HISTORY` and runs at
+`profile-change-teardown`, before the phase where connections close.
+`browser_zzzshutdown.js` executes it rather than trusting the paragraph, and
+must stay last in the manifest because it empties the profile database.
 
-`agent/run45full.sh` is the whole FOS suite. Older gated jobs, unchanged and not
-needed this run: `run36`/`run37` (embedding measurement and the tier on it),
-`run39` (the merge offer), `run29`/`run30` (the speech latency measurement and
-the voice path in a real browser), `run43` (the three-file alphabetical prefix
-that reproduces a shared-window failure in two minutes). All the model ones need
-`agent/jobs/local-hub.py` serving weights from `/data/ml-models/onnx-models`
-with `MOZ_MODELS_HUB` pointed at it, because mochitest kills the process on a
-non-local weight fetch.
-
-**One thing is deliberately unverified and should stay flagged**: the positive
-half of `test_the_level_monitor_runs_against_a_real_capture` cannot run on this
-machine, because there is no audio output device for Web Audio to start a graph
-against. The real level path — an analyser actually reading a microphone — has
-never been observed working, only reasoned about; the first machine with audio
-hardware should run that file and check the positive branch is taken.
-
-Run 44's second unverified item is now closed: forgetting has been watched
-happening in a live window, in `browser_zzforget.js`, with the tab, the tree,
-the cards, the region, the marks and `back` all asserted on.
+Green: **877 browser-chrome checks, 0 failures** — up from 859 — plus the node
+and xpcshell files unchanged in count except the store's, which gained the
+memory-store tasks. **Ten mutations, nine caught.** The survivor is deliberate
+and named below.
 
 `main` is at `phase-3`. `agent/dev` is pushed through this run's commits.
 
 ## Next task
 
-Two runs running, the highest-value item has been the *seam* between the
-component and Firefox rather than anything inside the component. Item 1 below is
-the direct continuation of that and should be preferred.
+1. **Session restore, profile migration, and the preferences data panel** — the
+   three integration points still unchecked from run 44's list. Now much cheaper
+   than they were: `browser_zzzshutdown.js` shows the shape a test of one of
+   these takes, and two of the four turned out to need no code at all, so the
+   expected outcome is a short answer per point rather than a build. Profile
+   migration is the likeliest to need work — an import writes into Places and
+   the Context Engine will not know it happened.
 
-1. **Re-run run 44's lens against the other integration points.** Every Gecko
-   surface the fork has never implemented is a claim it is silently making.
-   Named and unchecked: **session restore**, **profile migration**,
-   **`about:preferences`' data panel**, and **sanitize-on-shutdown** — which is
-   the nastiest of the four, because a user who sets "clear history when I close
-   the browser" has asked for exactly this and would get it for Places only.
-   Now cheap to test as well as to find: `browser_zzforget.js` already drives
-   the real `nsIClearDataService` end to end, and the summary and the observer
-   are in place for any of them to hang off.
+2. **Show what a delete will take before it takes it.** `IDEAS.md` run 45,
+   unchanged. The blast radius is not guessable the way a flat history's is, the
+   counts are already computed by `#forget`, and the dialog already exists. Do
+   **not** build an undo window instead — rejected with reasons in `IDEAS.md`.
 
-2. **Show what a delete will take before it takes it.** `IDEAS.md` run 45. The
-   blast radius here is not guessable the way a flat history's is — forgetting
-   one host removes pages from the middle of several trails, strands the
-   questions asked from them, and can delete a context whose label named an
-   afternoon's work. The counts are already computed by `#forget`, so a dry run
-   reported into the dialog Firefox already shows is small. Not novel as an
-   interaction; useful here because the store is associative. Do **not** build
-   an undo window instead — rejected with reasons in `IDEAS.md`.
+3. **Sustained resize of the crowded overview.** `IDEAS.md` run 32, unchanged:
+   the burst is fixed but one rebuild is 18.27ms p50, longer than a frame.
+   Extend the reposition fast path to cover what `render` rebuilds.
 
-3. **Sustained resize of the crowded overview.** Recorded in `IDEAS.md` run 32
-   and not solved: the burst is fixed (53ms → 1.19ms) but one rebuild is 18.27ms
-   p50, longer than a frame. Extend the reposition fast path to cover what
-   `render` rebuilds. Bounded value — it is the deliberate worst case.
-
-4. **Why this build has no remote tabs.** Three upstream urlbar files fail on it
-   and the fork is not what breaks them. Next step is
+4. **Why this build has no remote tabs.** Unchanged. Next step is
    `UrlbarProviderRemoteTabs.isActive` in a driven browser with
    `services.sync.username` set, not more reading.
 
@@ -140,39 +118,29 @@ the direct continuation of that and should be preferred.
 
 ## Found this run, not yet chased
 
-- **A survived mutation is sometimes a comment to fix rather than a test to
-  write.** Two of this run's fourteen were equivalent mutants, and one of them
-  disproved a claim the code made about itself: the order of the session prune
-  and the id-map clean was documented as load-bearing and is not, because
-  reconciliation is only reached through the `#changed` that `session.forget`
-  fires at its end. The comment now states the invariant that is actually true.
-  Worth generalising — an equivalent mutant against a line the comments call
-  essential means the comment is wrong, not that the mutation was uninteresting.
+- **A deliberate surviving mutation.** `detach` now closes the open visit
+  *before* leaving the `recording` set, so a write enqueued while a window is
+  being torn down is one `settledEverywhere` can still wait for. Reversing the
+  two lines survives the suite and no honest test catches it: the ordering
+  narrows a race window rather than establishing an invariant, and a test for it
+  would have to race a forget against a window close. Kept because it is
+  strictly better and free; recorded here rather than papered over with a flaky
+  test.
 
-- **A gap can need a sharper fixture rather than a sharper assertion.** The
-  `back`-after-forgetting mutation survived because the fixture could not tell
-  the two behaviours apart: a forgotten page has to sit *between* two surviving
-  ones before "skip past it" and "refuse to move" differ at all. Adding the page
-  before it fixed the mutation and improved a second assertion for free —
-  reparenting now climbs past two forgotten pages onto a real survivor instead
-  of onto null.
+- **`BrowserTestUtils.openNewBrowserWindow({private: true})` never returns on
+  this machine.** It waits for the private window's first tab to load and that
+  content process dies on signal 11 — the same x11/24.04 family failure the tab
+  manifest already skips files for, and nothing to do with the fork. Opening the
+  window directly and waiting for `browser-delayed-startup-finished` works;
+  `browser_zzprivate.js` has the helper and the reason.
 
-- **`ChromeUtils.defineESModuleGetters` resolves each key to the export of that
-  name, not to the module namespace.** `lazy.FOSForget.FORGOTTEN_TOPIC` was
-  undefined and `addObserver` threw. `FOSForget.sys.mjs` has a comment saying
-  exactly this about its own keys, and it was read past. Cost one suite run;
-  worth remembering as the shape of mistake that documentation does not prevent.
-
-- **The upstream tree beats the web for "what does Firefox already do here".**
-  The search results for whether Forget About This Site closes open tabs are
-  support-forum guesswork. Forty lines of `SessionStore.sys.mjs` are definitive
-  and took less time to find.
+- **Subscribing to a startup topic after opening the window is a race.** The
+  first version of that helper hung because delayed startup had already
+  finished. Register, then open.
 
 - **`spoken` on a sidebar query row is set and never read.** Unchanged from runs
-  43 and 44. The view model carries `input_mode === "voice"` on every question
-  row and no renderer looks at it; the rail does use its equivalent. Noted
-  rather than chased — it is a view-model field, so nothing is accumulating and
-  nothing is unrecoverable.
+  43, 44 and 45. Noted rather than chased — it is a view-model field, so nothing
+  is accumulating and nothing is unrecoverable.
 
 ## Background jobs
 
@@ -375,6 +343,30 @@ stall browsing. So the database is a very good record and not a guaranteed one;
 do not build anything that assumes a row must exist.
 
 ## Gotchas worth not rediscovering
+
+**A notification named for an ending is not proof that the thing has ended.**
+`last-pb-context-exited` fires after the last private window closes, and if the
+user has opened another one by then it lands on a live private session — the
+test file's second private window was on screen when the topic fired for the
+first. Check the condition; do not trust the topic. Consumers whose private
+state is per-item (a download, a login) never notice this; a per-session store
+does. The same reasoning applies to any `*-exited` or `*-finished` topic the
+fork starts observing.
+
+**`Sqlite.sys.mjs` cannot wrap a connection to a memory database**, because
+`wrapStorageConnection` reads a name off `connection.databaseFile` and a memory
+database has none. Two lines fix it. And **closing the wrapper does not close
+the database**: a wrapped connection is deliberately treated as somebody else's
+to shut down, so whoever opened the raw `mozIStorageAsyncConnection` has to
+close it too, or it lives as long as the process does.
+
+**`BrowserTestUtils.openNewBrowserWindow({private: true})` hangs on this
+machine.** It waits for the private window's first tab to load, and that content
+process dies on signal 11 — the same x11/24.04 family failure the tab manifest
+already skips files for. Open the window with `OpenBrowserWindow({private:
+true})` and wait for `browser-delayed-startup-finished`, registering the
+observer *before* opening the window: delayed startup can finish before a caller
+that opened first gets to subscribe. `browser_zzprivate.js` has the helper.
 
 **A privileged caller loses the user-facing half of an API too.** A chrome
 window's `getUserMedia` does not prompt (`privileged = isChrome` in

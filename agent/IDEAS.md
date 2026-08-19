@@ -3565,3 +3565,132 @@ here specifically because the store is associative. Candidate task, not built.
 (`onPurgeDomainData`, `onPurgeSessionHistory`);
 https://www.nngroup.com/articles/confirmation-dialog/;
 https://www.saasui.design/blog/saas-destructive-actions-confirmation-ux-patterns
+
+---
+
+## Run 46 — private browsing, and what a memory-only store has to get right
+
+### The lens that found it
+
+Run 44's question was "what does Firefox already do *to* this component's
+data", and it found that `nsIClearDataService` had never heard of the database.
+The same question asked one notch earlier — what does Firefox already *decide*
+about a window before this component gets it — finds private browsing, and finds
+something worse. The first defect was a record the user could not delete. This
+one was a record that should never have been written: `browser-init.js` wires the
+Context Engine into every window, and nothing anywhere in
+`browser/components/fos/` had ever asked whether its window was private. The
+only mention of private browsing in the whole component was in `FOSActions`,
+suppressing *Places* keyword logging — the fork was careful about upstream's
+recording and not its own.
+
+Worth keeping as a method note: both defects were invisible from inside the
+component, where every test passed throughout, and both were found by asking
+about the boundary rather than about the feature.
+
+### Record nothing, or record to memory?
+
+- **Found:** deciding what a private window should do, before building anything.
+- **Verdict:** **adopt** record-to-memory. **Reject** recording nothing.
+
+The tree settles it faster than the literature does. Firefox in a private window
+keeps full session history, working downloads, a working address bar with
+history suggestions — it declines to *persist*, never to *have*. Private
+downloads are the closest analogue in JS: a separate in-memory `DownloadList`,
+dropped at `last-pb-context-exited` via `nsIPBMCleanupCollector.addPendingCleanup`
+so the teardown is awaited rather than merely started. Cookies do the same thing
+in C++ with a separate in-memory storage.
+
+Recording nothing would have been much less code and is the wrong answer for a
+browser whose *entire interface* is the record: a private window with an empty
+rail, a Field with no cards and a sidebar that cannot answer `what` is not a
+private browser, it is a broken one — and the user would open a normal window to
+get their work done, which is precisely the behaviour the mode exists to
+prevent. The argument that a private session should not accumulate a context it
+could then export as a pack is real but points the other way: the user is in
+control of that export, exactly as they are in control of saving a file from a
+private window.
+
+**Sources:** `toolkit/components/downloads/DownloadIntegration.sys.mjs`
+(`last-pb-context-exited`); `browser/components/sessionstore/SessionStore.sys.mjs`.
+
+### What the forensics literature actually says to build
+
+- **Found:** searching the private-browsing threat model before choosing where
+  the private store lives.
+- **Verdict:** **adopt** memory-only; **reject** a temp file deleted at exit.
+
+The threat model is a local attacker who gets the machine *after* the session,
+which makes every artifact on the disk the whole game. The recurring findings
+across a decade of forensic papers are not rows a browser meant to keep: they
+are a bookmark row with an empty title that reveals a private session happened,
+a `visit_count` of 0, and — the one that decides this design — **journal files
+left behind when the browser did not exit cleanly**. A private store written to
+a temp file and deleted at the end is defeated by a crash; a memory database
+cannot be, because there is no file to recover a free list from.
+
+Gecko's own answer where it *must* touch the disk in private mode is instructive
+and consistent: IndexedDB in a private window is encrypted with a key held only
+in memory. Make the artifact useless, or do not make one.
+
+That is also why the test searches the profile database's bytes for the private
+URL rather than querying it. SQL can only see rows that exist; a `SELECT`
+returning nothing is satisfied by a delete, and a delete is not what is being
+claimed.
+
+**Sources:** https://www.usenix.org/legacy/event/sec10/tech/full_papers/Aggarwal.pdf;
+https://www.dcs.warwick.ac.uk/~fenghao/files/DPM13.pdf;
+https://arxiv.org/pdf/1802.10523;
+https://dfrws.org/wp-content/uploads/2024/07/Decrypting-IndexedDB-in-private-mode-o_2024_Forensic-Science-International-.pdf
+
+### Two things a memory store gets wrong by default
+
+Both were found by execution rather than by reading, and both would have shipped
+looking correct.
+
+- **`Sqlite.sys.mjs` cannot wrap a memory connection**, because
+  `wrapStorageConnection` reads a name off `connection.databaseFile`, which is
+  null for one. Two lines fix it upstream — a `?.` and a fallback name — and
+  every other option was worse: a hand-written adapter over
+  `mozIStorageAsyncConnection` would be a second implementation of the store's
+  connection semantics, which is exactly the drift the memory store is designed
+  to avoid.
+- **Closing the wrapper does not close the database.** `Sqlite.sys.mjs`
+  deliberately treats a wrapped connection as somebody else's to shut down, and
+  drops its shutdown blocker instead of closing it. A store that closed only its
+  own handle would leave a private session's pages in the process for as long as
+  the browser ran: deleted from the browser's point of view, present in a memory
+  dump. The mutation that removed the second close survived the first test pass,
+  which is what surfaced it.
+
+### `last-pb-context-exited` is a trigger, not an event
+
+- **Found:** while the browser test failed with "Connection is not open."
+- **Verdict:** **adopt** a guard; never drop while a private window is open.
+
+The topic fires after the last private window has gone, and if the user has
+opened a new private window by then — closing one and starting another is
+ordinary — the notification lands on a live session. Observed directly: the
+test's second private window was on screen when the topic fired for the first,
+and the store was dropped out from under it. Every consumer in the tree whose
+private state is per-item (a download, a login) is indifferent to this; a
+per-session store is not.
+
+The general shape is worth remembering: **a notification named for an ending is
+not proof that the thing has ended.** Check the condition, do not trust the
+topic. The test waits on the store being gone rather than on the topic firing,
+for the same reason.
+
+### Sanitize-on-shutdown: already correct, now observed
+
+- **Found:** it was the nastiest of the four unchecked integration points named
+  in run 44.
+- **Verdict:** no work needed, and a test anyway.
+
+`Sanitizer.onStartup` registers `sanitizeOnShutdown` as a blocker on Places'
+clients-shutdown client, which blocks `profile-change-teardown`; the history
+item calls `deleteData` with `CLEAR_HISTORY`; the Context Engine's cleaner is
+registered under that flag. The ordering also holds: the clear runs at
+`profile-change-teardown`, and `Sqlite.sys.mjs` closes connections at
+`profile-before-change`, which is later, so the delete cannot race the database
+closing. `browser_zzzshutdown.js` runs it rather than trusting the paragraph.
