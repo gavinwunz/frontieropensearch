@@ -41,6 +41,8 @@ support-files = [
 
 ["browser_zzforgetpreview.js"]
 
+["browser_zzhistorygesture.js"]
+
 ["browser_zzmergeoffer.js"]
 
 ["browser_zzpending.js"]

@@ -117,6 +117,14 @@ export class FOSTrailSession {
   #departures = new Set();
   #settles = new Set();
   #restoring = new WeakMap();
+  // Which node each of a browser's session history entries stands for, keyed
+  // by index. Session history is Gecko's linear record of the same walk this
+  // component records as a tree, and the two stay one-to-one because re-entry
+  // replaces the whole history with a single entry (see `enter`) — so every
+  // entry above index 0 was appended by a navigation that also added a node.
+  // Kept so that a traversal can find the node it is landing on rather than
+  // inventing one; see the `LOAD_CMD_HISTORY` branch in `onLocationChange`.
+  #historyByBrowser = new WeakMap();
   #recent = [];
   #activeTrailId = null;
   #attached = false;
@@ -557,6 +565,11 @@ export class FOSTrailSession {
     if (restoring) {
       this.#restoring.delete(browser);
       if (restoring.url === location.spec) {
+        // Re-entry hands the tab a one-entry history, so the node being
+        // restored is what index 0 now stands for. Recorded here rather than in
+        // `enter` because this is the point at which the new history exists,
+        // which keeps the map written from one function only.
+        this.#recordHistoryEntry(browser, restoring.nodeId);
         this.#changed();
         return;
       }
@@ -572,6 +585,35 @@ export class FOSTrailSession {
         this.#changed();
       }
       return;
+    }
+
+    // A step through session history is a *move*, not a visit. Nothing else on
+    // this path can tell the two apart: a back arrives here with a committed
+    // top-level load to a URL the browser is not currently at, which is the
+    // exact shape of a click, so the rule below spawned a child for it — and
+    // the child duplicated the page the user had just come from, under the page
+    // they were leaving. The tree then recorded a journey nobody made, one node
+    // deeper on every press, and `up` walked the fiction. This is the same
+    // defect the `#restoring` flag above exists to prevent for re-entry; it was
+    // fixed there for this component's own verb and left standing for the four
+    // gestures Firefox binds to the same movement.
+    //
+    // `loadType` is the signal rather than the URL, because a link back to the
+    // page above you is a real visit and has to stay one. `nsIWebProgress`
+    // carries the docshell's load command, and `LOAD_CMD_HISTORY` covers back,
+    // forward and any `gotoIndex` — including `history.back()` called by the
+    // page itself, which is why this cannot be a hook on `Browser:Back`.
+    //
+    // A traversal to an index with no node is possible — a `pushState` entry
+    // has no node of its own — so an unknown index falls through and is
+    // recorded as a visit, which is what this did for every traversal before.
+    if (webProgress.loadType & Ci.nsIDocShell.LOAD_CMD_HISTORY) {
+      const landed = this.#historyNode(browser);
+      if (landed !== null) {
+        this.#setCurrent(browser, landed);
+        this.#changed();
+        return;
+      }
     }
 
     // A load that ends where the browser already is is not a new page. Two
@@ -600,7 +642,59 @@ export class FOSTrailSession {
         : this.store.visit(currentId, { url: location.spec });
 
     this.#setCurrent(browser, nodeId);
+    this.#recordHistoryEntry(browser, nodeId);
     this.#changed();
+  }
+
+  /**
+   * The node the browser's current session history entry stands for.
+   *
+   * @param {object} browser The browser element.
+   * @returns {?number} The node id, or null if this entry has no node.
+   */
+  #historyNode(browser) {
+    const index = browser.browsingContext?.sessionHistory?.index;
+    if (typeof index !== "number") {
+      return null;
+    }
+    const nodeId = this.#historyByBrowser.get(browser)?.get(index) ?? null;
+    // A node can be forgotten while its history entry is still there, and a
+    // traversal onto one must not put the window on a node the store has
+    // dropped — `#setCurrent` would re-derive a trail from nothing.
+    return nodeId !== null && this.store.getNode(nodeId) ? nodeId : null;
+  }
+
+  /**
+   * Note which node a browser's current history entry stands for.
+   *
+   * @param {object} browser The browser element.
+   * @param {number} nodeId The node just created for it.
+   */
+  #recordHistoryEntry(browser, nodeId) {
+    const index = browser.browsingContext?.sessionHistory?.index;
+    if (typeof index !== "number") {
+      return;
+    }
+    let entries = this.#historyByBrowser.get(browser);
+    if (!entries) {
+      entries = new Map();
+      this.#historyByBrowser.set(browser, entries);
+    }
+    // Stale entries are left rather than pruned, and that is a claim worth
+    // stating because it looks like an oversight. Navigating away from a
+    // mid-history position does drop every session history entry above it, and
+    // the map goes on describing pages this browser can no longer reach — but
+    // no read can reach them either. An index is only readable by traversing
+    // to it, which needs a session history entry there, and the navigation
+    // that created that entry came through this method first. A pruning pass
+    // was written, and removed when no mutation of it could be made to fail.
+    //
+    // The one way to reach an index without writing it is a page that gets no
+    // node at all: `isCapturable` refuses `about:blank` and the new tab page.
+    // That is safe for the same reason it is silent — the guard is above every
+    // branch here, so a traversal *onto* such a page returns before consulting
+    // the map, exactly as the navigation onto it did.
+    entries.set(index, nodeId);
   }
 
   /**

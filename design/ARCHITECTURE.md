@@ -415,6 +415,63 @@ of which look like they worked. The hook is a listener on the command element �
 the same event `mainCommandSet` already handles — so nothing about what upstream
 does changes.
 
+### Back and forward are moves through the tree, not visits to it
+
+Pillar B's capture rule is that every navigation which commits spawns a child of
+the node you were on. A step through session history commits a navigation, and
+arrives at `onLocationChange` looking exactly like a click: a top-level load, to
+a URL the browser is not currently at, with nothing in the flags to say where it
+came from. So it was treated as one. Pressing Back appended a copy of the page
+you had come *from*, underneath the page you were leaving, and made the copy
+current — a node deeper on every press, a spine nobody browsed, and `up` walking
+it. Three gestures reach it (`Alt+Left`, `accel+[`, the nav-bar button, plus the
+mouse's back button on hardware that has one), and the tree was wrong after any
+of them.
+
+This is the same defect `#restoring` exists to prevent, and the source comment
+there describes it exactly — "going back would silently add a node every time,
+and the tree would grow a duplicate spine that nobody browsed". It was fixed for
+re-entry, which is this component's own verb, and left standing for the movement
+Firefox owns. That is the general shape worth remembering: **the surfaces this
+fork replaced were audited, and the ones it inherited untouched were not.**
+
+The signal is `nsIWebProgress.loadType`, which carries the docshell's load
+command, and `LOAD_CMD_HISTORY` covers back, forward and any `gotoIndex`. Three
+alternatives were rejected:
+
+- **The URL.** A link back to the page above you is a real visit and has to stay
+  a new node. Matching on the URL would collapse the two, and it is the case
+  most likely to occur — sites link upward constantly.
+- **A hook on `Browser:Back`**, which is what `stop` does for `Browser:Stop`.
+  It cannot work here: a page calling `history.back()` produces the same
+  traversal and no command event at all, so every site with a "go back" link
+  would still have corrupted the tree. There is a test for exactly this.
+- **An `nsISHistoryListener`.** It gives an explicit `OnHistoryGotoIndex` and is
+  what SessionStore uses, but it has to be attached per browsing context and
+  re-attached across process switches. `loadType` is already on the argument
+  the listener is handed.
+
+Landing on the right node needs a second thing: which node a history entry
+stands for. That mapping is exact and cheap because re-entry replaces the whole
+session history with a single entry (`enter` calls `setTabState` with one), so
+every entry above index 0 was appended by a navigation that also created a node.
+The map is per browser, keyed by index, and written from one place.
+
+Stale entries in it are deliberately not pruned, which reads like an oversight
+and is not: an index is only readable by traversing to it, that needs a session
+history entry there, and the navigation which created that entry wrote the map
+first. A pruning pass was written and then deleted, because no mutation of it
+could be made to fail. The one way to reach an index without having written it
+is a page that never gets a node — `isCapturable` refuses `about:blank` and the
+new tab page — and that is safe for the same reason it is invisible: the guard
+sits above every branch, so a traversal *onto* such a page returns before the
+map is consulted, exactly as the navigation onto it did.
+
+What is still missing is the other half, and it is a §5 question rather than a
+correctness one: the gesture now moves through the tree correctly, but Back and
+Forward remain reachable only by hand. `back` is a verb and comes close; there
+is no `forward` at all.
+
 Upstream Firefox guidance in `AGENTS.md` and `docs/` still applies to everything
 below that line.
 

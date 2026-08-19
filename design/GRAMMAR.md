@@ -307,8 +307,30 @@ Two consequences worth stating, because they are the test of whether this has
 actually been built as specified:
 
 1. **No action may exist that only one modality can reach.** A command with no
-   spoken form is a bug, not an omission — and it will be caught by construction,
-   since the action table is the single source of both.
+   spoken form is a bug, not an omission.
+
+   This rule used to end "— and it will be caught by construction, since the
+   action table is the single source of both", which was false and was worth
+   more than the sentence cost. The action table is the single source of both
+   modalities *for the verbs in it*, and nothing whatever checks that the
+   browser's actions are in it. Counted in a running window rather than argued:
+   the chrome binds 101 `<key>` elements to 49 distinct commands, and three of
+   those are this fork's. The other forty-six are Firefox's, inherited whole,
+   every one of them reachable by a gesture and none of them by a word.
+
+   Not all forty-six are violations — most reach no *action* in the sense §5
+   means (text editing belongs to whatever is dictating, window management to
+   the window manager, the devtools keys to a surface that is not browsing) —
+   but that distinction has never been written down, which means it has never
+   been checked either. The verbs are conformant by construction. The window
+   is not, and the honest form of this rule is that the gap is enumerable and
+   has not yet been enumerated.
+
+   What this cost, concretely: `Browser:Back` was bound to four gestures, none
+   of them known to pillar B, and each press appended a node for a page the
+   user was arriving at *from* — so the tree grew a spine nobody browsed. It
+   was found by counting the keyset, not by using the browser, and it had been
+   there since the pillar landed. See `ARCHITECTURE.md` §7.
 2. **The ASR spike is not on the critical path for any of this.** Marks, the
    grammar, the parser and every action are keyboard-testable today. Speech
    recognition on the in-tree engine is still unproven (`IDEAS.md`), and this

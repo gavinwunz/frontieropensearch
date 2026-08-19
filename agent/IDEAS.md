@@ -4419,3 +4419,124 @@ https://github.com/nvaccess/nvda/issues/16960
   so it fails the "what did the replaced surface *write*" test that produced
   this run's finding — but it is now the only nav-bar verb with no spoken form,
   and that is a §5 question rather than a lens one.
+
+## Run 53 — counting the keyset, and what the count found
+
+### The item on the list was the wrong shape
+
+Run 52 left `Browser:Reload` as the standing question: `stop` had given the
+nav-bar's stop control a spoken form, so reload was "the only nav-bar verb with
+no spoken form", and `STATE.md` said to decide it on §5's terms or not at all.
+Deciding it on §5's terms turned out to mean not deciding *reload* at all,
+because the premise was a sampling error. Reload is not the only one. It is one
+of forty-six.
+
+### What §5 claimed, and what a running window actually binds
+
+`GRAMMAR.md` §5.1 said a command with no spoken form "will be caught by
+construction, since the action table is the single source of both". That is true
+of the verbs and says nothing about the browser. Nothing enumerates the window,
+so nothing has ever checked.
+
+Enumerated in a driven build rather than by reading the source, because `#ifdef`
+and platform-conditional blocks make the file a bad proxy for what a window has:
+
+| | |
+| --- | --- |
+| `<key>` elements live in the window | 101 |
+| distinct commands they reach | 49 |
+| commands this fork put there | 3 (`FOS:CommandBar`, `FOS:Field`, `FOS:TrailRail`) |
+| inherited from Firefox untouched | 46 |
+
+Not all forty-six are §5 violations, and the fork already has the principle that
+sorts them — stated twice in this file, for Tab-completion and for rail
+hoisting: **§5 governs actions, and an affordance that runs no action needs no
+word.** By that rule the forty-six fall into roughly four groups: text editing
+(6), which belongs to whatever is doing the dictating and where a browser verb
+would collide with the layer that already owns those words; devtools (14), a
+surface that is not browsing; window management, which the window manager owns;
+and the remainder, which are real browsing actions reachable by hand only. The
+grouping has never been written down, which is why it has never been checked.
+
+**Verdict: adopt the audit as a standing artefact — a manifest of every command
+with its class, and a test that fails when a key appears in neither the grammar
+nor a written-down exemption.** That is what would make §5.1's "by construction"
+true of the window rather than of the table. Not built this run; the audit found
+something that had to come first.
+
+### The count found a corrupted tree, not a missing word
+
+`Browser:Back` is bound to `Alt+Left`, `accel+[`, the nav-bar button and the
+mouse's back button. None of them were known to pillar B. Probed in a real
+window before anything was written, which is run 52's rule applied to its own
+successor — the finding was "Firefox does X and we do not", exactly the shape
+that produced a false premise last run:
+
+```
+before:  1 example.com  →  2 example.org
+press Back
+after:   1 example.com  →  2 example.org  →  3 example.com   (current)
+```
+
+Every press appended a copy of the page being arrived at, underneath the page
+being left. The tree recorded a journey nobody made, one node deeper per press,
+and `up` walked the fiction. `FOSTrailSession`'s own source comment describes
+this defect precisely — it is what `#restoring` exists to prevent — so it had
+been understood, fixed for the fork's own re-entry verb, and left standing for
+the movement Firefox owns. **The surfaces this fork replaced were audited; the
+ones it inherited untouched were not.** That is the transferable part, and it is
+worth more than the fix.
+
+### Why `loadType` and not the three obvious alternatives
+
+`nsIWebProgress.loadType` carries the docshell's load command; `LOAD_CMD_HISTORY`
+covers back, forward and any `gotoIndex`. Measured in the same probe: a normal
+load reports `1`, a traversal `4`, a reload `2` with `LOCATION_CHANGE_RELOAD`.
+
+- **Not the URL.** A link back to the page above you is a real visit and must
+  stay a new node. Sites link upward constantly, so this is the common case, not
+  the corner.
+- **Not a hook on `Browser:Back`**, which is what run 52 did for `Browser:Stop`.
+  A page calling `history.back()` produces the same traversal and no command
+  event at all, so every site with a "go back" link would still corrupt the
+  tree. There is a test for this, and it is the one that justifies the choice.
+- **Not an `nsISHistoryListener`.** Explicit, and what SessionStore uses, but it
+  attaches per browsing context and needs re-attaching across process switches.
+  `loadType` is already on the argument the listener is handed.
+
+### Method: two survivors that were dead code, and one premise that was wrong
+
+Five of the first eight mutations were caught. The two survivors were a pruning
+pass over the index map and a defensive clear on re-entry, and neither could be
+made to fail — because an index is only readable by traversing to it, which
+needs a history entry, which the navigation that wrote the map created. Both
+deleted rather than covered. Chasing them raised a case that looked like a real
+hole (a page with no node — `about:blank` — leaving a stale index answerable)
+and a test was written for it, which passed *before* the fix and could not have
+failed: `isCapturable` sits above every branch, so a traversal onto an
+uncaptured page returns before the map is consulted. The test was dropped.
+
+The other two survivors were the test's fault rather than the code's, and both
+named a reachable case: a back *after* re-entry, which needs an intervening
+navigation before there is anything to go back to; and a traversal onto a node
+that forgetting has deleted while its history entry survives. Covered, and both
+caught after.
+
+**Sources:** `uriloader/base/nsIWebProgress.idl` (`loadType`),
+`docshell/base/nsIDocShell.idl` (`LOAD_CMD_*`),
+`browser/components/sessionstore/SessionStore.sys.mjs` (the
+`nsISHistoryListener` idiom that was rejected),
+https://www.w3.org/WAI/GL/mobile-a11y-tf/wiki/Proposed_Speech_Command_Mechanism
+— the W3C mobile a11y task force on why voicing a shortcut ("press control
+papa") is not equivalent to a native spoken command, which is the argument §5
+was already making and the reason an inherited keybinding does not discharge it.
+
+### Not chased
+
+- **`Browser:Forward` has no verb at all**, and `back` only nearly covers
+  `Browser:Back` — the verb is time (`#previousNode`) and the gesture is the
+  session history chain, which agree on a linear walk and diverge after a
+  branch. Two movements under one name is the defect run 52 named as worse than
+  the one it fixed, so this wants deciding, not adding.
+- **The manifest and its test**, above. The next run's item, and the audit's
+  actual product.
