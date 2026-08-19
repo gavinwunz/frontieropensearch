@@ -1123,3 +1123,63 @@ negatives, and the first arbitrary pair tried produced a false positive.
 
 Five gated attempts, four failing, none a repeat of the last — each was the
 test being wrong about the product rather than the reverse.
+
+## 2026-08-19 — the Field's blank cards, and where the keyboard goes
+
+Phase plan complete, so this took STATE's own top item: the two narrow defects.
+Both were real. Neither was what the note said it was. 747 browser-chrome
+checks, 261 node tests, 2 xpcshell files, all green; the smoke run regenerated
+the artefacts.
+
+**The note named one blank card and there were three, with opposite causes.**
+`agent/reports/demo-3-field-region.png` shows a search result and its three
+branches. STATE recorded "the active card can have no thumbnail" and pointed at
+the card marked `m`. Reading the picture again, three of the four were grey —
+and the parent's cause and the children's are not the same bug.
+
+The children were never photographed because **re-entry is a departure the
+progress listener cannot announce**. The load `enter` starts belongs to the node
+being arrived at, so `#restoring` suppresses the departure — correctly, or the
+outgoing page's state would be written over the arrival being replayed. That
+left the one way of leaving a page this design encourages above all others
+taking no picture of it. `enter` announces it itself now, before anything has
+started to move, and awaits the listener: it is the only departure in the tree
+that is not a race, so it is the only one worth waiting for.
+
+The parent was never photographed for the *opposite* reason, and finding it took
+instrumenting the demo flow rather than reasoning about it. `enter` returns
+before the restore commits, so the navigation issued straight afterwards is
+*still* inside the restore window and its departure is suppressed too. Branching
+is exactly that shape — re-enter the result, go somewhere else — so the branch
+point is never departed at all, while its delayed settle capture had long since
+been discarded as stale. A node with no picture at all now takes one the moment
+it settles, half-drawn and all, and waits for the better one only if it already
+has something to show. Data Mountain's finding applied to its own edge case: a
+rough thumbnail is much closer to a good one than to none.
+
+**Three tests passed with the fix reverted, and that is the run's real lesson.**
+Each was a different simplification of the branch-point condition in
+`browser_field.js` — leave the page fast; leave it after a re-entry; leave it
+after re-entering the page already showing — and in each the ordinary departure
+capture won the race and filed a picture anyway, so the test proved nothing. The
+assertion belongs in `browser_zdemoflow.js`, which is the only place in the
+suite where the condition arises. Reverting the fix and re-running is the whole
+of the check, and it is cheap; three attempts here says to do it every time.
+
+**A capture that reports success is not a capture of the right thing.**
+`drawSnapshot` awaits twice and then paints whatever is in front of it, so a
+departure capture that lost its race filed a picture of the *next* page over the
+top of a correct one, with no error anywhere. The inner window id is the
+identity that changes exactly when the document does, and it is now read before
+and checked after.
+
+**And the focus bug was four bugs.** STATE guessed "focus is presumably left on
+a removed element". It was not: all four surfaces close by handing the keyboard
+to the content area, which is right only when the surface was the one thing on
+screen. Custody is a window-level fact, so it went to `FOSChrome` with the other
+things every surface shares — a stack, not a ranking, because the surface that
+most recently took the keyboard is the one the user just left. The command bar
+is the exception and it is not about what was open: a line that loaded a page
+hands over to the page, so `FOSActions` counts its loads and the bar reads the
+counter. The verbs cannot answer this, because a search reaches the dispatcher
+as bare prose and never becomes a verb at all.

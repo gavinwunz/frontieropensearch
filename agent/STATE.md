@@ -23,6 +23,36 @@ one.
 
 ## Done
 
+- **Both of STATE's narrow defects are fixed, and one of them was two.** The
+  Field's own screenshot had three grey cards out of four, not one, and the two
+  halves have opposite causes. A page branched *to* was never photographed
+  because re-entry is a departure the progress listener cannot announce — the
+  load `enter` starts belongs to the node being arrived at, so `#restoring`
+  suppresses it. `enter` announces it itself now, before anything moves, and
+  awaits the listener: the one departure in the tree that is not a race. A page
+  branched *from* was never photographed for the opposite reason — `enter`
+  returns before the restore commits, so the navigation that follows is *still*
+  suppressed by that same flag, while its delayed settle capture had already
+  been discarded as stale. A node with nothing at all now takes a picture the
+  moment it settles and waits for the better one only if it already has
+  something to show.
+
+  Also: a snapshot whose document changed underneath it is dropped.
+  `drawSnapshot` awaits twice and then paints whatever is in front of it,
+  reporting success either way, so a departure capture that lost its race filed
+  a picture of the *next* page over the top of a correct one. No error to
+  catch; the inner window id is the only thing that can tell them apart.
+
+- **Focus custody is a window-level fact and now lives in `FOSChrome`.** All
+  four surfaces took focus on open and gave it to the content area on close,
+  which is right only when the surface was the one thing on screen. `takeFocus`
+  and `releaseFocus` keep a stack — the surface that most recently took the
+  keyboard gets it back — rather than an invented precedence between panels.
+  The command bar is the exception and it is not about what was open: a line
+  that loaded a page hands over to the page. `FOSActions.loads` counts loads so
+  the bar can tell `field` from `wikipedia`, which the verbs cannot, since a
+  search reaches the dispatcher as bare prose.
+
 - **The cross-trail merge is offered, measured and driven.** STATE's top item
   since run 36 and now shipped. `FOSContextMerge.sys.mjs` is the pure half —
   `MERGE_FLOOR = 0.244`, the **mean of every cross pair** at d256 — and
@@ -592,6 +622,11 @@ for anything that needs the engine; `run29.sh` remains the latency measurement.
 Both need `agent/jobs/local-hub.py` serving the weights with `MOZ_MODELS_HUB`
 pointed at it, because mochitest kills the process on a non-local connection.
 
+This run needed no gated job: everything it touched is covered by the ordinary
+suite plus `agent/smoke.sh`, which is also the evidence — the fix is visible in
+`agent/reports/demo-3-field-region.png`, which went from three grey cards to
+four with pictures.
+
 `main` is at `phase-3`. `agent/dev` is pushed through this run's commits.
 
 ## Next task
@@ -599,15 +634,11 @@ pointed at it, because mochitest kills the process on a non-local connection.
 The phase plan is complete, so nothing pulls the next run in a particular
 direction. Ordered by value.
 
-1. **The two narrow defects.** The active card can have no thumbnail, and
-   closing the rail while the Field is open leaves Escape with nowhere to go.
-   Both small, both real, both cheap.
-
-2. **The bare tap for a voice turn.** `GRAMMAR.md` §9 carries it. Deliberately
+1. **The bare tap for a voice turn.** `GRAMMAR.md` §9 carries it. Deliberately
    unbuilt: a mis-tap opens the microphone for the whole thirty-second
    deadline, and how often that happens is a question about use.
 
-3. **Sustained resize of the crowded overview.** Recorded in `IDEAS.md` run 32
+2. **Sustained resize of the crowded overview.** Recorded in `IDEAS.md` run 32
    and *not* solved: the burst is fixed (53ms → 1.19ms) but one rebuild is
    18.27ms p50, longer than a frame, so continuous resizing of the worst case
    the design permits still costs ~21ms a frame over the control. The fix is to
@@ -615,21 +646,48 @@ direction. Ordered by value.
    value — it is the deliberate worst case, and dragging a window edge with the
    overview up is rare.
 
-4. **Why this build has no remote tabs.** Three upstream urlbar files fail on it
+3. **Why this build has no remote tabs.** Three upstream urlbar files fail on it
    and the fork is not what breaks them. The next step is
    `UrlbarProviderRemoteTabs.isActive` in a driven browser with
    `services.sync.username` set, not more reading.
 
-5. **The rails still overlay the page.** Run 32 took them off the *toolbar*,
+4. **The rails still overlay the page.** Run 32 took them off the *toolbar*,
    which was never a deliberate trade; covering the page still is, and STATE has
    always said it belongs with the Field's restructure rather than piecemeal.
    `--fos-chrome-block-start` makes taking layout space a smaller step than it
    was, which is worth knowing when that restructure comes.
 
-6. **The 17 timed-out urlbar files, if they are ever worth it**, and **a
+5. **The 17 timed-out urlbar files, if they are ever worth it**, and **a
    region's height is a ratchet** (`FIELD.md` §6, open rather than a defect).
 
 ## Found this run, not yet chased
+
+- **Three browser tests in a row passed with the fix reverted, and each was a
+  different wrong theory about why.** The branch point's missing thumbnail
+  reproduces only when a re-entry has not committed before the next navigation
+  starts, and every simplification of that in `browser_field.js` — leave the
+  page fast, leave it after a re-entry, leave it after a re-entry of the page
+  already showing — let the ordinary departure capture win instead. The
+  assertion went into `browser_zdemoflow.js`, which is the only place in the
+  suite where the condition actually arises. **Revert the fix and re-run before
+  believing a test pins anything**; it cost three attempts here and it would
+  have cost nothing to skip the fix entirely and never know.
+
+- **`#restoring` suppresses more departures than it looks like it does.**
+  `enter` sets the flag and returns without waiting for the restore to commit,
+  so any navigation issued straight afterwards is *also* treated as part of the
+  restore and announces no departure. That is not an edge case — it is exactly
+  what branching looks like, and it is why the page every branch came from was
+  the one page nothing photographed. Anything else keyed on that flag should be
+  checked against the same window.
+
+- **A capture that reports success is not a capture of the right thing.**
+  `drawSnapshot` awaits twice and paints whatever the browser is showing when
+  it finally runs, returning true either way, so the failure mode is a correct
+  picture of the wrong page rather than an error. The inner window id is the
+  identity that changes exactly when the document does. Any Gecko API that
+  reads content across an await needs the same before-and-after check —
+  `PageThumbs` does not do it for you.
 
 - **A plan recorded in STATE is not a design, and this one was wrong.** "An
   accepted offer is told apart from provenance by `context_member.source`" sat
@@ -853,18 +911,13 @@ direction. Ordered by value.
   from "The Mother of All Demos", which is one phrase and should be. The real
   answer is the embedding pass, where a model does this properly.
 
-- **The active card can have no thumbnail.** In the Field's region level the
-  search result's card painted blank while its three children painted
-  correctly, after every page had been dwelt on long enough to settle. Visible
-  in `agent/reports/demo-3-field-region.png` — the card marked `m`. The node
-  was departed three times by re-entry, so the departure capture is not firing
-  on the re-entry path the way it fires on an ordinary navigation. Narrow, but
-  it is the flagship surface and it is the one card the eye goes to.
-- **Closing the rail while the Field is open leaves Escape with nowhere to
-  go.** Found by a scratch screenshot test: open the rail, open the Field,
-  toggle the rail shut, and Escape no longer zooms the Field out. Focus is
-  presumably left on a removed element. Not on the demo flow's path, which is
-  why it is recorded rather than fixed.
+- **Both fixed. What the note above got wrong is worth keeping.** It said one
+  card was blank and named the wrong one; three of the four were, and the
+  parent's cause is the opposite of the children's. It also guessed the focus
+  bug was "presumably a removed element" — it was every surface closing to the
+  content area unconditionally. **A defect note written from a screenshot is a
+  symptom, not a diagnosis**, and the three attempts below are what it cost to
+  find that out.
 
 **A CSS rule that removes something is invisible to a reader, and the fix is a
 computed style.** `.fos-rail-list:focus-visible { outline: var(--focus-outline) }`
