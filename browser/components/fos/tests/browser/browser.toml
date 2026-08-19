@@ -49,3 +49,5 @@ support-files = [
 ["browser_zzvoicelatency.js"]
 
 ["browser_zzvoiceturn.js"]
+
+["browser_zzzshutdown.js"]

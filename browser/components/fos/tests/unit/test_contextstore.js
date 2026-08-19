@@ -1513,7 +1513,19 @@ add_task(async function test_a_memory_store_is_the_same_store() {
   Assert.equal(summary.nodes, 2, "and forgetting walks the same graph");
   Assert.equal(summary.queries, 1, "taking the query with it");
 
+  // Closing has to reach the database and not merely the wrapper around it.
+  // `Sqlite.sys.mjs` treats a wrapped connection as somebody else's to shut
+  // down, so a store that closed only its own handle would leave the pages of a
+  // private session in the process for as long as it ran — deleted from the
+  // browser's point of view and still there from a memory dump's.
+  const raw = store.memoryConnection;
+  Assert.ok(raw, "a memory store owns the connection under its wrapper");
   await store.close();
+  Assert.throws(
+    () => raw.createAsyncStatement("SELECT 1"),
+    /NS_ERROR_NOT_INITIALIZED/,
+    "and closing the store closes that connection too"
+  );
 });
 
 add_task(async function test_memory_stores_do_not_share_a_database() {

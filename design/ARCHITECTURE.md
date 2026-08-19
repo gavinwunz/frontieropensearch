@@ -175,8 +175,16 @@ inner loop of minutes rather than hours:
 | `browser/base/jar.mn`, `browser/components/moz.build` | packaging |
 | `browser/components/about/AboutRedirector.cpp` | `about:rights` is a local page, not a redirect to Mozilla's terms |
 | `toolkit/components/cleardata/ClearDataService.sys.mjs` | the Context Engine is registered as a `CLEAR_HISTORY` cleaner |
+| `toolkit/modules/Sqlite.sys.mjs` | a memory database can be wrapped, so private browsing has a store |
 
-The last row is the only edit outside `browser/`, and it is there because the
+The last row is two lines: `wrapStorageConnection` read a name off a
+`databaseFile` that a memory database does not have, so the documented way to
+get an async memory connection could not be used with the module every other
+store in the tree goes through. It is upstream's bug rather than the fork's, and
+the change is a `?.` and a fallback name.
+
+The row above it is the substantial edit outside `browser/`, and it is there
+because the
 service has no runtime registration API — a cleaner is a literal in a table in
 that file, so being reachable from Clear Recent History means editing it. The
 edit is kept to a delegation behind a `MOZ_BUILD_APP` guard, with everything it
@@ -192,11 +200,31 @@ Firefox already does *to* the fork's data**, and a short list of touched files
 is exactly what hides it: every integration point Gecko exposes and the fork has
 not implemented is a claim the fork is silently making. `nsIClearDataService`
 was the first one found — Clear Recent History cleared Places and left the
-richer record beside it — and it is unlikely to be the last. Named and not yet
-checked: session restore, profile migration, `about:preferences`' data panel,
-and sanitize-on-shutdown, which is the nastiest of the four because a user who
-sets "clear history when I close the browser" has asked for precisely this and
-would get it for Places only.
+richer record beside it — and it was not the last.
+
+**Private browsing was the second, and is worse than the first.** A private
+window ran the wiring block in §3 like any other window and got the profile's
+store, so a mode whose entire promise is that nothing is written down was
+writing every URL, every query and every dwell time to a file. The first defect
+was data the user could not delete; this one was data that should never have
+existed. The fix is in `SCHEMA.md` §Private browsing, and the general lesson is
+in the shape of the two: both were found by asking what Firefox does *to* this
+component rather than what the component does, and neither was visible from
+inside `browser/components/fos/`, where every test passed throughout.
+
+**Sanitize-on-shutdown turns out to be already covered**, which is worth
+recording as carefully as a defect would be. `Sanitizer.onStartup` adds
+`sanitizeOnShutdown` as a blocker on Places' clients-shutdown client, which
+blocks `profile-change-teardown`; its history item calls
+`nsIClearDataService.deleteData` with `CLEAR_HISTORY`, and that is the flag the
+Context Engine's cleaner is registered under. So the store is cleared, and it is
+cleared at `profile-change-teardown`, before the `profile-before-change` phase
+where `Sqlite.sys.mjs` closes connections — which is the part that could have
+been wrong and was not. `browser_zzzshutdown.js` runs it rather than trusting
+the reading.
+
+Named and still not checked: session restore, profile migration, and
+`about:preferences`' data panel.
 
 Forgetting is also where the fork's own data crosses back over that boundary in
 the other direction. The store is per profile and a session is per window, so

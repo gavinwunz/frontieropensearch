@@ -111,6 +111,7 @@ export class FOSContextStore {
   #connection;
   /** The mozStorage connection under a memory database, which this owns. */
   #raw = null;
+  #rawClosed = false;
   #restorationClaimed = false;
 
   /**
@@ -192,13 +193,27 @@ export class FOSContextStore {
     return version;
   }
 
+  /**
+   * The mozStorage connection under a memory store, or null for a file one.
+   *
+   * Exposed for the same reason `connection` is — so a test can see what the
+   * store is holding. The thing worth seeing here is that it gets closed:
+   * closing only the wrapper leaves the database open for the life of the
+   * process, and for a private session that means its pages are still in memory
+   * after the window that made them has gone.
+   *
+   * @returns {?object}
+   */
+  get memoryConnection() {
+    return this.#raw;
+  }
+
   /** Close the connection. Idempotent from the caller's point of view. */
   async close() {
     await this.#connection.close();
-    if (this.#raw) {
-      const raw = this.#raw;
-      this.#raw = null;
-      await new Promise(resolve => raw.asyncClose({ complete: resolve }));
+    if (this.#raw && !this.#rawClosed) {
+      this.#rawClosed = true;
+      await new Promise(resolve => this.#raw.asyncClose({ complete: resolve }));
     }
   }
 

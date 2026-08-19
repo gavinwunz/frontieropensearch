@@ -31,6 +31,9 @@ const { DATABASE_FILENAME, FOSContextStore } = ChromeUtils.importESModule(
 const { FOSTrailSession } = ChromeUtils.importESModule(
   "resource:///modules/FOSTrailSession.sys.mjs"
 );
+const { FORGOTTEN_TOPIC } = ChromeUtils.importESModule(
+  "resource:///modules/FOSForget.sys.mjs"
+);
 
 /**
  * A host nothing else in this directory browses, so a row bearing it on the
@@ -248,6 +251,33 @@ add_task(async function test_clearing_history_leaves_a_private_window_alone() {
     await nodesUnder(engine.store, SECRET),
     1,
     "and left the private session's own record alone"
+  );
+
+  // The same claim with the collision forced. The disk store's ids and this
+  // window's ids are drawn from different databases and both start at 1, so a
+  // summary naming low ids is exactly what a normal profile produces after a
+  // few pages — but the ids it names are somebody else's. Nothing above can
+  // produce the collision on demand, because which ids the disk store hands out
+  // is not something a test can choose; announcing the summary directly is the
+  // only way to state the case that would actually lose a page.
+  Services.obs.notifyObservers(
+    null,
+    FORGOTTEN_TOPIC,
+    JSON.stringify({
+      nodes: 3,
+      queries: 0,
+      contexts: 0,
+      trails: 0,
+      nodeIds: [1, 2, 3],
+      contextIds: [1],
+      all: false,
+    })
+  );
+  await engine.settled;
+  Assert.equal(
+    tree.nodes().length,
+    nodesBefore,
+    "and a summary whose ids collide with this window's takes nothing either"
   );
   await endPrivateSession(win);
 });

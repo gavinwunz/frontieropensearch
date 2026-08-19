@@ -161,6 +161,61 @@ so nothing further is written for what is still on screen. Navigating onward
 records again, because forgetting is a delete and not a blocklist; a user who
 wants a session that records nothing has a private window.
 
+## Private browsing
+
+The sentence above was the argument for not building a per-site "never record
+this" toggle, and it was false when it was written. A private window wired its
+engine to this database like any other window, so every URL, every line typed at
+the command bar, every dwell time and every derived context label from a private
+session was written to a file in the profile. Nothing in the component had ever
+asked which kind of window it was in.
+
+**A private window records to a memory database and never to a file.** Same
+schema, same migrations, same queries, same delete graph — `FOSContextStore.open`
+takes `memory: true` and changes nothing else, so there is no second, simpler
+store that can drift from this one. `FOSContextEngine.privateStore()` holds one
+per private session, shared by every private window, and `attach` is the single
+place that chooses between the two.
+
+**Recording nothing at all was the other option and is the wrong one.** The
+browser this forks keeps full session history, working downloads and a working
+address bar in a private window; it declines to *persist* them, not to have
+them. Private downloads are the closest precedent in the tree — a separate
+in-memory list, dropped when the session ends — and the same shape is right
+here. A private window whose rail was empty, whose Field had no cards and whose
+sidebar could not answer `what` would not be a private browser, it would be a
+broken one, and the user would go back to a normal window to get their work
+done, which is the opposite of what the mode is for.
+
+**The lifetime is the load-bearing half.** The store is dropped at
+`last-pb-context-exited`, and the private-browsing forensics literature is
+largely a catalogue of what happens when it is not: state that survives from one
+private session into the next, or onto the disk in a journal after a crash.
+Being a memory database answers the second by construction — there is no file to
+recover a free list from, which is why the check in `browser_zzprivate.js`
+searches the profile database's bytes rather than querying it.
+
+Two things the drop has to get right:
+
+- **The wrapper and the connection under it are both closed.**
+  `Sqlite.sys.mjs` treats a wrapped connection as somebody else's to shut down,
+  so closing only the handle it hands back leaves the database open for the life
+  of the process. Deleted from the browser's point of view and still there from
+  a memory dump's is not what this section claims.
+- **Nothing is dropped while a private window is still open.**
+  `last-pb-context-exited` is the trigger and not the event: it arrives after
+  the last private window has gone, and a user who closes one and immediately
+  opens another gets the notification on a live session. Observed rather than
+  reasoned about — a second private window was on screen when the topic fired
+  for the first.
+
+**A private window ignores `fos-context-forgotten`.** The two databases number
+their rows independently and both start at 1, so acting on the other one's
+summary would drop whichever private page happened to share an id with a
+forgotten one. Clearing history is about what is on the disk, and nothing a
+private window has recorded is; Firefox's sanitizer does not reach into a live
+private session either.
+
 ## Migrations
 
 Versioned and forward-only. `PRAGMA user_version` holds the applied version;
