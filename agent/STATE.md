@@ -46,123 +46,130 @@ record surviving a profile refresh, and surviving being unreadable.**
 
 Nothing waits on a person. **Nothing is running — the harness is free.**
 
-Run 47 took item 1 off the list and finished it: the three integration points
-run 44 named and had not checked. Two needed no code. The third was the worst
-defect the lens has turned up.
+Run 48 took item 1 off the list and finished it. Both clearing dialogs now say
+what they will take out of the Context Engine before they take it: Clear Recent
+History, on the line under "Browsing & download history", and Forget About This
+Site, under its list of categories.
 
-**`FirefoxProfileMigrator` is what "Refresh" runs**, and it copies an explicit
-list of files — history, favicons, cookies, passwords, form data, the
-dictionary, bookmark backups, the session. The Context Engine's database was
-not on it. So the action a user takes *because the browser is already
-misbehaving* returned a browser with its history and bookmarks intact and its
-rail, Field and sidebar empty, having silently discarded every query typed,
-every trail walked, every dwell time and every named context. Run 44's defect
-was a record the user could not delete; run 46's was a record that should never
-have existed; this one is the repair action destroying the record.
+The line is counts *and* names — "This also takes 128 pages, 46 questions and 3
+trails out of your Context Engine, including the context “reverse mortgage
+rates”." A count alone would have been strictly less than the store can say,
+because a context's `label` is derived from its own material and so names an
+afternoon of work that no host name and no clock reading can be read for. Three
+names, contexts before trails; the counts have already said how many, so the
+names need no "and 4 more".
 
-The database is now on the list under `types.HISTORY` beside `places.sqlite`,
-with its rollback journal, and the filename is imported from `FOSContextStore`
-so a rename cannot silently undo it. That forced a second change and then a
-third, and the chain is the interesting part:
+**The preview is the delete.** `FOSContextStore.previewForget` runs `forgetHost`
+or `forgetRange` for real, inside their own transaction, and rolls that
+transaction back. The alternative — a second set of counting queries beside the
+deleting ones — would restate the four rules in `#forget`, and nothing would
+ever fail a test for its having stopped agreeing with them: the dialog would go
+quietly wrong in exactly the proportion that `#forget` improved. Rolling back
+means throwing, because `executeTransaction` commits unless its body rejects,
+and the summary rides out on the exception because nothing else survives a
+rollback. Clearing *everything* needs no rollback at all, since `forgetAll`'s
+summary already **is** its count query.
 
-- Refresh is the repair route, so carrying a file forward is only safe if a bad
-  file is survivable — otherwise refresh faithfully copies the corruption.
-  `FOSContextStore.open` now moves a database it cannot read aside and starts an
-  empty one, narrowly (`NS_ERROR_FILE_CORRUPTED`/`NOTADB`/`CORRUPT` only).
-- It **keeps** the unreadable file, because nothing in it exists anywhere else.
-  `FormHistory` keeps its corrupt files, `PlacesSemanticHistoryDatabase` deletes
-  its own, and the difference is whether the data can be recomputed.
-- Keeping it collided head-on with run 44's promise, because a `.corrupt` file
-  is a record of browsing the user cannot see and cannot clear. So
-  `FOSForget.deleteAll` sweeps them — and only `deleteAll`, since a moved-aside
-  database cannot be queried and a narrower clear cannot know what is in it.
+The labels are on the preview and deliberately **not** on `ForgetSummary`. That
+summary is broadcast on `fos-context-forgotten` *after* the delete, and a
+notification naming what was just forgotten is a record of the thing the user
+asked to have no record of.
 
-**Session restore and the preferences data panel need no code**, and the tree
-said so faster than the web did. Session restore was settled in run 45. The
-panel's Clear Data is `CLEAR_HISTORY`; its "Never remember history" is
-`browser.privatebrowsing.autostart`, which run 46's rule already covers. Manage
-Data is site data in the quota sense and this store is neither. **Run 44's list
-is now closed.**
+Two edits outside `browser/components/fos/`, one hidden element and one guarded
+call each — **the first Firefox *surfaces* the fork has had to touch rather
+than the services behind them**, and they are in `ARCHITECTURE.md` §7's table
+with the reason.
 
-Permanent private browsing got a test rather than a paragraph, and the test
-corrected `SCHEMA.md`: **there is no last private window**, so
-`last-pb-context-exited` never fires and the memory store lives until the
-process does.
-
-Green: **220 xpcshell subtests in the store file** (up from 202), a new
-`test_fx_context_engine.js` in the migration suite (9 subtests), and the FOS
-browser suite re-run whole. **Nine mutations, eight caught**; the survivor is
-named below.
+Green: **248 xpcshell subtests in the store file** (up from 220), **322 node
+checks** (up from 311), **901 FOS browser-chrome checks** (up from 883), 0
+failures across the whole suite. **Eighteen mutations, all eighteen caught** —
+eight against the store's preview, six against the sentence, four against the
+dialog wiring. Lint clean on every changed file.
 
 `main` is at `phase-3`. `agent/dev` is pushed through this run's commits.
 
 ## Next task
 
-1. **Show what a delete will take before it takes it.** `IDEAS.md` run 45,
-   unchanged, and now the clear top of the list — the integration-point thread
-   that has occupied runs 44 to 47 is finished. The blast radius is not
-   guessable the way a flat history's is, the counts are already computed by
-   `#forget`, and the dialog already exists. Do **not** build an undo window
-   instead — rejected with reasons in `IDEAS.md`.
-
-2. **Sustained resize of the crowded overview.** `IDEAS.md` run 32, unchanged:
+1. **Sustained resize of the crowded overview.** `IDEAS.md` run 32, unchanged:
    the burst is fixed but one rebuild is 18.27ms p50, longer than a frame.
-   Extend the reposition fast path to cover what `render` rebuilds.
+   Extend the reposition fast path to cover what `render` rebuilds. Now the top
+   of the list — the forgetting thread that ran from run 44 to run 48 is done.
 
-3. **Why this build has no remote tabs.** Unchanged. Next step is
+2. **Why this build has no remote tabs.** Unchanged. Next step is
    `UrlbarProviderRemoteTabs.isActive` in a driven browser with
    `services.sync.username` set, not more reading.
 
-4. **The rails still overlay the page**, and **the 17 timed-out urlbar files**,
+3. **The rails still overlay the page**, and **the 17 timed-out urlbar files**,
    and **a region's height is a ratchet** (`FIELD.md` §6) — all unchanged, all
    belonging with the Field's restructure rather than piecemeal.
 
-5. **A new lens, if none of the above appeals.** Runs 44, 46 and 47 each found a
-   defect by asking what Firefox does *to* this component's data, and that
-   particular question is now exhausted. The next one is not obvious and is
-   worth ten minutes before it is worth code. One candidate: what does this
-   component do to *Firefox's* data — the fork writes to Places through
-   `FOSActions`, and nothing has ever audited that direction.
+4. **A new lens.** Runs 44, 46 and 47 each found a defect by asking what Firefox
+   does *to* this component's data, and that question is exhausted. The
+   candidate run 47 left is the reverse: what this component does to
+   *Firefox's* data — the fork writes to Places through `FOSActions`, and
+   nothing has ever audited that direction. Worth ten minutes before it is
+   worth code.
 
 ## Found this run, not yet chased
 
-- **Recovery around the *migration* is unexercised.** `open` wraps both the
-  connection and the migration so that damage surfacing on the first statement
-  to read a bad page is recovered from too. A mutation moving the migration
-  outside the recovered region **survives**: both corruption fixtures are
-  rejected by `openConnection` before any migration statement runs, and no
-  fixture has been found that fails only at migrate. The guard stays —
-  `FormHistory` and `PlacesSemanticHistoryDatabase` both wrap their schema step
-  separately, and "no fixture found" is not "shown unreachable" — but it is
-  recorded as uncovered rather than counted as covered. Do not delete it
-  because a coverage tool calls it dead.
+- **`node --test <directory>` does not work on this machine's node.** Every
+  file in `tests/node/` carries a comment saying to run
+  `node --test browser/components/fos/tests/node/`, and node 22 answers
+  `MODULE_NOT_FOUND` for a bare directory. The working form is
+  `node --test "browser/components/fos/tests/node/*.mjs"`. Not fixed, because
+  it is eight files' worth of comment churn for a one-word difference; recorded
+  here so the next run does not spend five minutes rediscovering it.
+
+- **`./mach lint` with no `-l` crashes on this tree**, in mozlint's stylish
+  formatter: `if err.hint and err.hint not in seen_hints` on a hint that is a
+  dict. It is a formatter bug rather than a lint failure, and it hides real
+  findings behind a traceback. `./mach lint -l eslint -f treeherder <paths>` is
+  what to use; `-f summary` still crashes on the other linters' setup.
+
+- **Testing a chrome module under `node --test` needs `ChromeUtils` stubbed
+  before the module body runs**, which means a dynamic `import()` after setting
+  `globalThis.ChromeUtils`, since static imports hoist.
+  `tests/node/test_forgetpreview.mjs` is the first file in this tree to do it.
+  The alternative — splitting the pure half of a small module into its own file
+  for a test's convenience — was rejected as fragmenting a feature.
+
+- **Recovery around the *migration* is unexercised.** Unchanged from run 47. A
+  mutation moving the migration outside the recovered region survives; both
+  corruption fixtures are rejected by `openConnection` before any migration
+  statement runs. The guard stays. Do not delete it because a coverage tool
+  calls it dead.
 
 - **A deliberate surviving mutation, from run 46.** `detach` closes the open
-  visit *before* leaving the `recording` set, so a write enqueued while a window
-  is being torn down is one `settledEverywhere` can still wait for. Reversing
-  the two lines survives and no honest test catches it: the ordering narrows a
-  race window rather than establishing an invariant, and a test for it would
-  have to race a forget against a window close. Kept because it is strictly
-  better and free.
+  visit *before* leaving the `recording` set. Reversing the two lines survives
+  and no honest test catches it: the ordering narrows a race window rather than
+  establishing an invariant.
 
 - **`BrowserTestUtils.openNewBrowserWindow({private: true})` never returns on
-  this machine.** It waits for the private window's first tab to load and that
-  content process dies on signal 11 — the same x11/24.04 family failure the tab
-  manifest already skips files for, and nothing to do with the fork. Opening the
-  window directly and waiting for `browser-delayed-startup-finished` works;
-  `browser_zzprivate.js` has the helper and the reason.
+  this machine.** Unchanged; `browser_zzprivate.js` has the helper and the
+  reason.
 
-- **Subscribing to a startup topic after opening the window is a race.** The
-  first version of that helper hung because delayed startup had already
-  finished. Register, then open.
+- **A clearing dialog cannot be opened standalone.** `Services.ww.openWindow`
+  on `sanitize_v2.xhtml` gets a window with no `resizeDialog` — that method
+  comes from the sub-dialog frame — so the shipped `init()` throws partway
+  through and half the dialog is never set up. Go through `Sanitizer.showUI`
+  and `gDialogBox` with
+  `BrowserTestUtils.promiseAlertDialogOpen(null, url, { isSubDialog: true })`,
+  which is what `browser_zzforgetpreview.js` does.
 
-- **`spoken` on a sidebar query row is set and never read.** Unchanged from runs
-  43, 44 and 45. Noted rather than chased — it is a view-model field, so nothing
-  is accumulating and nothing is unrecoverable.
+- **`spoken` on a sidebar query row is set and never read.** Unchanged from
+  runs 43 to 47. Noted rather than chased.
 
 ## Background jobs
 
-**Nothing is running.** `fossuite47` was the last, and it finished.
+**Nothing is running.** `fossuite48` was the last, and it finished — 901
+browser-chrome checks, 0 failures.
+
+`agent/mutate.sh` is new: apply one replacement, **assert it applied**, run a
+command, restore. Run 44's rule about a mutation that silently matched nothing
+reading exactly like one that survived is now enforced by the runner rather
+than remembered. It also found that `browser/base/content/` files are
+symlinked into `dist/bin`, so mutating a dialog needs no rebuild — only a new
+file in `EXTRA_JS_MODULES` or a manifest change does.
 
 
 `run23` then `run25` — the live chain. Started with

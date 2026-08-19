@@ -3820,3 +3820,97 @@ discovered by asserting it and watching the assertion fail.  And
 because it matches on prefix and suffix — while the *test helper*, which
 reconstructed the name, silently missed every second recovery. The production
 predicate was right for a reason the test then demonstrated by getting it wrong.
+
+---
+
+## Run 48 — showing a delete's blast radius, and what the preview should be made of
+
+### The candidate from run 45, taken off the shelf
+
+Run 45 researched the confirmation ladder, concluded that forgetting sits on
+the explicit-consequence rung and no higher, rejected an undo window with
+reasons, and left one thing unbuilt: a dry run in the dialog that already
+exists. That is what this run built, so the interaction research was not
+repeated. What was worth a fresh look is the two things run 45 did not settle —
+what the line should be made of, and how to compute it without the preview and
+the delete drifting apart.
+
+### Counts, or names?
+
+- **Found:** Cloudscape's delete pattern, and the bulk-action guidance that a
+  destructive confirm should state the count explicitly even where the
+  single-item one does not.
+- **Verdict:** **adopt** both — counts *and* names, with the names capped.
+
+Two rules came out of it and they pull in different directions, usefully.
+Cloudscape is firm that escalation to additional confirmation is for high
+severity only, and that adding friction to ordinary deletions is a cost paid by
+every user on every delete; that settles the shape as one extra line rather
+than a second dialog, and confirms run 45's rejection of anything heavier. But
+it also says to expose the resource *identifier* rather than a bare count, and
+that is the part that matters here, because this store holds an identifier a
+flat history does not: a context's `label` is a phrase derived from the
+material in it, so "reverse mortgage rates" names an afternoon of work that no
+host name and no clock reading can be read for. Counts alone would have been
+strictly less than what the store can say.
+
+What Cloudscape does **not** answer is naming versus counting when there are
+many, and the answer here falls out of having both: the counts have already
+said how many, so the names need no "and 4 more" — they are examples of a
+number the reader has just been given. Three names, contexts before trails,
+because a trail name is one the user typed and can be pictured from a count and
+a context label is one the engine chose.
+
+### How to compute it: the preview is the delete
+
+- **Found:** nothing external; this is a design decision the store's own shape
+  forced.
+- **Verdict:** **adopt** running the real delete and rolling it back. **Reject**
+  a second set of counting queries.
+
+The obvious implementation is a `SELECT COUNT(*)` mirroring each `DELETE`. It
+is also the wrong one, and the reason generalises past this feature. The four
+rules `#forget` applies — reparent past a forgotten node, take a query with the
+page it landed on *or* the page it was typed from, null a surviving query's
+back-link, weigh a merge family whole — are the accumulated answer to four
+questions that each had a plausible wrong answer. A counting query beside them
+would have to restate all four, and nothing would ever fail a test for its
+having stopped agreeing: the dialog would be quietly wrong in exactly the
+proportion that `#forget` had improved. So `previewForget` runs `forgetHost` or
+`forgetRange` for real and rolls the transaction back, and the numbers cannot
+drift because there is only one implementation.
+
+The mechanism is worth writing down because it looks like a hack and is not.
+`Sqlite.sys.mjs`'s `executeTransaction` commits unless its body rejects, so
+rolling back means throwing; the summary rides out on the exception because
+nothing else survives a rollback. Clearing everything needs none of this, since
+`forgetAll`'s summary already **is** its count query — the same property for
+free, and a reminder that the cheap path is the one where the delete was
+already expressed as a count.
+
+The general form, which the next associative feature will meet again: **the
+more a store reasons about a delete, the less a description of that delete can
+afford to be written separately from it.** Run 44 found the same shape from the
+other side — the more associative a store is, the more of it a delete has to
+reason about.
+
+### Rejected again, and recorded so it stays rejected
+
+- **A second dialog, or a typed confirmation.** Cloudscape's own rule forbids
+  it at this severity, and run 45's frequency argument still holds.
+- **An undo window.** Unchanged from run 45 and now doubly ruled out: it is a
+  tombstone table with a timer, and `SCHEMA.md` had already rejected a
+  tombstone table as a record of the thing the user asked to have no record of.
+- **Putting the labels on `ForgetSummary`.** Tempting, because the summary is
+  already broadcast and already carries ids. But it is broadcast *after* the
+  delete, and a notification naming what was just forgotten is the same object
+  by another route. The labels live on the preview, which is shown before, to
+  the person deciding.
+
+**Sources:**
+https://cloudscape.design/patterns/resource-management/delete/delete-with-additional-confirmation/;
+https://www.eleken.co/blog-posts/bulk-actions-ux;
+https://www.saasui.design/blog/saas-destructive-actions-confirmation-ux-patterns;
+`toolkit/modules/Sqlite.sys.mjs` (`executeTransaction`);
+`browser/base/content/sanitizeDialog.js` (the data-size line this sits beside)
+
