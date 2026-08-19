@@ -2686,3 +2686,142 @@ array, so the double asserted the wrong contract and the production code
 matching it looked correct. **A double is a claim about somebody else's API,
 and it goes stale in the direction of whatever was convenient to write.** The
 double now returns the real shape.
+
+## Run 39 — the offer's shape, and a threshold measured at the wrong context size
+
+**The question.** Run 36 refused silent cross-trail merging on its own numbers
+and said *offering* it was what survived. This is that offer. The search was
+for the shape, and the measurement was for the number — and the number turned
+out to be a different one from the one run 36 left behind.
+
+### Horvitz, *Principles of Mixed-Initiative User Interfaces*, CHI '99 — **adopt, as the shape**
+
+Searched: `Horvitz principles of mixed-initiative user interfaces uncertainty
+threshold expected utility when to offer versus act`.
+
+The canonical treatment of exactly this problem, and it supplies the thing this
+project had been reasoning about one case at a time. An agent uncertain about a
+user's goal has **three** options rather than two, and the middle one is to ask.
+Dialogue has its own expected-utility line, above inaction when a guess is
+decent and below action when a guess is near-certain, so it owns a band of
+probabilities that neither of the others should take — two thresholds, not one:
+`p*¬A,D` between silence and asking, `p*D,A` between asking and acting.
+
+Two of the twelve principles did real work here beyond the framing:
+
+- **(3) Considering the status of a user's attention in the timing of
+  services.** The timing of an offer is part of its cost, not a detail of its
+  delivery. This is why `mergeOffer` is computed when the context sidebar opens
+  and never on the navigation path: opening that panel is a voluntary glance at
+  "what do I know", and "are these two the same enquiry" is the same question.
+  The same argument that put run 22's background-arrival signal on a surface
+  the user chooses to look at, arrived at again from the literature.
+- **(7) Minimising the cost of poor guesses about action and timing**, which
+  names "natural gestures for rejecting attempts at service". A rejection that
+  does not stick is not a rejection. Hence `context_merge_declined` and a
+  decline button that says "and stop asking about these two" rather than "not
+  now" — there is no later, by design.
+
+Also **(8) scoping precision of service to match uncertainty**: "a preference
+for doing less but doing it correctly". That is the argument for offering *one*
+candidate rather than a ranked list. Three offers at once is a dialog box
+asking the user to do the browser's filing.
+
+**Where this fork departs, deliberately.** Horvitz's band is open at both ends
+and this one is not. There is no confidence at which a merge happens by itself,
+because provenance-before-inference is the line pillar C is built on. So `p*D,A`
+is unreachable by construction and the only threshold that had to be measured is
+the bottom one. That is a smaller measurement problem than the paper's, and it
+is the whole of it.
+
+Source: [Principles of Mixed-Initiative User Interfaces, Horvitz, CHI '99](https://erichorvitz.com/chi99horvitz.pdf)
+
+### The number run 36 left behind was for the wrong thing — **finding**
+
+Run 36 reported a "best merge threshold" of 0.201 at precision 0.778, and run 37
+corrected which *pairing* it described. Both numbers are for **one query against
+one query**. A context is a set of queries, so a merge score is an aggregate
+over many pairs, and an aggregate has its own distribution. Neither number
+transfers.
+
+`agent/jobs/run39.sh` measures the aggregate over aggregates. Each of the eight
+enquiries is cut in half, so two halves of one enquiry are a pair that should
+merge and the other 112 pairs are pairs that should not — 8 positives, 112
+negatives. Splitting is what makes positives exist at all: no two enquiries in
+that corpus are the same topic, and the case the feature is *for* is one topic
+researched on two trails.
+
+**Precision, not F1.** F1 treats a missed merge and a wrong merge as equally
+bad and this feature does not. A merge never offered costs the user nothing they
+had; a merge offered wrongly spends their attention and, if accepted, puts two
+unrelated enquiries in one sidebar. So every rule is read at the lowest
+threshold reaching precision 1.0. At d256:
+
+| rule | best-F1 threshold | F1 precision/recall | threshold at precision 1.0 | recall there |
+| --- | --- | --- | --- | --- |
+| max | 0.267 | 0.700 / 0.875 | 0.439 | **0.625 (5/8)** |
+| **mean** | 0.134 | 0.727 / 1.000 | **0.244** | 0.500 (4/8) |
+| top3 | 0.172 | 0.727 / 1.000 | 0.281 | 0.500 (4/8) |
+| centroid | 0.204 | 0.727 / 1.000 | 0.408 | 0.500 (4/8) |
+
+Note the reversal, which is the reason to report both columns: at the F1
+optimum `max` is the **worst** rule, and at precision 1.0 it is the **best**.
+The ranking of these rules is not a property of the rules, it is a property of
+the operating point, and a table with one column would have picked whichever
+rule the objective happened to flatter.
+
+### `max` wins the table and is rejected — **the run's real finding**
+
+`max` asks whether two contexts share *any* one question, so it is an order
+statistic over the pairs compared and must climb as the number of pairs grows,
+whether or not the contexts are any more alike. The corpus scored contexts of
+**two** queries — 4 pairs — where a real context holds many more. A threshold
+read off it is a threshold read off the wrong context size.
+
+That is run 37's mistake with a different variable in it, so it was measured
+rather than argued: the same rules over whole enquiries (4 queries, 16 pairs)
+against halves, reading only the different-enquiry side, which is the side a
+precision-first threshold holds back.
+
+| rule | diff-task median, k=2 → k=4 | p95 | worst |
+| --- | --- | --- | --- |
+| max | 0.095 → 0.147 (+55%) | 0.196 → 0.340 (**+73%**) | 0.361 → 0.361 |
+| top3 | 0.061 → 0.117 (+92%) | 0.136 → 0.197 (+45%) | 0.249 → 0.305 |
+| **mean** | 0.041 → 0.040 | 0.115 → **0.094** | 0.207 → **0.127** |
+| centroid | 0.065 → 0.088 (+35%) | 0.172 → 0.223 (+30%) | 0.335 → 0.294 |
+
+`max` and `top3` are out on portability. Of the two whose thresholds hold still,
+`mean` and `centroid` tie on recall and `mean` is the steadier — doubling the
+context size moved its false-positive tail *down*, and its worst
+different-enquiry score at the larger size is 0.127 against a floor of 0.244, a
+margin of nearly two to one. **Adopted: the mean of every cross pair, floor
+0.244, at d256.**
+
+**A small verdict on the schema, too.** `context.centroid` is documented as the
+mean of member embeddings and is written by nothing. This is the measurement
+that would have justified filling it in, and it does not: centroid is the rule
+`mean` beat. Recorded in `SCHEMA.md` beside the column so it is not proposed
+again.
+
+### d512 is better at *this* question, and the fork keeps d256 — **decision**
+
+Run 36 adopted d256 because the two dimensions were indistinguishable on
+retrieval and the download is half the size. On the merge question they are not
+indistinguishable: at d512, `mean` reaches precision 1.0 at recall **0.75**
+against d256's 0.5, and does it at the F1 optimum rather than needing a raised
+threshold.
+
+Kept at d256 anyway. The weights are a 30MB download this fork asks the user
+for by name, run 38 settled the consent around that number, and doubling it to
+60MB to raise the recall of an offer — from about half of mergeable pairs to
+about three quarters — is not a trade a user would recognise as theirs. The
+honest framing is that the merge offer is a **second consumer of weights
+already on the machine** and is priced accordingly. Revisit only if something
+else independently justifies d512.
+
+**What the numbers do not say.** Precision 1.0 means no false positive was
+observed among 112 different-enquiry pairs — a real statement about the
+negatives, not a guarantee. Recall 0.5 rests on **eight** positives and is a
+noisy estimate; read it as "about half". And the size probe doubled a context
+from two queries to four, which is evidence the floor travels, not proof it
+travels to forty.

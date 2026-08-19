@@ -311,3 +311,168 @@ add_task(async function test_a_second_render_does_not_race_the_first() {
   );
   panel.close();
 });
+
+// ---- the merge offer ------------------------------------------------------
+
+/**
+ * Open the panel with a merge offer standing in for the model's verdict.
+ *
+ * The offer itself needs the embedding weights, which no ordinary run has, so
+ * the real `mergeOffer` is exercised by `agent/jobs/run39.sh` against a real
+ * engine and what is doubled here is only *that a candidate was found*. That
+ * split is deliberate and is the lesson `browser_voice.js` taught the hard
+ * way: a double is a claim about an API, so this one is kept to a value this
+ * file also asserts the shape of, and the arithmetic behind the value is
+ * tested in node where no double is involved at all.
+ *
+ * @param {number} contextId The context to offer merging with.
+ * @param {?string} label Its name.
+ * @returns {Promise<object>} The sidebar, rendered with the offer.
+ */
+async function openOffering(contextId, label) {
+  const live = engine();
+  const real = live.mergeOffer;
+  live.mergeOffer = async () => ({ contextId, label, score: 0.31 });
+  registerCleanupFunction(() => {
+    live.mergeOffer = real;
+  });
+  const panel = await openSettled();
+  return panel;
+}
+
+/**
+ * A second trail, so that a second context exists to be merged with.
+ *
+ * @returns {Promise<{tab: object, contextId: number}>}
+ */
+async function secondEnquiry() {
+  // Release any pin an earlier file in this suite left behind. Every file here
+  // shares one window, and `context <mark>` is a statement that deliberately
+  // outlives the navigation that follows it — so a pinned context makes
+  // `activeContextId` stop tracking the trail, and a test that opens a tab to
+  // get a second context silently gets the first one back. Passed alone this
+  // file was green; the suite is where it showed.
+  await bar().actions.run({ action: "context", target: null, text: null })
+    .result;
+  const first = engine().activeContextId;
+  const tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, PAGE_B);
+  await engine().settled;
+  const contextId = engine().activeContextId;
+  Assert.notEqual(contextId, first, "a second tab is a second context");
+  return { tab, contextId, first };
+}
+
+add_task(async function test_no_offer_means_no_section() {
+  // The ordinary case on a machine with no weights: the panel is exactly what
+  // it was before this feature, rather than carrying an empty question.
+  await goTo(PAGE_A);
+  const panel = await openSettled();
+  is(rowsOf(panel, "merge").length, 0, "nothing asks anything");
+  panel.close();
+});
+
+add_task(async function test_an_offer_asks_and_offers_both_answers() {
+  await goTo(PAGE_A);
+  const { tab } = await secondEnquiry();
+  const panel = await openOffering(4242, "Memex reading");
+
+  const rows = rowsOf(panel, "merge");
+  is(rows.length, 2, "a question has two answers");
+  ok(
+    /Memex reading/.test(
+      panel.body.querySelector('[data-section="merge"] .fos-sidebar-note')
+        .textContent
+    ),
+    "and it names the other enquiry"
+  );
+  ok(
+    rows.every(row => row.hasAttribute("data-enterable")),
+    "both answers are reachable by the one gesture the panel has"
+  );
+
+  // The offer leads. A question that has to be scrolled to is asked badly.
+  const sections = [...panel.body.querySelectorAll("[data-section]")];
+  is(sections[0].dataset.section, "merge", "and it is asked first");
+
+  panel.close();
+  BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function test_accepting_makes_the_two_contexts_one() {
+  await goTo(PAGE_A);
+  const { tab, contextId, first } = await secondEnquiry();
+
+  const panel = await openOffering(first, "The first enquiry");
+  const before = engine().activeContextId;
+  is(before, contextId, "standing in the second enquiry");
+
+  const [accept] = rowsOf(panel, "merge");
+  accept.dispatchEvent(
+    new MouseEvent("mousedown", { bubbles: true, cancelable: true })
+  );
+
+  // Not `await engine().settled`: accepting is deliberately *not* on the
+  // recording queue. That queue exists so a navigation never waits on the
+  // database, and this is not a navigation — it is a thing the user just asked
+  // for and is watching. So the test waits for the effect instead.
+  const survivor = Math.min(first, contextId);
+  await TestUtils.waitForCondition(
+    () => engine().activeContextId === survivor,
+    "the merge lands"
+  );
+
+  // Derived state, recomputed: the trail the user is on now resolves to the
+  // context that survived, which is the earlier of the two.
+  is(
+    engine().activeContextId,
+    survivor,
+    "the enquiry that started first is the one that survives"
+  );
+
+  const store = await FOSContextEngine.store();
+  const listed = (await store.contexts()).map(row => row.id);
+  ok(!listed.includes(Math.max(first, contextId)), "the other is not offered");
+
+  panel.close();
+  BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function test_declining_is_permanent() {
+  await goTo(PAGE_A);
+  const { tab, contextId, first } = await secondEnquiry();
+
+  const panel = await openOffering(first, "The first enquiry");
+  const [, decline] = rowsOf(panel, "merge");
+  decline.dispatchEvent(
+    new MouseEvent("mousedown", { bubbles: true, cancelable: true })
+  );
+
+  const store = await FOSContextEngine.store();
+  const low = Math.min(first, contextId);
+  const high = Math.max(first, contextId);
+  let declined;
+  await TestUtils.waitForCondition(async () => {
+    declined = await store.declinedMerges();
+    return declined.has(`${low}:${high}`);
+  }, "the refusal is written down");
+  ok(declined.has(`${low}:${high}`), "the refusal is written down");
+
+  // And the real chooser honours it, which is the half a stubbed offer cannot
+  // show: `bestMerge` is what reads the declined set.
+  const { bestMerge } = ChromeUtils.importESModule(
+    "resource:///modules/FOSContextMerge.sys.mjs"
+  );
+  is(
+    bestMerge({
+      activeId: contextId,
+      activeVectors: [[1, 0, 0]],
+      candidates: [{ id: first, label: "x", vectors: [[1, 0, 0]] }],
+      declined,
+    }),
+    null,
+    "so an identical pair is never offered again"
+  );
+
+  panel.close();
+  BrowserTestUtils.removeTab(tab);
+});

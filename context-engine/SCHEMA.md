@@ -192,10 +192,52 @@ A research topic: the cluster that queries and visits fall into.
 |---|---|---|
 | `id` | INTEGER PK | |
 | `label` | TEXT | Generated, user-editable. |
-| `centroid` | BLOB | Float32 vector, mean of member embeddings. |
+| `centroid` | BLOB | Float32 vector, mean of member embeddings. Unwritten — see below. |
 | `created_at` | INTEGER | |
 | `updated_at` | INTEGER | |
 | `active_at` | INTEGER | Last time this context was the active one. |
+| `merged_into` | INTEGER FK → `context.id` | Set when the user accepted a merge offer. |
+
+`merged_into` is how "these two are one enquiry" is recorded, and it is a fact
+about contexts rather than about membership. Writing the merged rows as
+`context_member.source = 'manual'` was the plan and does not work:
+`contextsForTrails` filters on `provenance` by construction, so membership
+written under any other source changes what a context *contains* without
+changing which context a trail *is in*. Both halves would go on resolving to
+themselves while the sidebar showed the union — wrong in a way that reads as
+working. Keeping the merge off the membership rows also leaves every provenance
+row exactly as written, so "why is this page in this context" still answers.
+
+**Invariant:** `merged_into` never names a context that is itself merged.
+`mergeContexts` resolves both sides to their roots and re-points anything that
+pointed at the loser, so resolution is always one hop and a cycle cannot form.
+A merged context is excluded from `contexts()` — it is no longer somewhere the
+user can switch to — while its members and its last-active time count towards
+the context it merged into.
+
+`centroid` is documented above and is **not written by anything**. Filling it in
+would have been justified by the merge measurement and was not: scoring two
+contexts by the cosine of their centroids is one of the four rules
+`agent/jobs/run39.sh` compared, and the mean of the cross pairs beat it on
+stability. See `FOSContextMerge.sys.mjs`.
+
+### `context_merge_declined`
+
+An offer the user turned down, so it is never made again. Keyed both ways round,
+since "these two are not the same enquiry" is a symmetric statement.
+
+| Column | Type | Notes |
+|---|---|---|
+| `low_id` | INTEGER FK → `context.id` | The lower of the two ids. |
+| `high_id` | INTEGER FK → `context.id` | The higher. |
+| `declined_at` | INTEGER | |
+
+Primary key `(low_id, high_id)`.
+
+A rejection is permanent by design rather than by omission. An offer that
+returns after being declined is worse than one never made: the second showing
+is proof the first was not listened to, and it teaches the user to stop reading
+the surface it appears on.
 
 ### `context_member`
 
@@ -261,6 +303,25 @@ The active context is therefore **derived, not stored**: it is the context of
 the trail you are on, unless you have pinned one. Held as a field it can only
 drift, and it did — set once at the first trail, it left a second tab's queries
 filed under the first tab's topic.
+
+### Merging is offered, never inferred
+
+Two trails can be one enquiry, and provenance cannot see it: the user stated
+that this is a separate line of enquiry by opening a tab, and they were right
+at the time. Embedding the two contexts' queries and comparing them is how that
+gets noticed, and the measurement is why it is only ever a question.
+
+`agent/jobs/run39.sh` scores the rule over eight enquiries cut in half, so two
+halves of one enquiry are a pair that should merge and the other 112 pairs are
+not. Chosen on precision rather than F1: a merge never offered costs the user
+nothing they had, while a merge offered wrongly spends their attention and, if
+accepted, puts two unrelated enquiries in one sidebar. At that operating point
+the rule finds about half of the genuine pairs with no false positive among the
+112, which is a good question and would be a bad automatic decision.
+
+So there is no confidence at which a merge happens by itself. The only measured
+threshold is the bottom one — below it, say nothing — and the offer is made on
+a surface the user chose to open rather than on the navigation path.
 
 ## Export
 

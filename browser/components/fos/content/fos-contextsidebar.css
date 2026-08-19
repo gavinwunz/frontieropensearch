@@ -229,10 +229,12 @@
 
    Marked out by a border rather than by an accent colour: the offer is the
    browser being unsure, and dressing uncertainty in the colour reserved for
-   the current node would overstate it. */
+   the current node would overstate it. `--border-color` and not a `--fos-`
+   name of its own, because the platform already means the right thing by it —
+   see the header of fos-tokens.css. */
 .fos-sidebar-section[data-section="merge"] {
   margin: var(--space-small) var(--fos-gutter-panel);
-  border: 1px solid var(--fos-border-color);
+  border: 1px solid var(--border-color);
   border-radius: var(--border-radius-medium);
 }
 

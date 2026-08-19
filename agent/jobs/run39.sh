@@ -43,3 +43,14 @@ FOS_MEASURE_EMBED=1 MOZ_MODELS_HUB="http://localhost:$port" \
   ./mach mochitest --keep-open=false --headless --force \
   browser/components/fos/tests/browser/browser_zzembedquality.js
 echo "##### MERGE MEASURE EXIT $?"
+
+# And the offer built on those numbers, against a real engine. The suite runs
+# the surface with the offer doubled, because no ordinary machine has weights,
+# so this is the one place the real `mergeOffer` is asked whether two contexts
+# built by browsing actually separate. A double is a claim about an API and it
+# goes stale in whatever direction was convenient to write.
+echo "##### MERGE OFFER DRIVEN $(date -u +%FT%TZ)"
+MOZ_MODELS_HUB="http://localhost:$port" \
+  ./mach mochitest --keep-open=false --headless --force \
+  browser/components/fos/tests/browser/browser_zzmergeoffer.js
+echo "##### MERGE OFFER EXIT $?"
