@@ -1613,3 +1613,89 @@ Green: 1285 FOS browser-chrome checks across 28 files, 0 failures, on two
 consecutive full-suite runs; the new file contributes 39. Node 344, 0 failures.
 Seven mutations, seven caught — one only after the test was strengthened. Lint
 clean on every changed file.
+
+## Run 56 — 2026-08-19 — trails
+
+Task 1, unchanged at the top of the list for three runs: **`Browser:Back` and
+`Browser:Forward`, decided together.** The keyset manifest had refused to call
+them covered, and its reason was exactly right — `back` is not `Browser:Back`.
+The verb steps the pages you stood on, the gesture steps one tab's session
+history chain, and they agree on a linear walk and diverge at the first branch,
+which is the case pillar B exists for. Two movements under one name is worse
+than one movement with no name.
+
+**Back and forward are time; `up` is structure.** That is the whole decision, and
+it dissolves the objection the manifest had been carrying: "in a tree the forward
+direction is plural" is true of a *structural* forward, and this fork does not
+have one, because `up` already owns the parent. Nyxt is the control — the only
+shipped browser with a history tree has a structural backwards, so it needs three
+commands to say forward (`history-forwards`, `-query`, `-all-query`) and the user
+must know which of the three they meant before they can ask. `forward` is the
+seventeenth verb and takes no target: the plural form is `back <mark>`, which has
+had a word since marks landed and reaches any node rather than only the ones
+ahead, and a second spelling of it would be a synonym the bar teaches twice.
+
+**The gesture runs the verb**, rebound on `BrowserCommands.back`/`.forward`
+rather than on the four `<key>` elements. The keys are not the only way to ask —
+the nav-bar buttons, the context menu, the mouse's side buttons, the swipe and
+`Backspace` all arrive there — and rebinding the keyboard alone would have
+replaced one unvoiced movement with two that disagree depending on which hand you
+used. `browser.fos.trails.replacesLinearHistory` reverses it on every surface at
+once. Four manifest entries moved from `debt` to `verb`.
+
+Three things had to be true for the verb to be fit to be the gesture, and each
+was a defect on its own:
+
+**`back` had no cursor.** It re-read a visit log after appending its own move to
+it, so the second press found the page it had just left and went there: two
+presses returned you to where you started, and the third page back was
+unreachable by the word that exists to reach it. It is now a back-stack with an
+index, and *the cursor rather than a flag* is what tells a walk from a move —
+which matters because a walk lands twice, once from `enter` and once from the
+traversal's own location change, and a flag would have been spent by the second.
+
+**The stack was window-wide.** A test found it, not an argument: one list made
+`back` a move *between* trails, so closing a card and pressing it would restore
+the page you closed over the page you were reading. One stack per trail. A trail
+is this fork's unit of place — what the rail draws, what marks address, what
+`done` finishes — so it is what a step through time steps within, and leaving one
+stays `enter`, `field` and `context`.
+
+**`enter` flattened the tab's chain on every move.** Replacing the whole session
+history with one entry is right for a node the chain cannot represent and wrong
+for the common case: once the most-used gesture in the browser runs this verb,
+every press would rebuild the tab from a blob — no bfcache, a fresh load of a
+page the user was on a second ago, `history.length` stuck at 1 for content
+reading it. A node still in the chain is now traversed to. Truncation on the
+*next* navigation is Firefox's own behaviour and costs nothing here, because the
+branch it drops from the chain stays in the tree.
+
+The stack truncates on arrival too, and **this is the only browser where that
+costs nothing**: the pages walked past are nodes, lettered and on the rail, one
+`back <mark>` away. The complaint pillar B answers is never "the stack
+truncated", it is "the pages are gone".
+
+Research: Nyxt's three forward commands (adopt the diagnosis, reject the shape —
+it is the evidence that forward is two questions, and the evidence that a
+structural back forces you to answer both); a truncating temporal cursor (adopt,
+with the argument above written into the code rather than left in a note).
+
+Costs, both worth recording. **A timeout aborts the whole browser-chrome run,
+not just its file** — six separate fixes each cost a full-suite run to find the
+next, and a green tail says nothing about the files that never started; read the
+*file* count in the summary before the pass count. And **`gotoIndex(-1)` takes
+the content process down**, surfacing as an unrelated load hanging three tasks
+later: a browser with no session history reports index -1, and nothing stopped
+that being recorded as an entry a node could be traversed to.
+
+The change also found something about the suite itself: `enter` had one
+observable — that it produces a load event — which six tests depended on and no
+user could ever see. They wait for the landing now, which they should have done
+anyway, since `enter` resolves when it has *asked* for a node and the load lands
+later.
+
+Green: 1345 FOS browser-chrome checks across 29 files, 0 failures; the new file
+contributes 35. Node 345, 0 failures. Eight mutations, eight caught — two only
+after the tests they named were written: nothing had ever re-entered a node whose
+chain entry had been truncated away, and every forget in the suite happened with
+the cursor at the top of its stack, where a shift changes nothing.
