@@ -1074,6 +1074,39 @@ export class FOSContextStore {
     );
   }
 
+  /**
+   * The positions a human chose, for the nodes named.
+   *
+   * `moved_by_user_at IS NOT NULL` is the whole filter, and it is the column's
+   * documented purpose: an auto-placed card says nothing, because seeding is
+   * deterministic and reproduces itself on the next start. A user placement is
+   * the only thing here that cannot be recomputed, so it is the only thing
+   * worth reading back.
+   *
+   * `pinned` is not selected. A row with a human timestamp is a card the user
+   * moved, and the model pins on restore for the same reason it pins on a drag.
+   *
+   * @param {number[]} nodeIds
+   * @returns {Promise<Map<number, {x: number, y: number}>>} By node id.
+   */
+  async placements(nodeIds) {
+    const byNode = new Map();
+    if (!nodeIds.length) {
+      return byNode;
+    }
+    const { names, params } = bindList(nodeIds, "n");
+    const rows = await this.#connection.execute(
+      `SELECT trail_node_id, x, y FROM field_placement
+       WHERE moved_by_user_at IS NOT NULL AND trail_node_id IN (${names})`,
+      params
+    );
+    for (const row of rows) {
+      const p = plain(row, ["trail_node_id", "x", "y"]);
+      byNode.set(p.trail_node_id, { x: p.x, y: p.y });
+    }
+    return byNode;
+  }
+
   // ---- plumbing -----------------------------------------------------------
 
   /**

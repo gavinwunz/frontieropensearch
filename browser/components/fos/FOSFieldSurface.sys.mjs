@@ -130,6 +130,16 @@ export class FOSFieldSurface {
   /** Whether anything has arrived since the Field was last looked at. */
   #unseen = false;
   #unseenListeners = new Set();
+  /** Called with `{nodeId, x, y}` when the user finishes placing a card. */
+  #placementListeners = new Set();
+  /**
+   * Saved placements whose card is not on the Field yet, by node id.
+   *
+   * Restoration is async — pillar C opens a database — and a card is placed by
+   * the sync that the tree's own restore triggers, so in practice the cards are
+   * already here. This is what makes the order not matter anyway.
+   */
+  #pendingPlacements = new Map();
   /** The nodes that arrived while the Field was shut, until it is shut again. */
   #arrived = new Set();
   /** When this window started watching, so a restored page is not an arrival. */
@@ -397,6 +407,13 @@ export class FOSFieldSurface {
       try {
         model.place(node.id);
         changed = true;
+        // A card the previous session had a chosen position for goes straight
+        // to it, rather than being seeded and then seen to jump.
+        const saved = this.#pendingPlacements.get(node.id);
+        if (saved) {
+          this.#pendingPlacements.delete(node.id);
+          model.pinAt(node.id, saved);
+        }
         if (node.id !== current && node.created_at >= this.#watchingSince) {
           arrived = true;
           // Which card, not just that one exists. The dot on the bar says
@@ -494,6 +511,62 @@ export class FOSFieldSurface {
   onUnseenChange(listener) {
     this.#unseenListeners.add(listener);
     return () => this.#unseenListeners.delete(listener);
+  }
+
+  /**
+   * Watch for cards the user places.
+   *
+   * Pillar A does not know what a database is, and this is how it stays that
+   * way: the Field says where a card was put, and whoever is listening decides
+   * whether that is worth keeping. With nobody listening the Field behaves
+   * exactly as it did — which is also what happens when pillar C fails to open
+   * its store, and is why a restart with no engine still gives a usable Field.
+   *
+   * @param {function({nodeId: number, x: number, y: number})} listener
+   * @returns {function()} Unsubscribe.
+   */
+  onPlacement(listener) {
+    this.#placementListeners.add(listener);
+    return () => this.#placementListeners.delete(listener);
+  }
+
+  #emitPlacement(placement) {
+    for (const listener of this.#placementListeners) {
+      try {
+        listener(placement);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }
+
+  /**
+   * Put cards back where the user put them in a previous session.
+   *
+   * §4's "not on restart" clause, and the only caller is pillar C's restore.
+   * A placement whose card is not on the Field yet is held rather than dropped,
+   * so this does not depend on racing the sync that places it.
+   *
+   * @param {Map<number, {x: number, y: number}>} byNode Memory node ids.
+   */
+  restorePlacements(byNode) {
+    if (!byNode.size) {
+      return;
+    }
+    const model = this.model;
+    let changed = false;
+    for (const [nodeId, at] of byNode) {
+      if (!model.cardForNode(nodeId)) {
+        this.#pendingPlacements.set(nodeId, at);
+        continue;
+      }
+      if (model.pinAt(nodeId, at).ok) {
+        changed = true;
+      }
+    }
+    if (changed && this.isOpen) {
+      this.render();
+    }
   }
 
   /**
@@ -1355,6 +1428,18 @@ export class FOSFieldSurface {
       // A press that never moved is a click, and a click on a card enters it.
       this.enterCard(cardId);
       return;
+    }
+    // The drop, not the drag. Every pointer move commits to the model, but a
+    // placement is one thing the user did and is worth one row — persisting
+    // per pointer move would write a hundred rows for one gesture and record
+    // every position the card passed through as though it had been chosen.
+    //
+    // Only the dragged card is announced. The push may have moved others, and
+    // none of them is a position anybody chose: they are unpinned, so §4 leaves
+    // the system free to revise them and the next start re-seeds them.
+    const card = this.model.cards().find(c => c.id === cardId);
+    if (card) {
+      this.#emitPlacement({ nodeId: card.node_id, x: card.x, y: card.y });
     }
     this.render();
   }

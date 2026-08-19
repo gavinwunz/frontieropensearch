@@ -837,6 +837,55 @@ export class FieldModel {
     return this.place(nodeId);
   }
 
+  /**
+   * Put a card back where the user put it, in a previous session.
+   *
+   * §4 says the system never moves a pinned card — "not to make room, not to
+   * rebalance a region, not on restart". This is the "not on restart" half, and
+   * it is the only path that writes a position the model did not choose.
+   *
+   * Only user placements come back. An auto-placed card is not persisted and
+   * does not need to be: `#seed` is deterministic, so re-seeding reproduces the
+   * arrangement it produced last time. Persisting one would also freeze a
+   * position the system is still entitled to revise, which is the opposite of
+   * what the flag means.
+   *
+   * The card is expected to be seeded already. Restoring is therefore a move,
+   * and it is allowed to displace: whatever the seed put in this seat is
+   * unpinned by construction, and an unpinned card has no position anybody
+   * chose. Two restored positions cannot fight, because they did not overlap
+   * when they were saved.
+   *
+   * A region's height is a ratchet — §6's capacity ladder ends in growth — and
+   * the height itself is not persisted, so a position saved in a grown region
+   * would come back out of bounds and be refused. Growing to fit first is the
+   * answer §6 already gives; the alternative is discarding a position somebody
+   * chose, which §4 calls the one thing never to do.
+   *
+   * @param {number} nodeId
+   * @param {{x: number, y: number}} at Region-relative, in field units.
+   * @returns {{ok: boolean, reason?: string}}
+   */
+  pinAt(nodeId, { x, y }) {
+    const cardId = this.#cardsByNode.get(nodeId);
+    if (!cardId) {
+      return { ok: false, reason: REFUSED.NO_ROOM };
+    }
+    const card = this.#cards.get(cardId);
+    const region = this.#regions.get(card.region_id);
+    const needed = y + this.#geom.cardHeight;
+    if (needed > region.height) {
+      // Bounded by the same ceiling a drag is. A row that claims a position
+      // far outside anything the geometry can produce is not a position the
+      // user chose; it is a corrupt or stale row, and it is refused below.
+      region.height = Math.min(
+        needed,
+        this.#geom.regionHeight * MAX_REGION_GROWTH
+      );
+    }
+    return this.moveCard(cardId, x, y);
+  }
+
   // -------------------------------------------------------------- invariants
 
   /**

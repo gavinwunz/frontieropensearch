@@ -629,3 +629,90 @@ test("the region a retired trail had can be built again by navigating to it", ()
   });
   assert.equal(field.place(revived).region_id, trailId);
 });
+
+// ------------------------------------------------- a restart is not a rearrangement
+
+/*
+ * FIELD.md §9's second acceptance property is that the system never moves a
+ * pinned card — "resize the window, restart the browser". The resize half has
+ * been tested since the model existed. The restart half could not be, because
+ * the model is in-memory and nothing persisted a position, so these cover the
+ * seam the audit in IDEAS.md run 42 found: `pinAt` is what a restore does to
+ * the model, and everything above it is plumbing.
+ */
+
+test("a restored position is the position, not an approximation of it", () => {
+  const { trails, field } = setup();
+  const { cards } = trailWith(trails, field, 3);
+  const node = cards[1].node_id;
+
+  const at = { x: 300, y: 200 };
+  assert.equal(field.pinAt(node, at).ok, true);
+
+  const card = field.cardForNode(node);
+  assert.deepEqual(
+    { x: card.x, y: card.y },
+    at,
+    "a card comes back exactly where it was left"
+  );
+  assert.equal(card.pinned, true, "and comes back owned, not merely positioned");
+});
+
+test("a restored card displaces a seeded one rather than yielding to it", () => {
+  const { trails, field } = setup();
+  const { cards } = trailWith(trails, field, 4);
+
+  // Aim the restored card at a seat the seeding already took. The occupant is
+  // unpinned, so §4 leaves the system free to move it — the position nobody
+  // chose is the one that gives way.
+  const occupant = cards[2];
+  const seat = { x: occupant.x, y: occupant.y };
+  const node = cards[0].node_id;
+
+  assert.equal(field.pinAt(node, seat).ok, true);
+  assert.deepEqual(
+    { x: field.cardForNode(node).x, y: field.cardForNode(node).y },
+    seat
+  );
+  assert.equal(field.overlaps().length, 0, "and nothing ends up on top of it");
+});
+
+test("a position saved in a grown region comes back into a grown region", () => {
+  const { trails, field } = setup();
+  const { cards } = trailWith(trails, field, 2);
+  const node = cards[0].node_id;
+
+  // A region's height is a ratchet — §6's ladder ends in growth — and the
+  // height is not persisted. Without growing to fit, every position a user
+  // made in the lower part of a grown region would be refused on restart and
+  // silently re-seeded, which is §4's one forbidden outcome.
+  const region = field.regions()[0];
+  const below = region.height + 40;
+  assert.equal(field.pinAt(node, { x: 20, y: below }).ok, true);
+  assert.equal(field.cardForNode(node).y, below);
+  assert.ok(field.regions()[0].height >= below + field.geometry.cardHeight);
+});
+
+test("a placement for a card that is not on the Field is refused, not thrown", () => {
+  const { field } = setup();
+  assert.equal(field.pinAt(9999, { x: 0, y: 0 }).ok, false);
+});
+
+test("restoring two saved positions cannot make them fight", () => {
+  const { trails, field } = setup();
+  const { cards } = trailWith(trails, field, 3);
+
+  // Saved positions did not overlap when they were saved, so replaying them
+  // in any order lands both. This is the property that lets the restore apply
+  // them one at a time without a resolver.
+  const a = { x: 100, y: 100 };
+  const b = { x: 100 + field.geometry.cardWidth + field.geometry.minGap, y: 100 };
+  assert.equal(field.pinAt(cards[0].node_id, a).ok, true);
+  assert.equal(field.pinAt(cards[1].node_id, b).ok, true);
+  assert.deepEqual(
+    { x: field.cardForNode(cards[0].node_id).x, y: field.cardForNode(cards[0].node_id).y },
+    a,
+    "the first is still where it was put after the second arrives"
+  );
+  assert.equal(field.overlaps().length, 0);
+});

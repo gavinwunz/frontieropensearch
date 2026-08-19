@@ -304,6 +304,36 @@ add_task(async function test_a_human_placement_is_never_overwritten() {
   await store.close();
 });
 
+add_task(async function test_only_positions_a_human_chose_are_read_back() {
+  // The reader half of the same column. Seeding is deterministic, so an
+  // auto-placed card reproduces its own position on the next start and a row
+  // for it would carry no information; a position somebody chose is the only
+  // thing here that cannot be recomputed. See IDEAS.md run 42.
+  const store = await freshStore();
+  const trailId = await store.addTrail();
+  const auto = await store.addNode({ trailId, url: "https://example.org/a" });
+  const chosen = await store.addNode({ trailId, url: "https://example.org/b" });
+  const untouched = await store.addNode({ trailId, url: "https://example.org/c" });
+
+  await store.placeCard(auto, { x: 1, y: 1 });
+  await store.placeCard(chosen, { x: 7, y: 9, pinned: true, movedByUserAt: 42 });
+
+  const saved = await store.placements([auto, chosen, untouched]);
+  Assert.equal(saved.size, 1, "an auto placement is not a placement");
+  Assert.deepEqual(
+    saved.get(chosen),
+    { x: 7, y: 9 },
+    "and the one the user made comes back whole"
+  );
+
+  Assert.equal(
+    (await store.placements([])).size,
+    0,
+    "asking about no nodes reads nothing rather than everything"
+  );
+  await store.close();
+});
+
 add_task(async function test_the_active_context_is_the_one_last_worked_in() {
   const store = await freshStore();
   const first = await store.addContext({ label: "one", now: 1000 });

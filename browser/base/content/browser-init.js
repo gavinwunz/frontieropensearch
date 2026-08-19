@@ -335,7 +335,14 @@ var gBrowserInit = {
     );
     const engine = FOSContextEngine.forWindow(window).wire(bar);
     engine
-      .attach({ session: FOSTrailSession.forWindow(window) })
+      .attach({
+        session: FOSTrailSession.forWindow(window),
+        // Pillar A is passed in so pillar C can keep the positions the user
+        // chose and hand them back at the next start. The dependency only runs
+        // this way: the Field never learns what a database is, and a window
+        // whose store fails to open still gets a Field, seeded as always.
+        field: FOSFieldSurface.forWindow(window),
+      })
       .catch(console.error);
 
     // The voice front end. It binds the talk key and nothing else: no verb, no

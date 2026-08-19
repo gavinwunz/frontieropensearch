@@ -146,6 +146,8 @@ export class FOSContextEngine {
   #trailIds = new Map();
   /** In-memory node id → database node id, for this session. */
   #nodeIds = new Map();
+  /** Pillar A's surface, when this window has one. */
+  #field = null;
   /** Database trail id → its provenance context id. */
   #contextByTrail = new Map();
 
@@ -245,16 +247,22 @@ export class FOSContextEngine {
    * @param {?object} [options.marks] A `MarkRegistry`.
    * @returns {Promise<FOSContextEngine>}
    */
-  async attach({ session, store = null, marks = null }) {
+  async attach({ session, store = null, marks = null, field = null }) {
     this.#session = session;
     this.#marks = marks ?? session.marks;
     this.#store = store ?? (await FOSContextEngine.store());
+    this.#field = field;
 
     // Before subscribing, so the first reconciliation already knows which rows
     // exist and writes none of them a second time.
     await this.#hydrate();
 
     this.#unsubscribe.push(session.subscribe(() => this.#reconcile()));
+    if (field) {
+      this.#unsubscribe.push(
+        field.onPlacement(placement => this.#recordPlacement(placement))
+      );
+    }
     this.#unsubscribe.push(
       session.onDeparture(nodeId => this.#closeVisit(nodeId))
     );
@@ -376,6 +384,8 @@ export class FOSContextEngine {
       }
     }
 
+    await this.#restorePlacements(ids.nodes);
+
     try {
       const contexts = await this.#store.contextsForTrails([
         ...ids.trails.keys(),
@@ -391,6 +401,46 @@ export class FOSContextEngine {
     }
 
     this.#syncContextMarks();
+  }
+
+  /**
+   * Give the Field back the positions the user chose, last session.
+   *
+   * `FIELD.md` §4 promises a pinned card holds its position "not to make room,
+   * not to rebalance a region, not on restart"; §9 lists it as an acceptance
+   * property. This is the restart half. Everything it needs existed before
+   * this run — the table, the store method, the model's pinned flag — and
+   * nothing joined them, so a restored session re-seeded every card and any
+   * arrangement the user had made was silently gone.
+   *
+   * Only user placements are stored, so this is a small read: one row per card
+   * anybody ever dragged, not one per page.
+   *
+   * @param {Map<number, number>} nodes Database id → in-memory id.
+   */
+  async #restorePlacements(nodes) {
+    if (!this.#field || !nodes.size) {
+      return;
+    }
+    try {
+      const saved = await this.#store.placements([...nodes.keys()]);
+      if (!saved.size) {
+        return;
+      }
+      const byMemoryId = new Map();
+      for (const [databaseId, at] of saved) {
+        const memoryId = nodes.get(databaseId);
+        if (memoryId !== undefined) {
+          byMemoryId.set(memoryId, at);
+        }
+      }
+      this.#field.restorePlacements(byMemoryId);
+    } catch (e) {
+      // The Field is already usable — every card is seeded where provenance
+      // puts it — so this degrades to the arrangement a first-time user gets
+      // rather than to a broken surface.
+      console.error("FOSContextEngine: cannot restore placements", e);
+    }
   }
 
   /**
@@ -865,6 +915,42 @@ export class FOSContextEngine {
    */
   nodeRowId(nodeId) {
     return nodeId === null ? null : (this.#nodeIds.get(nodeId) ?? null);
+  }
+
+  /**
+   * Keep a position the user chose.
+   *
+   * The Field is a per-window model over an in-memory tree and knows nothing
+   * about rows, so this is the translation: pillar A says which node, pillar C
+   * knows what that node was written as.
+   *
+   * A node with no row yet is dropped rather than queued. The reconciliation
+   * that writes it is already running, and the position is on the card — so
+   * the next placement of the same card carries it. Queueing would mean
+   * holding a coordinate that a later drag has already made wrong.
+   *
+   * @param {{nodeId: number, x: number, y: number}} placement
+   */
+  async #recordPlacement({ nodeId, x, y }) {
+    const rowId = this.nodeRowId(nodeId);
+    if (rowId === null || !this.#store) {
+      return;
+    }
+    try {
+      await this.#store.placeCard(rowId, {
+        x,
+        y,
+        pinned: true,
+        // The timestamp is the record that a human did this, and the store's
+        // COALESCE keeps the first one. It is what separates a position from
+        // a seat the system happened to pick.
+        movedByUserAt: Date.now(),
+      });
+    } catch (e) {
+      // A lost placement costs the arrangement on the next start and nothing
+      // in this session: the card is where the user put it either way.
+      console.error("FOSContextEngine: cannot record a placement", e);
+    }
   }
 
   /**
