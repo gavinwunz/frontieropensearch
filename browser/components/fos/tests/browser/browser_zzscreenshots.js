@@ -256,6 +256,22 @@ add_task(async function take_the_screenshots() {
   bar().close();
 
   // 5. What the context knows so far.
+  //
+  //    One more question first, asked from the page in front of us and then
+  //    returned to. That is the ordinary shape of coming back to a hub page,
+  //    and it is what fills the sidebar's page-scoped section — the flow above
+  //    never revisits a page it searched from, so without this the picture
+  //    would document a panel with one of its sections permanently missing.
+  const askedFrom = session().currentNodeId;
+  bar().run("xanadu transclusion");
+  await BrowserTestUtils.browserLoaded(win.gBrowser.selectedBrowser);
+  await new Promise(resolve => win.setTimeout(resolve, SETTLED_MS));
+  await engine().settled;
+  await session().enter(askedFrom);
+  await BrowserTestUtils.browserLoaded(win.gBrowser.selectedBrowser);
+  await new Promise(resolve => win.setTimeout(resolve, SETTLED_MS));
+  await engine().settled;
+
   bar().run("what");
   await shoot("shot-context");
   // Put the window back to rest. `dismiss` was used here and is a Field verb

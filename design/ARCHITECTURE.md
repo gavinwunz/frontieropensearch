@@ -148,6 +148,15 @@ sidebar, and the exported pack — and all three go through the single
 `contextContents` read, so what the user is shown and what they export can never
 disagree.
 
+The sidebar makes two reads beside that one, and they are the exception that
+proves the rule: `crossings(url)` and `questionsFrom(url)` are scoped to the
+**page** rather than to the context, so `contextContents` could not answer them
+without ceasing to be one read. They are the two directions of one edge —
+`trail_node.url` for what reached this page, `query.source_node_id` for what it
+sent you on to ask — and they are the only place this fork has anything like a
+bi-directional link. It can afford one because it owns both ends and nobody else
+can write to them; that is the condition the open web never had.
+
 ## 7. The boundary with Firefox
 
 Every module above lives in `browser/components/fos/`, is packaged by that

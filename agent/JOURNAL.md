@@ -1381,3 +1381,77 @@ this time, which is itself worth recording after run 41.
 Docs: `FIELD.md` §9 says what now persists and what deliberately does not,
 `SCHEMA.md` marks the `embedding` table vestigial, `IDEAS.md` run 42 carries the
 audit and the restoration reasoning.
+
+## Run 43 — 2026-08-19 — the backlink whose other end is a question
+
+Took item 1 off the last run's list, which the schema audit had filed as a note
+rather than as work: `query.source_node_id` written on every query since
+`001-initial.sql` and read by nothing. It is the edge *out* of a page — the
+question typed while looking at it — where `trail_node_id` is the edge in, the
+page a question opened. Two columns, two different mechanisms, two moments, and
+only one of them had ever been asked a question.
+
+`store.questionsFrom(url)` reads it and the sidebar shows it as **"This page
+made you ask"**, beside the crossings. Keyed by URL rather than by node for the
+same reason the crossings are, and SearchBar settles it: the pane rated 3.5 in
+week one and 5.0 a week later, so the value is at resumption. A question asked
+during the visit you are in the middle of is one you still remember; the ones
+worth a row are months old and sit on other nodes for the same document.
+
+**Research: bi-directional links, and why a browser can have them when the web
+could not.** Not researched here before. They did not lose on merit — they lost
+on moderation. Appleton's history puts it plainly: if every site that linked to
+yours appeared on your page with no say in who could link to you, the trollish
+implications are not hard to imagine. They work today exactly where that risk is
+zero, in one author's own notes, and WebMentions are an opt-in compromise rather
+than an answer. A browser's private local record is that closed system by
+construction. And the other end of this edge is not a document at all: a page's
+outgoing links are the *author's* associations, the same for everyone and there
+before you arrived, while the question you typed while reading is yours and
+exists nowhere else. `IDEAS.md` run 43.
+
+**The run's one real mistake, and running it is what caught it.** The first
+build excluded any question the active context already listed below, reasoning
+by analogy with the crossings dropping the current trail. The suite failed: with
+a context pinned, every question in the session belonged to the active context
+and the section was empty. The ordinary case is worse than the test case — one
+tab is one trail is one enquiry, so a user who never opened a second tab would
+have seen the section literally never. The analogy fails on what the excluded
+row carries: "this page is on the trail you are looking at" is true of every
+page by construction, while "this question came from this page" is a fact the
+enquiry's own list does not state. The two sections index one set of facts twice,
+along the enquiry and along the page, and indexing twice is what a backlink is
+for. Generalised in `IDEAS.md`: an exclusion rule copied from a neighbouring
+section needs its own argument, and the test is whether the excluded row could
+ever have been false.
+
+Worth recording how it was caught, because STATE has the rule and it worked:
+`browser_contextsidebar.js` passed alone and failed in the suite, and that is
+evidence of something true rather than of test pollution. Reproduced on three
+files rather than the whole suite — the two that share the window before it
+alphabetically — which turned a twenty-minute cycle into a two-minute one, and
+diagnosed by dumping `activeContextId` and the context's query ids instead of
+re-running.
+
+Also fixed seven lint errors left in the tree by run 42, one of which was
+load-bearing: `browser_contextengine.js` shadowed the file's own `engine()`
+helper with a local `const engine`, so renaming the local to `scratch` turned
+`await engine.settled` into `await undefined`. Renamed both.
+
+Tests: 304 node (up from 291), xpcshell clean, **850 browser-chrome checks, 0
+failures** — the whole FOS suite, up from 841. **Eleven mutations, all eleven
+caught**: three against the store's SQL (the wrong edge joined, the order
+reversed, the URL filter dropped), six against the view model (dedupe removed,
+the last asking taken instead of the first, the landing-node rescue disabled,
+the limit dropping the newest instead of the oldest, every row made enterable,
+the section ordered above the crossings) and two against the wiring that only a
+real browser can reach (the sidebar never asking, and the engine answering with
+`crossings` instead).
+
+Docs: `SCHEMA.md` says both node columns on `query` are read and which is which,
+and marks `visit.started_at` as a record rather than a gap so the next audit does
+not re-find it; `ARCHITECTURE.md` §6 says why the sidebar makes two reads beside
+`contextContents` and what makes a bi-directional link affordable here. The
+screenshot flow asks one more question and returns to the page it was asked
+from, because it never revisited a page it searched from and the picture would
+otherwise document a panel with a section permanently missing.
