@@ -38,6 +38,8 @@ support-files = [
 
 ["browser_zzforget.js"]
 
+["browser_zzforgetpreview.js"]
+
 ["browser_zzmergeoffer.js"]
 
 ["browser_zzprivate.js"]

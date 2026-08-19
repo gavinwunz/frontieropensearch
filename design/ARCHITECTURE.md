@@ -177,6 +177,8 @@ inner loop of minutes rather than hours:
 | `toolkit/components/cleardata/ClearDataService.sys.mjs` | the Context Engine is registered as a `CLEAR_HISTORY` cleaner |
 | `toolkit/modules/Sqlite.sys.mjs` | a memory database can be wrapped, so private browsing has a store |
 | `browser/components/migration/FirefoxProfileMigrator.sys.mjs` | a profile refresh carries the Context Engine's database forward |
+| `browser/base/content/sanitize_v2.xhtml`, `sanitizeDialog.js` | Clear Recent History says what it will take out of the Context Engine |
+| `browser/components/places/content/clearDataForSite.{xhtml,js}` | so does Forget About This Site |
 
 The last row is two lines: `wrapStorageConnection` read a name off a
 `databaseFile` that a memory database does not have, so the documented way to
@@ -273,6 +275,17 @@ blocks browsing is suspended for exactly one operation — a clear waits for eve
 window's queue to drain before deleting, because a write already in flight would
 otherwise land on the far side of the delete and put back a row the user has
 just asked to be rid of.
+
+The last two rows in the table above are the other half of that crossing, and
+they are the first edits the fork has made to a Firefox *surface* rather than to
+a Firefox *service*. They stay small on purpose: one hidden element in each
+dialog and a guarded call, with the sentence and every decision behind it in
+`FOSForgetPreview.sys.mjs`. The reason they exist at all is that the two dialogs
+are honest for Firefox's data and were not for this fork's — Firefox's history
+is a flat list, so "the last hour" describes its own blast radius, and this
+store's does not. `SCHEMA.md` §Saying what will go, before it goes has the
+argument, including why the preview is the delete rolled back rather than a
+second set of counting queries.
 
 Upstream Firefox guidance in `AGENTS.md` and `docs/` still applies to everything
 below that line.

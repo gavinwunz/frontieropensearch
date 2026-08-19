@@ -29,9 +29,8 @@ import assert from "node:assert/strict";
 // over an object — so a stub that satisfies evaluation is enough, and a
 // dynamic import is what puts it in place before the module body runs.
 globalThis.ChromeUtils ??= { defineESModuleGetters() {} };
-const { describeForgetPreview } = await import(
-  "../../FOSForgetPreview.sys.mjs"
-);
+const { describeForgetPreview } =
+  await import("../../FOSForgetPreview.sys.mjs");
 
 /**
  * @param {object} fields Overrides on an otherwise empty preview.
@@ -140,8 +139,8 @@ test("at most three names, and contexts get the room first", () => {
       trailNames: ["t1", "t2"],
     })
   );
-  for (const name of ["c1", "c2", "c3"]) {
-    assert.match(text, new RegExp(`“${name}”`), `${name} is named`);
+  for (const label of ["c1", "c2", "c3"]) {
+    assert.match(text, new RegExp(`“${label}”`), `${label} is named`);
   }
   assert.doesNotMatch(text, /“c4”/, "the fourth context does not fit");
   assert.doesNotMatch(

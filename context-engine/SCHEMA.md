@@ -161,6 +161,47 @@ so nothing further is written for what is still on screen. Navigating onward
 records again, because forgetting is a delete and not a blocklist; a user who
 wants a session that records nothing has a private window.
 
+### Saying what will go, before it goes
+
+The confirmation dialogs Firefox already ships now carry one extra line naming
+what forgetting will take out of this store — the counts of pages, questions,
+trails and contexts, and the labels of up to three of the contexts. It is on
+the explicit-consequence rung and deliberately no higher: no second dialog, no
+typed confirmation, no undo window. `IDEAS.md` (run 45) has the argument for
+that placement, and the reason an undo window is the wrong shape here — it is a
+tombstone table with a timer on it, and §Forgetting has already ruled a
+tombstone table out.
+
+The line exists because **this store's blast radius is not guessable and a flat
+history's is.** Clearing an hour of Firefox history removes the rows for that
+hour. Clearing an hour here takes pages out of the middle of trails that began
+long before it, strands the questions asked from those pages, and can delete a
+context whose label named an afternoon's work. The label is the part no host
+name or clock reading can be read for, which is why the names are shown and not
+only the counts.
+
+**The preview is the delete.** `previewForget` runs `forgetHost` or
+`forgetRange` for real, inside their own transaction, and rolls that
+transaction back — so what the dialog reports cannot drift from what the button
+does, whatever the four rules above learn to do next. The obvious alternative,
+a second set of counting queries beside the deleting ones, would be a duplicate
+of those rules that no test could fail for being wrong, in the one surface
+whose job is to be believed. Rolling back means throwing, because
+`executeTransaction` commits unless its body rejects; the summary rides out on
+the exception because nothing else survives a rollback. Clearing *everything*
+is the one case needing no rollback, since `forgetAll`'s summary already **is**
+its count query.
+
+**The names are on the preview and not on `ForgetSummary`.** That summary is
+broadcast on `fos-context-forgotten` after the delete has happened, and a
+notification naming what was just forgotten is a record of the thing the user
+asked to have no record of. Counts and row ids are what the live session needs
+and all it gets.
+
+A preview that cannot run shows nothing rather than zero. "0 pages" is a claim,
+and the wrong one, made in the one place the user is relying on being told the
+truth.
+
 ## Recovery
 
 The store recovers from exactly one failure: a database file whose bytes are
