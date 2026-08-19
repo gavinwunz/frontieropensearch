@@ -4659,3 +4659,105 @@ disabled, not the debt paid.
 handsfreecoding.org/2021/12/12/talon-in-depth-review/ (Dragon's data-entry-first
 vs Talon's command-first policy, which is the same choice `GRAMMAR.md` §3 makes
 and settles the other way).
+
+---
+
+## Run 55 — how hint overlays are actually built, and what they all get wrong
+
+The ordering question was settled last run (Rango; see above). This run's
+research was the narrower one that had to be answered before writing any of it:
+**every tool that draws hints draws them into the page's DOM, and every one of
+them pays for it.** The question was whether Gecko offered a way not to.
+
+### `insertAnonymousContent` is the answer, and browsers are the only ones who
+have it
+
+- **Found:** 2026-08-19, looking for how the find bar's highlighter draws over a
+  page without being in it.
+- **What it is:** `Document.insertAnonymousContent()` renders a subtree into the
+  *canvas frame*. It is not in the page's DOM: no mutation observer fires, no
+  `querySelector` finds it, the page's CSS does not reach it, and it contributes
+  nothing to layout. `FinderHighlighter.sys.mjs` and
+  `ScreenshotsOverlayChild.sys.mjs` are the two in-tree users.
+- **Verdict:** adopt, and it is the single largest advantage this fork has over
+  every extension that has tried this.
+- **Why:** Vimium, Rango and LinkHints are all extensions, so all three inject
+  hint elements into the page and then spend their bug trackers fighting the
+  page's CSS — `z-index`, `filter`, `transform`, `overflow: hidden` on an
+  ancestor, and stacking contexts generally. Rango's own docs tell users to
+  adjust hint styling per site. The failure mode is the bad one: a hint that is
+  *hidden* is a link that has silently stopped being addressable, and the user
+  cannot tell that from a link that was never marked. Being a browser means not
+  having that class of bug at all.
+
+  Two consequences worth keeping. The stylesheet is `<link rel=stylesheet
+  href="chrome://…">` from inside the anonymous content, which works — but it
+  resolves against the *content* document, so a `:root` rule would push FOS
+  design tokens into the site's cascade. `fos-links.css` therefore restates the
+  three values it needs rather than importing `fos-tokens.css`, and says so.
+  And the canvas frame is laid out in **page** coordinates, so hints scroll with
+  their links for free rather than being re-measured on every scroll event.
+- **Phase:** built this run.
+
+### Positional labels versus derived ones, again
+
+- **Found:** 2026-08-19, deciding what letter a link should get.
+- **What it is:** Vimium and Rango assign hints positionally — first visible
+  element gets `a`, and the same link is `a` on one visit and `sd` on the next.
+  Cursorless puts a "hat" on a character *of the token itself*, so the name is
+  derived from the thing.
+- **Verdict:** adopt Cursorless's rule, which `MarkRegistry.preferenceOrder`
+  already implements; the work was in the label rather than the letter.
+- **Why:** it is §2's argument about macOS Voice Control's renumbering, one
+  level down, and it is worth more for links than for cards because there are
+  more of them and they are read once. A link reading "Downloads" preferring `d`
+  is guessable before it has been learned. **The label is where this is won or
+  lost**, and one case had to be got right: `<a aria-label="Demonstration">▶</a>`
+  is how icon links are actually written, so `textContent` is not empty, so a
+  fallback chain testing emptiness derives a mnemonic from a character in no
+  alphabet — handing an arbitrary letter to exactly the links with nothing on
+  screen to read. `labelFor` therefore tests for *a letter of the alphabet*
+  rather than for non-emptiness. Caught by a test, not by reading.
+
+### One mark per destination
+
+- **Found:** 2026-08-19, from the shape of the fixture page rather than a source.
+- **What it is:** the thumbnail and the headline above it, the icon and the name
+  beside it — two `<a>` elements, one URL, one thing to a reader. No hint tool
+  merges them.
+- **Verdict:** adopt. Both elements still carry a badge; they share the letter.
+- **Why:** it buys back letters on exactly the pages that run out of them, since
+  a page dense enough to exhaust the alphabet is usually dense because it is a
+  list of articles each linked twice. Free to implement — the `href` IDL
+  attribute is already absolute, so the comparison is a string equality — and
+  it is the only one of the four rules that makes the alphabet go *further*
+  rather than deciding who loses.
+
+### Open: what to do past twenty-six visible links
+
+Not solved, and deliberately not guessed at. §2's "the rest are reached by
+search" is the right rule and does not finish the job: something still has to
+choose which twenty-six, and document order means a long navigation menu can
+spend the whole alphabet before the article starts. Shipped answer is document
+order, truncate, **and say the count out loud** — a silent truncation reads as
+"these are the links" to a user who cannot see the page.
+
+Two candidates, neither built:
+
+1. **Two-word marks** — "follow cap air", 676 combinations. What Vimium and
+   Rango both do, and it needs no new vocabulary since the alphabet already has
+   the words. The cost is in the parser: a mark becomes two tokens, and every
+   `accepts` slot has to know when to take one and when two. Worth doing only if
+   the count actually bites in use.
+2. **Narrowing by typed text** — what Vimium's filtered mode does, and what the
+   command bar's candidate list already does for every other kind of mark. This
+   is the cheaper one and it composes with `cmd_find`, which is on the §5.1.1
+   debt list as the cheapest entry there for the same reason: it takes terminal
+   free text exactly like `search` and `name`.
+
+Decide from use, not from here. Record which one the count actually forces.
+
+**Sources:** `toolkit/modules/FinderHighlighter.sys.mjs`,
+`browser/components/screenshots/ScreenshotsOverlayChild.sys.mjs`,
+github.com/philc/vimium, github.com/david-tejada/rango,
+github.com/cursorless-dev/cursorless (hats), `dom/webidl/Document.webidl`.

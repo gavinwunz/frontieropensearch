@@ -79,10 +79,11 @@ export const R_COMMAND = "command";
 /**
  * Human-facing names for the pillars, used as group headings.
  *
- * Four headings for three pillars, because two verbs belong to the entry
- * surface itself: `search` asks for a page and `stop` gives up on asking. The
- * key is `page` rather than `bar` so the heading names what the verbs act on,
- * which is what the other three do.
+ * Four headings for three pillars, because some verbs belong to the entry
+ * surface itself: `search` asks for a page, `stop` gives up on asking, and
+ * `follow` reaches into the page that arrived. The key is `page` rather than
+ * `bar` so the heading names what the verbs act on, which is what the other
+ * three do — and it is what made room for `follow` without a fifth heading.
  */
 const PILLAR_NAMES = Object.freeze({
   field: "The Field",

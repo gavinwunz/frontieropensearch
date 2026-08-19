@@ -276,6 +276,43 @@ add_task(async function test_re_marking_does_not_walk_the_alphabet() {
   });
 });
 
+add_task(async function test_a_re_mark_leaves_nothing_of_the_last_one() {
+  // The case the assertion above cannot see, and a mutation found: re-marking
+  // an *unchanged* page is idempotent whether or not the registry is emptied
+  // first, because the same links get the same ids and `assign` is sticky. It
+  // is only when the page has moved that skipping the clear does damage.
+  //
+  // The damage is not that the letters look untidy. A letter held from the
+  // previous pass is live in the registry and absent from the child's map, so
+  // the parser accepts it and the page ignores it — `follow` on a mark the user
+  // can see, that silently does nothing. Every letter the registry holds must
+  // be one the page will act on.
+  await BrowserTestUtils.withNewTab(FIXTURE, async browser => {
+    await links().mark();
+
+    await SpecialPowers.spawn(browser, [], () => {
+      content.document.getElementById("below").scrollIntoView();
+    });
+    const second = await links().mark();
+
+    Assert.equal(
+      links().marks.candidates(["link"]).length,
+      second.assigned.length,
+      "the alphabet holds this pass's letters and no others"
+    );
+
+    // And every one of them reaches the page rather than being accepted and
+    // dropped. Checked by following one, which is the only way to ask.
+    const letter = Object.keys(marked())[0];
+    const loaded = BrowserTestUtils.browserLoaded(browser, false, () => true);
+    Assert.ok(
+      await links().follow(letter),
+      "a letter from the second pass still names a link"
+    );
+    await loaded;
+  });
+});
+
 add_task(async function test_the_page_has_its_own_alphabet() {
   // The claim `ScopedMarks` exists for, tested where both scopes are real: the
   // window's registry is full of trail nodes by now, and the page's letters are

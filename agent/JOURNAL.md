@@ -1541,3 +1541,74 @@ Green: 1246 FOS browser-chrome checks across 27 files, 0 failures — the new fi
 contributes 261. Six mutations, six caught: a dropped entry, an invented one, a
 verb renamed out of the action table, a bound command parked as `unbound`, a
 reason replaced by its own class name, and a class nobody declared. Lint clean.
+
+---
+
+## Run 55 — 2026-08-19 — post-plan
+
+**`follow`: the sixteenth verb, and the first that reaches inside a page.**
+Fifteen verbs addressed the browser's own objects. `GRAMMAR.md` §2 had listed
+in-page links among the addressable kinds since marks landed, `FOSMarks` had
+`"link"` in its own doc comment, and nothing had ever registered one — so the
+fork had a complete spoken grammar for every surface *around* a page and no
+hands-free way at all to click a link in it. Run 54's keyset manifest is what
+made that visible, by enumerating the chrome and thereby showing where the
+chrome ends. This was task 1 for that reason, ahead of all 26 debt entries.
+
+`follow` marks the links on the current page; `follow cap` follows one. **The
+optional target is forced, not chosen.** A required target would raise the marks
+only while a slot is pending — the keyboard can sit in a pending slot and a
+voice turn cannot, since §8's rule is that voice writes the whole line, so a
+spoken "follow" would leave a half-line the next utterance replaces rather than
+completes. Two whole commands is the only shape identical in both modalities.
+
+**The page gets its own alphabet.** A session past its first few minutes has
+trail nodes holding most of the twenty-six letters, and a page has hundreds of
+links that turn over on every navigation; one registry either starves the links
+or evicts the marks the user has learned, and the second breaks the stickiness
+rule the whole feature rests on. `ScopedMarks` resolves a letter by what the
+pending verb accepts, so `enter cap` and `follow cap` are never a choice for the
+parser or for a speaker. Stickiness is not excepted — a link's object goes away
+when the page view does. The parser changed with it: `checkMark` hands `accepts`
+*into* the lookup rather than asking what holds the letter and comparing after,
+which would reject a `follow` the user could see was correct.
+
+Letters are drawn in **anonymous content**, as `FinderHighlighter` draws its
+own. This is the largest advantage the fork has here: Vimium, Rango and
+LinkHints are extensions, so all three inject into the page DOM and all three
+spend their trackers fighting page CSS — and a hidden hint is a link that has
+silently stopped being addressable, indistinguishable from one never marked.
+
+Research: `insertAnonymousContent` (adopt — and note that a chrome sheet linked
+from it resolves against the *content* document, so it cannot import the design
+tokens without leaking them into every site); Cursorless's derived hats over
+Vimium's and Rango's positional hints (adopt, already what `preferenceOrder`
+does); one mark per destination (adopt — no hint tool merges the thumbnail and
+its headline, and it is the only rule that makes the alphabet go further rather
+than deciding who loses). Past twenty-six visible links is left **open** with
+two named candidates and neither built; the shipped answer truncates in document
+order and says the count out loud, because a silent truncation reads as "these
+are the links" to a user who cannot see the page.
+
+Two defects found by the tests rather than by reading, both the same shape — a
+fallback chain testing the wrong predicate. `labelFor` tested emptiness, and
+`<a aria-label="…">▶</a>` is how icon links are actually written, so the
+mnemonic came from a character in no alphabet; it now tests for a letter of the
+alphabet, which is the question `preferenceOrder` asks a moment later. And
+`follow` cleared the marks before using them — `clear` drops the child's map
+that resolves a letter to an element, so every `follow` reported activating
+nothing.
+
+**One mutation survived, and the test it forced was the one worth writing.**
+Skipping the registry clear before a re-mark is invisible on an unchanged page:
+the same links get the same ids and `assign` is sticky, so both passes agree
+either way. It only does damage once the page has moved, and the damage is that
+a letter held from the previous pass is live in the registry and absent from the
+child's map — the parser accepts it and the page ignores it. The test now
+scrolls between the marks. Transferable: **a test that re-runs an idempotent
+operation proves nothing about the state it was meant to reset** — change
+something between the runs, or the assertion is free.
+
+Green: 1283 FOS browser-chrome checks across 28 files, 0 failures, before the
+last test was added; the new file contributes 39. Node 344, 0 failures. Seven
+mutations, seven caught (one only after strengthening). Lint clean.

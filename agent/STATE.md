@@ -53,132 +53,163 @@ document cites**, which found the count wrong by thirty-six commands.
 
 ## In progress
 
-Nothing waits on a person. **Nothing is running — the harness is free.**
+Nothing waits on a person. **Nothing is running except the confirming suite.**
 
-Run 54 built the artefact run 53 said the audit's product would be: a manifest
-of every command a `<key>` in the window can reach, each with a class and a
-written reason, plus a test that fails when the window binds something the
-manifest does not name or the manifest names something the window no longer
-binds. `GRAMMAR.md` §5.1's "by construction" is now a claim about the window
-rather than about the action table, and §5.1 has a new subsection saying so.
+Run 55 built task 1: **a mark for a link on the page.** The verb is `follow`,
+and it is the sixteenth — the first that addresses anything *inside* a page.
+Fifteen verbs addressed the browser's own objects; `GRAMMAR.md` §2 had listed
+in-page links among the addressable kinds since marks landed, `FOSMarks` had
+`"link"` in its own doc comment, and nothing had ever registered one. The fork
+had a complete spoken grammar for every surface around a page and no hands-free
+way at all to click a link in it.
 
-**The audit's own count was wrong, and building the enumeration is what found
-that.** Run 53 reported 101 keys reaching 49 commands. The keys were right:
+**The page has its own alphabet, and that is the design decision the rest
+follows from.** A session past its first few minutes has trail nodes holding
+most of the twenty-six letters, and a page has hundreds of links that turn over
+on every navigation. One registry either starves the links or evicts the marks
+the user has learned — and the second is worse, because stickiness is the rule
+the whole feature rests on. So links are marked in a separate scope and
+`ScopedMarks` resolves a letter by what the pending verb accepts. It is not the
+ambiguity it looks like: a mark is only consumed in a slot whose accepted types
+the grammar already knows, so neither the parser nor the speaker ever chooses
+between `enter cap` and `follow cap`. Stickiness survives intact rather than
+being excepted — a link's object goes away when the page view does.
 
-| | run 53 | actual |
-| --- | --- | --- |
-| `<key>` elements | 101 | 101 |
-| distinct commands | 49 | **85** |
-| reachable by a word | — | **2** |
+The parser had to change with it. `checkMark` now hands the verb's `accepts`
+*into* the lookup instead of asking what holds the letter and comparing
+afterwards. Comparing afterwards has the registry choose first and the grammar
+object second, which rejects `follow cap` as wrong-typed on any page whose `c`
+is a link while some node also holds `c` — a command that was well-formed, and
+that the user could see was well-formed, because the letter was drawn on the
+link in front of them.
 
-Every one of the 36 missing is a key with no `command` attribute — the devtools
-keys, the sidebar toggles, the nine tab-selection keys, `goHome`,
-`bookmarkAllTabsKb`, the six `internal="true"` editing keys. They dispatch
-through a listener on `mainKeyset` keyed by element id, or through nothing at
-all, and a count that read the attribute could not see them. The transferable
-part is one turn past run 53's: **the audit gets audited when something
-downstream depends on it being exhaustive.** A number in a design document is
-checked by nobody; a number a test derives is checked every run.
+**`follow` takes an optional target, and that shape is forced rather than
+chosen.** `follow` alone marks the links; `follow cap` follows one. The
+tempting alternative is a required target, so the *pending slot* raises the
+marks and the keyboard user types `follow ` and sees the letters appear. The
+keyboard can sit in a pending slot and a voice turn cannot — §8's "voice writes
+the whole line" means a spoken "follow" would leave a half-line the next
+utterance replaces rather than completes. Two whole commands is the only shape
+identical in both modalities.
 
-The eighty-five sort as 26 `debt`, 18 `devtools`, 12 `affordance`, 9 `replaced`,
-8 `editing`, 5 `desktop`, 3 `unbound`, 1 `display`, **2 `verb`** — `field` and
-`stop`, and that is the whole of what has a word.
+**The letters are drawn in anonymous content**, the mechanism
+`FinderHighlighter` uses. This is the largest advantage the fork has over every
+extension that has tried this: Vimium, Rango and LinkHints all inject into the
+page DOM and all spend their trackers fighting page CSS, and the failure mode is
+the bad one — a hidden hint is a link that has silently stopped being
+addressable, indistinguishable from one that was never marked. Being a browser
+means not having that class of bug.
 
-The file is deliberately **green with the 26 in it**. A ratchet on that count is
-satisfied by reclassifying, which is the one move the manifest exists to
-prevent, and a genuinely new unvoiced command fails the classification check
-anyway. What is checked rather than judged is `unbound` (no key or keycode on
-any of its keys, so it cannot become the shelf awkward bindings get parked on)
-and `verb` (the named word must still be in `ACTIONS`).
+Four rules decide what gets a letter: what is on screen, one mark per
+destination (the thumbnail and its headline share a letter and both carry a
+badge), the first twenty-six in document order, and the top document only. The
+third **says the count out loud** when it truncates, because a silent truncation
+reads as "these are the links" to a user who cannot see the page.
 
-Green: **1246 FOS browser-chrome checks across 27 files, 0 failures** — the new
-file contributes 261. **Six mutations, six caught**: a dropped entry, an
-invented one, a verb renamed out of the action table, a bound command parked as
-`unbound`, a reason replaced by its own class name, and a class nobody declared.
-Lint clean on every changed file.
+Green: **1283 FOS browser-chrome checks across 28 files, 0 failures** before the
+last test was added — the new file contributes 39. Node: 344, 0 failures.
+**Seven mutations, seven caught, one only after the test was strengthened** —
+see below. Lint clean on every changed file.
 
-`main` is at `phase-3`. `agent/dev` is pushed through this run's commits.
+`main` is at `phase-3`. `agent/dev` has this run's commits.
 
 ## Next task
 
-1. **A mark for a link on the page.** The manifest enumerates the chrome and
-   the chrome only, and the run that built it found the bigger hole beside it:
-   **there is no hands-free way to click a link.** Marks address cards, nodes,
-   trails and contexts; `FOSMarks` lists `"link"` among the addressable kinds in
-   its own doc comment and nothing registers one, no verb `accepts` one. Rango,
-   the most developed voice-browsing extension there is, is almost entirely this
-   one capability and ships no spoken form for back, reload, find or zoom at all
-   — which is the evidence that this, not reload, is where hands-free browsing
-   actually stops. **Ahead of every item in the debt list**, including the two
-   below, because a 26-item chrome backlog reads as the §5 backlog and is not.
+1. **`Browser:Back` and `Browser:Forward`, decided together.** Unchanged from
+   run 54 and now the top of the list. The manifest says what run 53 suspected:
+   `back` is not `Browser:Back`. The verb moves to the node visited before this
+   one in time; the gesture steps the session history chain; they agree on a
+   linear walk and diverge at the first branch. Forward has no verb at all and
+   is not merely the mirror — in a tree the forward direction is plural. One
+   question, not two. Do not add a word for symmetry.
 
-2. **`Browser:Back` and `Browser:Forward`, decided together.** The manifest says
-   what run 53 suspected: `back` is not `Browser:Back`. The verb moves to the
-   node visited before this one in time; the gesture steps the session history
-   chain; they agree on a linear walk and diverge at the first branch. Forward
-   has no verb at all and is not merely the mirror — in a tree the forward
-   direction is plural. One question, not two. Do not add a word for symmetry.
+2. **Watch whether twenty-six links is actually the bound in use.** Shipped
+   answer is document order, truncate, say the count. `IDEAS.md` (run 55) has
+   the two candidates — two-word marks, and narrowing by typed text — and
+   deliberately does not choose. The second is cheaper and composes with
+   `cmd_find`, which is the cheapest entry on the §5.1.1 debt list for the same
+   reason: it takes terminal free text exactly like `search` and `name`. Decide
+   from use rather than from the document.
 
-3. **Then the rest of the 26**, and the manifest's reasons already argue the
-   ordering. `Tools:Sanitize` is the sharpest: Clear Recent History is where
-   run 44 wired the context store's only delete — a capability this fork built
-   itself, from scratch, on the argument that a record the user cannot remove
-   is not private for staying on the machine — and it was given a dialog and no
-   word. Every other §5 gap is something Firefox left us; that one we made.
-   `cmd_find` is the cheapest: it takes terminal free text exactly like `search`
-   and `name`, so the grammar already has the form.
+3. **`follow` reaches links and not buttons**, deliberately: `[onclick]` and
+   `[role=button]` sweep in every layout wrapper on a modern site, and a hint on
+   a `div` that does nothing teaches the user that the hints lie. Whether the
+   larger content-interaction surface is worth a second verb is a question for
+   after `follow` has been used, not before.
 
-4. **Why this build has no remote tabs.** Unchanged for several runs. Next step
+4. **Then the rest of the 26.** The manifest's reasons already argue the
+   ordering, and `Tools:Sanitize` is still the sharpest: Clear Recent History is
+   where run 44 wired the context store's only delete — a capability this fork
+   built itself, on the argument that a record the user cannot remove is not
+   private for staying on the machine — and it was given a dialog and no word.
+
+5. **Why this build has no remote tabs.** Unchanged for several runs. Next step
    is `UrlbarProviderRemoteTabs.isActive` in a driven browser with
    `services.sync.username` set, not more reading.
 
-5. **The rails still overlay the page**, and **the 17 timed-out urlbar files**,
+6. **The rails still overlay the page**, and **the 17 timed-out urlbar files**,
    and **a region's height is a ratchet** (`FIELD.md` §6) — all unchanged, all
    belonging with the Field's restructure rather than piecemeal.
 
 ## Found this run, not yet chased
 
-- **The instrument had a systematic blind spot, and only a consumer that had to
-  be exhaustive exposed it.** Run 53's count read the `command` attribute, so
-  every key dispatched by element id was invisible to it — 36 of 85. The count
-  was published in a design document and reasoned from for a run. Nothing about
-  writing it down more carefully would have caught this; what caught it was
-  making a test derive the number. **Prefer a measurement something depends on
-  to a measurement something cites.**
+- **A mutation survived, and the test it exposed was the one worth writing.**
+  Skipping the registry clear before a re-mark is invisible on an *unchanged*
+  page: the same links get the same ids and `assign` is sticky, so the second
+  pass is identical either way. It only does damage once the page has moved —
+  and the damage is not untidiness. A letter held from the previous pass is live
+  in the registry and absent from the child's map, so **the parser accepts it and
+  the page ignores it**: `follow` on a mark the user can see, that silently does
+  nothing. The test now scrolls between the two marks and asserts that every
+  letter the registry holds is one the page will act on. Generalises: *a test
+  that re-runs an idempotent operation proves nothing about the state it was
+  supposed to reset.* Change something between the runs or the assertion is free.
 
-- **Rango is evidence about practice, not about the rule.** It omits back,
-  forward, reload, find, zoom, bookmark, print and save deliberately, because
-  the desktop voice layer sends the keystroke for them. §5 has already had that
-  argument and lost it on purpose — run 53's W3C source says voicing a shortcut
-  is not a native spoken command — so the 26 stay debt. What Rango settles is
-  the *ordering*, and it puts an unbuilt kind of mark ahead of all of them.
+- **Two real defects were found by the test rather than by reading**, and both
+  are the same shape — a fallback chain testing the wrong predicate.
+  `labelFor` tested a candidate for emptiness, and `<a aria-label="…">▶</a>` is
+  how icon links are actually written, so `textContent` was not empty and the
+  mnemonic came from a character in no alphabet. It now tests for *a letter of
+  the alphabet*, which is the question `preferenceOrder` will ask a moment later
+  rather than a similar one. And `follow` cleared the marks before using them —
+  `clear` tells the child to drop the very map that resolves a letter to an
+  element, so every `follow` reported activating nothing on a page where the
+  letter was plainly correct. `#forget` is now the parent's half alone, and the
+  orderings differ: invalidation wants both halves, following wants the page to
+  act first.
 
-- **`key_showAllTabs` is bound to nothing at all.** Nothing in the tree listens
-  for it; it exists so the View menu can print Ctrl+Shift+Tab beside "Show All
-  Tabs". It looks exactly like a live binding, and only an enumeration obliged
-  to account for every key would ever ask. Filed `display`, which has one
-  member for now.
+- **A chrome sheet linked from anonymous content resolves against the *content*
+  document.** So `fos-links.css` cannot `@import` `fos-tokens.css` — a `:root`
+  rule would push the design system's custom properties into every site the user
+  visits. It restates the three values it needs and says why. Worth knowing
+  before the next surface that draws into a page.
 
-- **`key_gotoHistory` is worth one probe.** Upstream dispatches it by id from
-  the `mainKeyset` listener, and this fork gave the same element a
-  `command="FOS:TrailRail"` attribute. Both paths still exist in the tree. If
-  the id-keyed listener still sees the event, accel+H opens the trail rail *and*
-  the history sidebar. The restore commit (`543be4d72996`) shows the author
-  knew the element was the odd one, and `browser_fosrestore.js` covers the
-  pref-off direction; what is not obviously covered is the pref-on one. Cheap
-  to settle in a driven window, and exactly the inherited-surface lens.
+- **`key_gotoHistory` is still worth one probe.** Carried from run 54, untouched.
+  Upstream dispatches it by id from the `mainKeyset` listener, and this fork gave
+  the same element a `command="FOS:TrailRail"`. Both paths still exist. If the
+  id-keyed listener still sees the event, accel+H opens the trail rail *and* the
+  history sidebar. `browser_fosrestore.js` covers the pref-off direction; the
+  pref-on one is not obviously covered.
 
 ## Background jobs
 
-**Nothing is running.** `fossuite54` was the last, and it finished — 1246
-browser-chrome checks across 27 files, 0 failures.
+**`fossuite55b` is running** — the confirming full-suite pass with the last
+test added. `fossuite55` finished before it: **1283 browser-chrome checks across
+28 files, 0 failures.** Check `./agent/bg-status.sh` first thing.
 
-`agent/mutate.sh` is new: apply one replacement, **assert it applied**, run a
-command, restore. Run 44's rule about a mutation that silently matched nothing
-reading exactly like one that survived is now enforced by the runner rather
-than remembered. It also found that `browser/base/content/` files are
-symlinked into `dist/bin`, so mutating a dialog needs no rebuild — only a new
-file in `EXTRA_JS_MODULES` or a manifest change does.
+`agent/mutate.sh`: apply one replacement, **assert it applied**, run a command,
+restore. Run 44's rule about a mutation that silently matched nothing reading
+exactly like one that survived is enforced by the runner rather than remembered.
+It also found that `browser/base/content/` files are symlinked into `dist/bin`,
+so mutating a dialog needs no rebuild — **and so are the FOS modules and the new
+`actors/` pair**, which is what made this run's seven mutations cost one test
+run each instead of a `build faster` each. Only a *new* file in
+`EXTRA_JS_MODULES`/`FINAL_TARGET_FILES` or a manifest change needs the build.
+
+**The node suite has one flaky test**, seen once this run and not reproduced in
+two re-runs: `the listening deadline bounds a latched turn, which has no key to
+end it` (`test_voice.mjs`). Timing-based, unrelated to anything this run
+touched. Worth one look if it recurs; not worth chasing on a single sighting.
 
 
 `run23` then `run25` — the live chain. Started with
