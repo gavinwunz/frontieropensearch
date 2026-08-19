@@ -23,35 +23,46 @@ one.
 
 ## Done
 
-- **Both of STATE's narrow defects are fixed, and one of them was two.** The
-  Field's own screenshot had three grey cards out of four, not one, and the two
-  halves have opposite causes. A page branched *to* was never photographed
-  because re-entry is a departure the progress listener cannot announce — the
-  load `enter` starts belongs to the node being arrived at, so `#restoring`
-  suppresses it. `enter` announces it itself now, before anything moves, and
-  awaits the listener: the one departure in the tree that is not a race. A page
-  branched *from* was never photographed for the opposite reason — `enter`
-  returns before the restore commits, so the navigation that follows is *still*
-  suppressed by that same flag, while its delayed settle capture had already
-  been discarded as stale. A node with nothing at all now takes a picture the
-  moment it settles and waits for the better one only if it already has
-  something to show.
+- **The bare tap is built, and the standing list's item 1 is closed.** Tapping
+  F4 — no modifier — latches a turn; holding it is still push-to-talk. What
+  unblocked it was noticing the objection was mis-scoped: "a mis-tap opens the
+  microphone for thirty seconds" is equally true of shift+F4, so it was never
+  about the tap but about a latched microphone bounded only by a clock.
 
-  Also: a snapshot whose document changed underneath it is dropped.
-  `drawSnapshot` awaits twice and then paints whatever is in front of it,
-  reporting success either way, so a departure capture that lost its race filed
-  a picture of the *next* page over the top of a correct one. No error to
-  catch; the inner window id is the only thing that can tell them apart.
+  So a latched turn now carries two bounds a held turn does not, both named
+  after the platform APIs they come from: **initial silence** (6s, nothing was
+  ever said — ends the turn with `NOTICE_NOTHING_HEARD` and never runs the
+  model) and **end silence** (1.5s, the utterance finished — transcribes). A
+  held turn gets neither, because a finger on the key is a user who is present.
+  The predicate is "is anybody holding anything", not "which gesture started
+  this" — §8's lesson about gesture-shaped bounds, applied before it broke
+  rather than after.
 
-- **Focus custody is a window-level fact and now lives in `FOSChrome`.** All
-  four surfaces took focus on open and gave it to the content area on close,
-  which is right only when the surface was the one thing on screen. `takeFocus`
-  and `releaseFocus` keep a stack — the surface that most recently took the
-  keyboard gets it back — rather than an invented precedence between panels.
-  The command bar is the exception and it is not about what was open: a line
-  that loaded a page hands over to the page. `FOSActions.loads` counts loads so
-  the bar can tell `field` from `wikipedia`, which the verbs cannot, since a
-  search reaches the dispatcher as bare prose.
+  End silence is the half that makes the gesture worth having: the turn ends
+  itself when the utterance does, so the second press stops being the only way
+  out. `FOSVoiceSession` owns both thresholds; the shell reports the two facts
+  only it can see — how long the key was down, and whether the room is above
+  `FOSVoiceTranscript`'s own `MIN_RMS` — via an `AnalyserNode` polled at 10Hz,
+  not the per-frame worklet run 30 rejected.
+
+- **STATE's two narrow defects are fixed, and one of them was two.** Three of
+  the Field's four cards were grey, with opposite causes: a page branched *to*
+  was never photographed because `#restoring` suppresses the departure re-entry
+  starts, and a page branched *from* was never photographed because `enter`
+  returns before the restore commits, so the next navigation is still inside
+  that window. `enter` announces its own departure now, and a node with no
+  picture at all takes one the moment it settles. Separately, a snapshot whose
+  document changed underneath it is dropped — `drawSnapshot` reports success
+  either way, so the inner window id is the only thing that can tell a correct
+  picture from one of the next page. Run 39's journal entry has the detail.
+
+- **Focus custody is a window-level fact and now lives in `FOSChrome`.**
+  `takeFocus`/`releaseFocus` keep a stack — the surface that most recently took
+  the keyboard gets it back — rather than every surface handing the keyboard to
+  the content area on close, which is right only when it was the one thing on
+  screen. The command bar is the exception: a line that loaded a page hands over
+  to the page, and `FOSActions.loads` counts loads because the verbs cannot tell
+  `field` from `wikipedia` — a search reaches the dispatcher as bare prose.
 
 - **The cross-trail merge is offered, measured and driven.** STATE's top item
   since run 36 and now shipped. `FOSContextMerge.sys.mjs` is the pure half —
@@ -622,23 +633,27 @@ for anything that needs the engine; `run29.sh` remains the latency measurement.
 Both need `agent/jobs/local-hub.py` serving the weights with `MOZ_MODELS_HUB`
 pointed at it, because mochitest kills the process on a non-local connection.
 
-This run needed no gated job: everything it touched is covered by the ordinary
-suite plus `agent/smoke.sh`, which is also the evidence — the fix is visible in
-`agent/reports/demo-3-field-region.png`, which went from three grey cards to
-four with pictures.
+This run needed no gated job either: the voice path's shell decisions are
+covered by doubles in `browser_voice.js`, and nothing it touched needs weights.
+The suite is 757 browser-chrome checks, 271 node tests and 2 xpcshell files,
+all green, plus seven mutation checks confirming each part of the fix is pinned
+by a test that fails without it.
 
 `main` is at `phase-3`. `agent/dev` is pushed through this run's commits.
 
 ## Next task
 
 The phase plan is complete, so nothing pulls the next run in a particular
-direction. Ordered by value.
+direction. Ordered by value. Item 1 for the last three runs — the bare tap —
+is built and closed; what is left below is genuinely lower-value than it was,
+so a run that finds something better in `IDEAS.md` should take that instead.
 
-1. **The bare tap for a voice turn.** `GRAMMAR.md` §9 carries it. Deliberately
-   unbuilt: a mis-tap opens the microphone for the whole thirty-second
-   deadline, and how often that happens is a question about use.
+Also worth a run of its own at some point: **this file is 110KB and its own
+header says to keep it short.** Every run reads it, `IDEAS.md` (179KB) and
+`JOURNAL.md` (126KB) before doing anything. The Done section is the part that
+has become a log; most of it is recoverable from the journal.
 
-2. **Sustained resize of the crowded overview.** Recorded in `IDEAS.md` run 32
+1. **Sustained resize of the crowded overview.** Recorded in `IDEAS.md` run 32
    and *not* solved: the burst is fixed (53ms → 1.19ms) but one rebuild is
    18.27ms p50, longer than a frame, so continuous resizing of the worst case
    the design permits still costs ~21ms a frame over the control. The fix is to
@@ -646,330 +661,59 @@ direction. Ordered by value.
    value — it is the deliberate worst case, and dragging a window edge with the
    overview up is rare.
 
-3. **Why this build has no remote tabs.** Three upstream urlbar files fail on it
+2. **Why this build has no remote tabs.** Three upstream urlbar files fail on it
    and the fork is not what breaks them. The next step is
    `UrlbarProviderRemoteTabs.isActive` in a driven browser with
    `services.sync.username` set, not more reading.
 
-4. **The rails still overlay the page.** Run 32 took them off the *toolbar*,
+3. **The rails still overlay the page.** Run 32 took them off the *toolbar*,
    which was never a deliberate trade; covering the page still is, and STATE has
    always said it belongs with the Field's restructure rather than piecemeal.
    `--fos-chrome-block-start` makes taking layout space a smaller step than it
    was, which is worth knowing when that restructure comes.
 
-5. **The 17 timed-out urlbar files, if they are ever worth it**, and **a
+4. **The 17 timed-out urlbar files, if they are ever worth it**, and **a
    region's height is a ratchet** (`FIELD.md` §6, open rather than a defect).
 
 ## Found this run, not yet chased
 
-- **Three browser tests in a row passed with the fix reverted, and each was a
-  different wrong theory about why.** The branch point's missing thumbnail
-  reproduces only when a re-entry has not committed before the next navigation
-  starts, and every simplification of that in `browser_field.js` — leave the
-  page fast, leave it after a re-entry, leave it after a re-entry of the page
-  already showing — let the ordinary departure capture win instead. The
-  assertion went into `browser_zdemoflow.js`, which is the only place in the
-  suite where the condition actually arises. **Revert the fix and re-run before
-  believing a test pins anything**; it cost three attempts here and it would
-  have cost nothing to skip the fix entirely and never know.
+- **A feature blocked on a risk: check whether the shipped alternative carries
+  the same risk.** The bare tap sat unbuilt for three runs behind "a mis-tap
+  opens the microphone for thirty seconds", which is equally true of the
+  shift latch that had already shipped. When the risk is shared, it is not an
+  argument against the new thing — it is an unbuilt safeguard, and the feature
+  is only waiting on it by accident. Nothing about *use* would ever have
+  resolved it, which is why three runs of deferring bought nothing.
 
-- **`#restoring` suppresses more departures than it looks like it does.**
-  `enter` sets the flag and returns without waiting for the restore to commit,
-  so any navigation issued straight afterwards is *also* treated as part of the
-  restore and announces no departure. That is not an edge case — it is exactly
-  what branching looks like, and it is why the page every branch came from was
-  the one page nothing photographed. Anything else keyed on that flag should be
-  checked against the same window.
+- **Adding a real-time threshold changes the meaning of every existing test.**
+  Six browser tests failed for one cause: the helpers synthesise a keydown and
+  keyup faster than any hand can, so every "hold" in the suite became a tap, the
+  first turn latched by accident, and the *next* test's press closed that turn
+  instead of starting its own. The cascade made it look like the module was
+  broken. Any threshold expressed in wall-clock time needs the fixtures audited
+  before the failures are read.
 
-- **A capture that reports success is not a capture of the right thing.**
-  `drawSnapshot` awaits twice and paints whatever the browser is showing when
-  it finally runs, returning true either way, so the failure mode is a correct
-  picture of the wrong page rather than an error. The inner window id is the
-  identity that changes exactly when the document does. Any Gecko API that
-  reads content across an await needs the same before-and-after check —
-  `PageThumbs` does not do it for you.
+- **Measure a gesture from the events, not from the handlers.** Two clock reads
+  inside a keydown and a keyup handler measure handler-to-handler, which under
+  load is not key-down-to-key-up, and the gap lands exactly on the 400ms
+  boundary being decided. `event.timeStamp` on both halves is the interval the
+  user actually performed. The first draft read a clock inside the session and
+  would have turned a deliberate hold on a busy machine into a tap.
 
-- **A plan recorded in STATE is not a design, and this one was wrong.** "An
-  accepted offer is told apart from provenance by `context_member.source`" sat
-  here for three runs reading like a settled decision, and it does not work:
-  `contextsForTrails` filters on `provenance`, so a merge written as membership
-  changes what a context contains and not which context a trail is in. It would
-  have shipped as a sidebar showing the union while both trails stayed in their
-  own contexts — wrong in the direction that looks like working. **Re-derive a
-  plan against the code before building it**, especially one written down
-  before the code it depends on existed.
+- **The mutation check is cheap and it should be routine now.** Run 39's lesson
+  was "revert the fix and re-run before believing a test pins anything". Doing
+  it as five targeted mutations rather than one wholesale revert is better still
+  — it says *which* test pins *which* line. All seven mutations here were caught
+  by exactly the test that should have caught them, which is the first time this
+  suite has been checked that way rather than assumed.
 
-- **A fixture is a measurement, and this project has now walked into that twice.**
-  Run 37 recorded it after the `related` tier's first fixture scored 0.159
-  against a floor of 0.173. This run needed an enquiry that clears the merge
-  floor, wrote two fresh ones in the corpus's style, and got a pair that failed
-  to match itself plus **coffee matching cycling at 0.267** — a false positive
-  above the floor between topics nobody would confuse. A bag-of-tokens model's
-  opinion of invented text cannot be estimated by reading it. Draw fixtures from
-  the scored corpus or score them first.
-
-  It also says something the sweep could not: precision 1.0 was over 112
-  *corpus* negatives, and the first arbitrary pair tried produced a false
-  positive. The floor's real-world margin is thinner than the table implies.
-
-- **The ranking of aggregation rules is a property of the operating point, not
-  of the rules.** At the F1 optimum `max` was the worst of four; at precision
-  1.0 it was the best. Had the measurement reported one column it would have
-  picked whichever rule the objective flattered, and the report would have
-  looked equally confident either way. Report the curve, or at least both ends
-  of it, wherever a threshold is being chosen.
-
-- **An order statistic cannot carry a threshold across a change of size.**
-  `max` and `top3` climb with the number of pairs compared whether or not the
-  things compared are any more alike, so a floor read off two-query contexts is
-  read off the wrong context size — run 37's mistake with a different variable.
-  Measured rather than argued by re-scoring at double the size. Anything else
-  in this tree that thresholds a max, a top-k or a "best match" should be
-  checked the same way.
-
-- **Best-effort is right for a product and hostile to a test.** `mergeOffer`
-  answers "nothing" for a load that has not finished, which is correct — a
-  suggestion this fork never promised must not break a panel — and it makes a
-  test racing the engine indistinguishable from the model having an opinion.
-  Any best-effort path needs its readiness asserted in setup rather than
-  inferred from its output.
-
-- **A test double is a claim about somebody else's API, and it goes stale in
-  the direction of whatever was convenient to write.** `browser_voice.js`
-  doubled `ModelHub.listFiles` as an array because an array was easy to write;
-  the real one resolves to `{files, metadata}`. The production code was written
-  to match the double, so the presence check answered "no weights" on every
-  machine for thirteen runs and the test agreed with it every time. Nothing in
-  a suite of doubles can catch this. What caught it was one gated file asking
-  the same question of a real cache — which is the general defence: for every
-  external API this fork doubles, one test somewhere must use the real thing.
-
-- **Two JSDoc blocks in one file disagreed, and both were load-bearing.**
-  `ModelHub.listFiles` documents its `model` parameter as `organization/name`
-  in one place and `hostname/organization/name` in another, thirty lines apart;
-  the cache uses the second. Reading the nearer one cost this run three failed
-  gated attempts. Worth an upstream bug: the return type is documented wrong
-  too.
-
-- **A progress percentage that restarts is worse than none.** The ML runtime's
-  `progress` field is per-file and this model is two files, so a bar driven by
-  it runs 0→100→0. `totalLoaded` is the cumulative field. Anything else in this
-  tree that reports download progress should be checked against the same trap.
-
-- **A suite built one component at a time has nowhere to put a relation.** Every
-  assertion in this directory measures a surface; none of them asks what that
-  surface is on top of. Occlusion is a relation between two things, so it fell
-  through 656 green checks and was obvious in the first screenshot anybody
-  looked at. The cheap defence is to photograph the window; the durable one is a
-  test that names the *other* thing — "a panel starts below the toolbox" now
-  lives in `browser_designsystem.js`, which is where this fork keeps claims
-  about the window rather than about a component.
-
-- **Derived state was right and pushed state was wrong, three lines apart.**
-  `currentNodeId` reads the selected browser and cannot drift; `activeTrailId`
-  was a field updated by whatever event arrived, and `onLocationChange` arrives
-  for tabs nobody is looking at. Where a window-scoped fact can be derived from
-  what is selected, derive it — the same lesson `activeContextId`'s own comment
-  already records, arrived at again one layer down.
-
-- **A verb that fails safely fails silently, which makes it bad test setup.**
-  The screenshot run used `dismiss` to close a sidebar. It takes a required
-  target, so it parsed as an error, closed nothing and reported nothing the test
-  could see — and every picture after that point was taken of the wrong window
-  for eight runs. Using the product's own grammar to set up a test is good when
-  the grammar is what is being tested and a trap when it is not.
-
-- **A rule that is right for one signal can be wrong for the signal beside it.**
-  The unseen boolean clears on `open`, because opening the Field is what it asks
-  for. The per-card arrival state had to clear on `close` instead — copying the
-  rule next to it would have cleared the marks before the user could read them,
-  in a way that looks correct precisely because it matches its neighbour.
-
-- **A safety bound written in terms of an ordinary event stops being a bound the
-  moment a mode suppresses that event.** The `LISTENING` deadline read "a listen
-  that runs out is a key that came up" and was implemented by calling `release`.
-  Adding a gesture that ignores `release` would have removed the only bound on
-  the only turn nobody's finger is holding — and removed it silently, because
-  every test in the suite was a held turn. Define the bound on its own terms,
-  run the safety property over every *mode* rather than every path, and be
-  suspicious of any rule whose statement contains a gesture.
-
-- **The environment is not inherited: `source agent/env.sh` before every mach
-  command.** Without it `./mach build faster` dies on "Cannot find ccache",
-  because the mozconfig reaches for `$MOZBUILD_STATE_PATH/sccache/sccache` and
-  the variable is empty. It reads like a broken toolchain and is a missing
-  export. Shell state does not persist between tool calls, so it goes on the
-  same line as the command.
-
-- **`./mach lint` crashes in its default formatter on this tree.**
-  `stylish.py` does `err.hint not in seen_hints` and a hint is a dict:
-  `TypeError: unhashable type: 'dict'`. It is the formatter, not the lint —
-  `--format unix` runs the same checks and prints them. Worth knowing before
-  concluding the linter is unhappy about something.
-
-- **A wrong default costs more than a missing value.** `MLEngineChild` reads
-  `opts.backend || BACKENDS.onnx`, so leaving `backend` unset does not produce a
-  complaint about the missing option — it produces a confident error about a
-  runtime the caller never asked for. Four runs went into "why can this fork not
-  reach Remote Settings" when the question was "why is it asking". When a
-  component fails on a resource you did not know it wanted, check what it thinks
-  you asked for before concluding the resource is unavailable.
-
-- **Run 25's lesson was drawn one step too narrowly, and the sharper version is
-  about `find`.** "A packaged loader is not a packaged dependency" is true, but
-  the reason `find dist/bin -name 'ort*'` misled is that it answers *which files
-  match a name* when the question was *which file does the work*. The artifact
-  that actually runs the models is `libonnxruntime.so` — it does not match `ort*`
-  and was sitting in `dist/bin` the whole time, packaged, while two runs
-  concluded the fork had no offline inference at all.
-
-- **mochitest kills the process on any non-local connection.** Not an error the
-  test can catch and report — `FATAL ERROR: Non-local network connections are
-  disabled`, then the browser exits and the log is thirty lines of channel
-  errors. Any test that needs a real asset needs a loopback server, and the
-  tree's own is `toolkit/components/ml/tests/tools/hooks_local_hub.py`.
-
-- **`head.js` recommends a flag mochitest does not accept.** Its error message
-  says to run with `--hooks toolkit/components/ml/tests/tools/hooks_local_hub.py`,
-  which is a `mach perftest` argument. `agent/jobs/local-hub.py` imports that
-  hook's handler and serves it directly instead, which keeps the query-arg
-  stripping and `If-None-Match` handling ModelHub depends on coming from the
-  tree rather than from a reimplementation.
-
-- **A packaged loader is not a packaged dependency.** `find dist/bin -name
-  'ort*'` returns three files and looks like proof the ONNX runtime ships with
-  the build. It is proof that the module which *fetches* the runtime ships. The
-  wasm that does the work is a Remote Settings attachment and is nowhere in the
-  tree. When checking whether this fork can do something offline, look for the
-  artifact that does the work, not the module named after it.
-
-- **A test written and not run is not a test yet, and this one cost a whole
-  queued job.** `browser_zzvoicelatency.js` was written last run with the
-  harness held, and died on its *first* timed line: `Cu.now()` is not a
-  function in a browser-chrome scope, `ChromeUtils.now()` is. The measurement
-  had been item 1 for two runs, so the cost of the unrun line was two runs of
-  waiting plus a job. It does not change the standing rule — writing pure,
-  node-testable code while the harness is held is still right — but it does
-  sharpen it: **the part of a held-harness change that touches Gecko APIs is
-  the part to re-read before queueing it**, because that is the part node
-  cannot check and the queue will not tell you about until much later.
-
-- **Privilege removes the user-facing half of an API, not just the permission
-  check.** The finding above generalises, and the fork will keep reaching for
-  privileged APIs. The question to ask of the next one is not "am I allowed to
-  call this" but "who was going to tell the user I did, and are they still
-  there". In this case the answer was a process actor that does not exist in the
-  process doing the recording — which no amount of reading the JS would have
-  shown, because the JS is correct and simply never runs.
-
-- **The urlbar directory is finished, and the fork is clear.** The resume ran
-  the remaining ~282 files: **51799 passed, 70 failed, and every one of the 70
-  is a timeout** — there is not a single assertion failure in the resumed
-  portion, across 17 distinct files. So the only non-timeout failures the whole
-  directory has are the four from the first 115 files, three of which want a
-  remote tab and fail identically with the fork switched out. Item 3 above is
-  the last open question the directory raised.
-
-
-- **The four real failures in the urlbar directory are not this fork's.** Run
-  21 pinned the address-bar pref in all eighteen manifests and started the
-  directory; 115 files in, four failed for reasons that were neither the
-  teardown crash nor the missing clipboard. `agent/jobs/urlbar-triage.sh` ran
-  each one twice — alone, and with all three FOS surface prefs off — and the
-  pair is the whole answer:
-
-  | file | alone | every FOS surface off |
-  | --- | --- | --- |
-  | `browser-results/browser_autoselect.js` | passes 40/40 | passes |
-  | `browser-searchMode/browser_excludeResults.js` | fails | fails identically |
-  | `browser-UrlbarView/browser_resultTypes_display.js` | fails | fails identically |
-  | `browser-engagementTelemetry/browser_glean_telemetry_abandonment_groups.js` | fails | fails identically |
-
-  Three of the four want a *remote* tab — `test_remote_tab_result`, the
-  `remote_tab` group, "We have three results — 1 == 3" on a SyncedTabs
-  fixture — and fail the same way with the fork switched out of the window.
-  That is item 1 above.
-
-- **The fourth was the suite, not the file.** `browser_autoselect.js` passes
-  alone and passed with the fork off, and in the directory run it produced ten
-  unexpected failures. Every one of the four failing files in that run
-  *immediately followed a file that timed out*, and the timeouts are the
-  environmental teardown crash. So a failure that follows a timeout in this
-  suite is a claim about the harness until it has been run alone. **Read the
-  file list, not only the failure list.**
-
-- **A whole-directory run holds the harness exclusively, and that is the real
-  cost.** One mochitest at a time — it binds 8888 — and `build faster` rewrites
-  files the running browsers read. The urlbar directory was stopped at 115 of
-  397 files for that reason and not because of anything it found:
-  `--start-at <file>` resumes it for nothing, so the two hours it was going to
-  hold were worth more spent on the triage and on this run's change.
-
-- **The entity extractor glues a sentence-initial capital to the name after
-  it.** "Reading Project Xanadu" comes out as one phrase. Documented in the
-  module rather than fixed, because nothing in capitalisation distinguishes it
-  from "The Mother of All Demos", which is one phrase and should be. The real
-  answer is the embedding pass, where a model does this properly.
-
-- **Both fixed. What the note above got wrong is worth keeping.** It said one
-  card was blank and named the wrong one; three of the four were, and the
-  parent's cause is the opposite of the children's. It also guessed the focus
-  bug was "presumably a removed element" — it was every surface closing to the
-  content area unconditionally. **A defect note written from a screenshot is a
-  symptom, not a diagnosis**, and the three attempts below are what it cost to
-  find that out.
-
-**A CSS rule that removes something is invisible to a reader, and the fix is a
-computed style.** `.fos-rail-list:focus-visible { outline: var(--focus-outline) }`
-reads as "this surface draws a focus ring". It was not: it was *overriding* the
-`outline: auto` Gecko's UA stylesheet already draws on any focused element, so
-deleting it restored a 1px grey ring and the screenshot afterwards looked, at a
-glance, like the one before. A declaration is only ever the delta against what
-the platform already does, and the stylesheet does not show you what that is.
-Any change that consists of deleting a declaration needs an assertion on
-`getComputedStyle`, not a re-read.
-
-**A programmatic `focus()` inherits the window's pointer-or-keyboard mode.** So
-`:focus-visible` matches nothing on a surface opened after a click or a drag,
-however much that surface now owns the keyboard. The three FOS surfaces focus
-with `{ focusVisible: true }`. This is also a test hazard: a ring test passes
-alone, because the file's own earlier keystrokes leave the window in keyboard
-mode, and fails after `browser_field.js`, whose drags do not. Assert
-`el.matches(":focus-visible")` as a precondition so the failure says which half
-is wrong.
-
-**`:has()` is lint-banned in this tree**, by
-`stylelint-plugin-mozilla/no-has-selector` — it scales with the subtree and
-needs the harder invalidation path. Before reaching for a disable comment,
-check whether the surface already maintains an ARIA attribute carrying the same
-fact: `[aria-activedescendant]` replaced `:has(a selected row)` here exactly,
-because a listbox sets and clears it in the same breath as the selection.
-
-**Test in Gecko, not only in node.** Two bugs this project has shipped were
-invisible to green node tests: a grammar bug found in one minute once the modules
-were imported into a real runtime, and a truncated wordmark found only by
-screenshotting. The xpcshell harness:
-
-```bash
-LD_LIBRARY_PATH=$PWD/obj-x86_64-pc-linux-gnu/dist/bin \
-  ./obj-x86_64-pc-linux-gnu/dist/bin/xpcshell \
-  -a $PWD/obj-x86_64-pc-linux-gnu/dist/bin/browser -f /tmp/script.js
-```
-
-The `-a` is what maps `resource:///`; without it every browser module fails to
-load and it looks like a packaging fault.
-
-**Reading a chrome error from a driven browser: use a pref, not the console.**
-`Services.console.getMessageArray()` is capped, and a page like Wikipedia floods
-it with referrer-policy warnings, so chrome `console.error` from a module is
-gone before it can be read; `dump()` needs an output file the harness was not
-started with. Appending to a `CharPref` and reading it back over Marionette is
-the channel that actually worked, and it cost an hour to find out.
-
-Rule that keeps holding: while a full build is in flight, do not touch anything
-the build reads. New, unreferenced files under `browser/` are safe — an
-unreferenced `moz.build` is inert — but editing an existing `moz.build` or any
-build input is not.
+- **Two bounds made each other tunable, and neither would have alone.** 400ms
+  sits inside the band where a real one-word utterance lives (`MIN_UTTERANCE_MS`
+  is 250ms), so the tap/hold call is genuinely ambiguous there. It stopped
+  mattering only because end silence exists: a hold misread as a tap latches,
+  the user keeps talking, and the turn ends 1.5s after they stop. Worth
+  remembering when a threshold looks impossible to pick — the fix may be
+  elsewhere.
 
 ## Background jobs
 
@@ -1205,6 +949,13 @@ only computed style in a real window can see it, which is what
 `browser_designsystem.js` now does for every `--fos-*` token.
 
 
+
+- **A test double is only as good as the wiring it copies.** The front end
+  assigns `recorder.onLevel` to whatever recorder it currently holds, including
+  one installed by `useBackend`, which is what lets a browser test drive the
+  microphone's level by hand. A double that had taken the callback in its
+  constructor instead would have been wired differently from the real device and
+  proved nothing about it.
 
 - **`source agent/env.sh` before any `mach build`.** Without it configure dies
   with `Cannot find ccache`, which reads like a missing toolchain and is only

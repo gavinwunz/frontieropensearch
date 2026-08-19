@@ -1183,3 +1183,67 @@ is the exception and it is not about what was open: a line that loaded a page
 hands over to the page, so `FOSActions` counts its loads and the bar reads the
 counter. The verbs cannot answer this, because a search reaches the dispatcher
 as bare prose and never becomes a verb at all.
+
+## 2026-08-19 — the bare tap, and an objection about the wrong object
+
+Item 1 on the standing list, deferred twice and open since run 30. 757
+browser-chrome checks, 271 node tests, 2 xpcshell files, all green; seven
+mutation checks confirm each part of the fix is pinned by a test that fails
+without it.
+
+**The blocker was mis-scoped, and that is the whole run.** `GRAMMAR.md` §9
+refused the bare tap because a mis-tap would open the microphone for the whole
+thirty-second deadline, and said the answer depended on how often a mis-tap
+happens in use. It does not. **Shift+F4 has the identical exposure** — a
+mis-pressed latch is a mis-tap with a modifier on it — so the thirty seconds was
+never a property of the tap. It was a property of a latched microphone bounded
+only by a clock, which every latched turn in the design already was. Three runs
+of "it stays open until somebody has used it" bought nothing, because no amount
+of use would have changed what the fix was. When a feature is blocked on a risk,
+check whether the shipped alternative carries the same risk: if it does, the
+risk is an unbuilt safeguard and the feature is waiting on it by accident.
+
+**The fix is what speech recognisers have shipped since the 1990s.** Windows'
+`SpeechRecognizerTimeouts` names both halves — `InitialSilenceTimeout` and
+`EndSilenceTimeout` — and the fork had neither. A latched turn now carries them
+at 6s and 1.5s: nothing was ever said, and the utterance has finished. A held
+turn carries neither, because a finger on the key is a user who is present and
+ending their listen because they paused to think would be the bound doing harm.
+The predicate is "is anybody holding anything", not "which gesture started
+this", which is §8's own lesson about gesture-shaped bounds applied before it
+could be broken instead of after.
+
+**End silence is a feature, and it is why the tap was worth building now.**
+Initial silence makes the tap safe; end silence makes it good. The turn ends
+itself when the utterance does, so the second press becomes a way to stop early
+rather than the only way out — which is what turns the tap into a genuinely
+one-gesture turn, and what the shift latch never was. Shipping only the safety
+half would have been a new gesture that still needed a second press.
+
+**Six browser tests failed for one cause, and it was the fixtures.** The helpers
+synthesise a keydown and a keyup faster than any hand can, so every "hold" in
+the suite became a tap by the new rule; the first turn latched by accident, and
+the next test's press then closed *that* turn instead of starting its own. The
+cascade read as a broken module. Any threshold expressed in wall-clock time
+changes the meaning of every existing test that never had to think about time.
+
+**Two facts the shell can see and the session cannot.** How long the key was
+down, and whether the room is above the floor — reported up, with the thresholds
+staying in `FOSVoiceSession`, which is the same split the transcript already
+used and what keeps the whole gesture testable with no window and no microphone.
+The hold is measured from `event.timeStamp` on both halves rather than from two
+clock reads inside the handlers: under load those measure handler-to-handler,
+and the difference lands exactly on the 400ms boundary. The first draft got this
+wrong and would have turned a deliberate hold on a busy machine into a tap.
+
+**The level monitor is an `AnalyserNode` at 10Hz, not the worklet run 30
+rejected**, and it shares `FOSVoiceTranscript`'s exported `MIN_RMS` rather than
+inventing a second threshold — the gate averages over the whole recording, so
+any window loud enough to be speech on its own is louder than the average it
+will later be judged by, which is what makes it impossible for the live bound to
+end a turn the gate would have accepted.
+
+**Mutation testing, five ways on the session and two on the shell.** Run 39's
+lesson was to revert the fix before believing a test pins anything. Doing it as
+targeted mutations rather than one wholesale revert says *which* test pins
+*which* line, and it is cheap enough to be routine from here.
