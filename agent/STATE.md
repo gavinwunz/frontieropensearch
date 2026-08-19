@@ -105,8 +105,8 @@ The stack **truncates on arrival**, like every browser's, and this is the only
 browser where that costs nothing: the pages walked past are nodes in the tree,
 lettered and on the rail, one `back <mark>` away.
 
-Green: **1345 FOS browser-chrome checks across 29 files, 0 failures** — the new
-file contributes 35. Node: 345. **Eight mutations, eight caught, two only after
+Green: **1352 FOS browser-chrome checks across 29 files, 0 failures**, on two
+consecutive full-suite runs — the new file contributes 35. Node: 345. **Eight mutations, eight caught, two only after
 the tests they named were written.** Lint clean on every changed file.
 
 `main` is at `phase-3`. `agent/dev` has this run's commits.
@@ -184,8 +184,9 @@ the tests they named were written.** Lint clean on every changed file.
 
 ## Background jobs
 
-**Nothing is running except the confirming full suite** (`fossuite56h`, and a
-second after it). Check `./agent/bg-status.sh` first thing. Earlier runs this
-session — `fossuite56` through `fossuite56g` — were the iteration described
-above and are superseded; the first six each stopped early on a timeout, which
-is why their check counts are small.
+**Nothing is running — the harness is free.** Check `./agent/bg-status.sh` first
+thing anyway. `fossuite56h` and `fossuite56i` both finished green: 1352 checks
+across 29 files, 0 failures either time, plus node 345 and the two xpcshell
+files. Earlier jobs this session — `fossuite56` through `fossuite56g` — were the
+iteration described above and are superseded; the first six each stopped early
+on a timeout, which is why their check counts are small.

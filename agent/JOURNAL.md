@@ -1694,8 +1694,8 @@ user could ever see. They wait for the landing now, which they should have done
 anyway, since `enter` resolves when it has *asked* for a node and the load lands
 later.
 
-Green: 1345 FOS browser-chrome checks across 29 files, 0 failures; the new file
-contributes 35. Node 345, 0 failures. Eight mutations, eight caught — two only
-after the tests they named were written: nothing had ever re-entered a node whose
+Green: 1352 FOS browser-chrome checks across 29 files, 0 failures, on two
+consecutive full-suite runs; the new file contributes 35. Node 345, 0 failures.
+Eight mutations, eight caught — two only after the tests they named were written: nothing had ever re-entered a node whose
 chain entry had been truncated away, and every forget in the suite happened with
 the cursor at the top of its stack, where a shift changes nothing.
