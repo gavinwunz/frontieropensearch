@@ -316,6 +316,17 @@ Four properties, each falsifiable, each mapping to a decision above.
 2. **The system never moves a pinned card.** Resize the window, restart the
    browser, open twenty pages into the same region: every pinned card is where it
    was left, relative to its region. (§4)
+
+   The restart clause was the last half of this to become true, and it was
+   unbuilt for far longer than it looked: the table, the store method and the
+   model's flag all existed and nothing joined them, so a restored session
+   re-seeded every card and any arrangement the user had made was silently gone.
+   What persists is *only* what a human chose. Seeding is deterministic, so an
+   auto-placed card reproduces its own position for free, and writing a row for
+   it would freeze a position the system is still entitled to revise. One
+   consequence worth stating: a card that a *drag* displaced is not itself a
+   chosen position, so it re-seeds to where provenance puts it rather than to
+   where it was pushed. See `IDEAS.md` run 42.
 3. **No two cards overlap, at any moment, including mid-drag.** (§6)
 4. **Dismiss and restore is lossless**, scroll position included, in one command.
    (§8)

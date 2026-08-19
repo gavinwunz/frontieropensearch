@@ -3208,16 +3208,20 @@ as `dwell_ms`, so the raw start time is only ever an input to a subtraction that
 has already happened. Harmless, and it is the one hit here that is genuinely
 just a record.
 
-**4. `context.centroid` is defined and never touched.** `FOSContextMerge` already
-says so in a comment — run 39 measured `mean` against `centroid` and `mean` won —
-so this is a decision that has been taken and not yet reflected in the schema
-doc. No code change; `SCHEMA.md` now says the column is vestigial rather than
-pending.
+**4. `context.centroid` is defined and never touched — and was already known.**
+`SCHEMA.md` says so in as many words and gives the reason: run 39 measured `mean`
+against `centroid` for merge detection and `mean` won on stability. A false
+positive for the audit, and a useful one — it is the control that shows the
+method finds *undocumented* gaps rather than merely unusual-looking columns. The
+two real hits above have no such note anywhere.
 
-**5. The `embedding` table, likewise, is deliberately dead.** `FOSEmbeddings`
-states it plainly: nothing is persisted, because embedding a candidate on demand
-(1.27ms) is cheaper than the read that would avoid it. The table predates that
-measurement. Recorded so the next audit does not re-litigate it.
+**5. The `embedding` table, likewise, is deliberately dead** — but only
+`FOSEmbeddings` said so, in a module a schema reader has no reason to open:
+nothing is persisted, because embedding a candidate on demand (1.27ms) is
+cheaper than the read that would avoid it, and the table predates that
+measurement. Unlike `centroid` this was *not* written down where the schema
+could be read, so `SCHEMA.md` now marks it vestigial and says a later migration
+will drop it if a heavier model ever makes persistence pay.
 
 **The method is worth keeping.** Two runs, two real findings, and both were the
 same shape: a schema that had been designed by someone who knew what the feature

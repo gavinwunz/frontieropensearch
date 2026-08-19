@@ -444,6 +444,111 @@ add_task(async function test_a_restart_brings_the_previous_session_back() {
   revived.detach();
 });
 
+add_task(async function test_a_restart_brings_back_where_the_user_put_things() {
+  // The other half of a restart. The tree came back a dozen runs ago; the
+  // arrangement did not, because `field_placement` had a table, a store method
+  // and no caller — see IDEAS.md run 42. Pillar A is stubbed here on purpose:
+  // what is under test is the translation pillar C does, from rows keyed by
+  // database id to the nodes a window actually has.
+  const path = PathUtils.join(PathUtils.profileDir, "restore-placement.sqlite");
+  await IOUtils.remove(path, { ignoreAbsent: true });
+  const store = await FOSContextStore.open({ path });
+  const trailId = await store.addTrail({ name: "yesterday", now: 1000 });
+  const root = await store.addNode({ trailId, url: PAGE_A, title: "A" });
+  const child = await store.addNode({
+    trailId,
+    parentId: root,
+    url: PAGE_B,
+    title: "B",
+  });
+  // One card the user moved, one the system seeded. Only the first is a fact
+  // about what the user thinks; the second re-seeds to the same seat anyway.
+  await store.placeCard(child, { x: 64, y: 32, pinned: true, movedByUserAt: 5 });
+  await store.placeCard(root, { x: 1, y: 1 });
+
+  let handed = null;
+  const field = {
+    onPlacement: () => () => {},
+    restorePlacements: byNode => {
+      handed = byNode;
+    },
+  };
+
+  const session = new FOSTrailSession(window);
+  const revived = new FOSContextEngine(window);
+  registerCleanupFunction(async () => {
+    revived.detach();
+    session.detach();
+    await store.close();
+  });
+
+  await revived.attach({ session, store, field });
+  await revived.settled;
+
+  Assert.ok(handed, "the Field was told about the previous arrangement");
+  Assert.equal(handed.size, 1, "and only about the position a human chose");
+  Assert.deepEqual(
+    handed.get(child),
+    { x: 64, y: 32 },
+    "keyed by the node this window has, not by the row it came from"
+  );
+});
+
+add_task(async function test_a_placement_is_written_to_the_row_it_belongs_to() {
+  // The write half. The Field speaks in the node ids its window has and the
+  // store in row ids, and the engine is the only place the two are joined.
+  // The id map is seeded here by a restore rather than by browsing, because
+  // what is under test is the translation and not the reconciliation.
+  const path = PathUtils.join(PathUtils.profileDir, "record-placement.sqlite");
+  await IOUtils.remove(path, { ignoreAbsent: true });
+  const store = await FOSContextStore.open({ path });
+  const trailId = await store.addTrail({ name: "yesterday", now: 1000 });
+  const rowId = await store.addNode({ trailId, url: PAGE_A, title: "A" });
+
+  let announce = null;
+  const field = {
+    onPlacement: listener => {
+      announce = listener;
+      return () => {};
+    },
+    restorePlacements: () => {},
+  };
+
+  const session = new FOSTrailSession(window);
+  const engine = new FOSContextEngine(window);
+  registerCleanupFunction(async () => {
+    engine.detach();
+    session.detach();
+    await store.close();
+  });
+
+  await engine.attach({ session, store, field });
+  await engine.settled;
+  Assert.ok(announce, "the engine is listening to the Field");
+
+  const [node] = session.store.nodes();
+  Assert.ok(node, "the restore gave this window a node to place");
+
+  await announce({ nodeId: node.id, x: 12, y: 34 });
+
+  const saved = await store.placements([rowId]);
+  Assert.deepEqual(
+    saved.get(rowId),
+    { x: 12, y: 34 },
+    "the position landed on the row the node was written as"
+  );
+
+  // A node the reconciliation has not reached yet is dropped rather than
+  // queued: the position is on the card, so the next drop carries it, and a
+  // queued coordinate would be one a later drag had already made wrong.
+  await announce({ nodeId: 987654, x: 1, y: 2 });
+  Assert.equal(
+    (await store.placements([rowId])).get(rowId).x,
+    12,
+    "and an unknown node changed nothing"
+  );
+});
+
 add_task(async function test_only_one_window_restores_a_database() {
   const path = PathUtils.join(PathUtils.profileDir, "restore-claim.sqlite");
   await IOUtils.remove(path, { ignoreAbsent: true });

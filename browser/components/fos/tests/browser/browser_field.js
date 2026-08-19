@@ -397,6 +397,109 @@ add_task(async function test_a_drag_pins_and_never_overlaps() {
   field().close();
 });
 
+add_task(async function test_a_drop_announces_the_position_once() {
+  // The seam between pillar A and pillar C. The Field does not know what a
+  // database is; it says where a card was put, and this is the saying. One
+  // announcement per gesture, not one per pointer move — every move commits to
+  // the model, and persisting each would record every position the card passed
+  // through as though the user had chosen it.
+  await goTo(PAGE_A);
+  await goTo(PAGE_B);
+
+  const model = field().model;
+  field().open();
+  field().showRegion(session().activeTrailId);
+
+  const seen = [];
+  const off = field().onPlacement(p => seen.push(p));
+  registerCleanupFunction(off);
+
+  const el = window.document.querySelector(".fos-field-card");
+  const cardId = Number(el.dataset.cardId);
+  const box = el.getBoundingClientRect();
+  EventUtils.synthesizeMouse(el, 5, 5, { type: "mousedown" }, window);
+  for (const step of [1, 2]) {
+    EventUtils.synthesizeMouse(
+      el,
+      5 + box.width * step,
+      5 + box.height * step,
+      { type: "mousemove" },
+      window
+    );
+  }
+  EventUtils.synthesizeMouse(
+    el,
+    5 + box.width * 2,
+    5 + box.height * 2,
+    { type: "mouseup" },
+    window
+  );
+
+  Assert.equal(seen.length, 1, "two pointer moves and one drop is one placement");
+  const card = model.getCard(cardId);
+  Assert.deepEqual(
+    seen[0],
+    { nodeId: card.node_id, x: card.x, y: card.y },
+    "and it is where the card came to rest, in field units"
+  );
+
+  off();
+  field().close();
+});
+
+add_task(async function test_a_press_that_never_moved_announces_nothing() {
+  // A click enters a card. It is not a placement, and writing a row for it
+  // would turn every visit into a claim that the user arranged something.
+  await goTo(PAGE_A);
+  await goTo(PAGE_B);
+
+  field().open();
+  field().showRegion(session().activeTrailId);
+
+  const seen = [];
+  const off = field().onPlacement(p => seen.push(p));
+  const el = window.document.querySelector(".fos-field-card");
+  EventUtils.synthesizeMouse(el, 5, 5, { type: "mousedown" }, window);
+  EventUtils.synthesizeMouse(el, 5, 5, { type: "mouseup" }, window);
+  off();
+
+  Assert.deepEqual(seen, [], "a click is not an arrangement");
+  field().close();
+});
+
+add_task(async function test_saved_positions_are_applied_to_the_real_surface() {
+  // The restore half, against the surface rather than the model: FIELD.md §9's
+  // "restart the browser" clause. A placement whose card is not on the Field
+  // yet is held rather than dropped, so this does not depend on winning a race
+  // with the sync that places it.
+  await goTo(PAGE_A);
+  await goTo(PAGE_B);
+
+  const model = field().model;
+  field().open();
+  field().showRegion(session().activeTrailId);
+
+  const card = model.cardsIn(session().activeTrailId)[0];
+  const at = { x: 250, y: 180 };
+  field().restorePlacements(new Map([[card.node_id, at]]));
+
+  const restored = model.cardForNode(card.node_id);
+  Assert.deepEqual(
+    { x: restored.x, y: restored.y },
+    at,
+    "the card is where the previous session left it"
+  );
+  Assert.ok(restored.pinned, "and the system may not move it again");
+  Assert.deepEqual(model.overlaps(), [], "with the invariant still holding");
+
+  // A node with no card yet: held, then applied by the sync that places it.
+  const pending = 999999;
+  field().restorePlacements(new Map([[pending, { x: 10, y: 10 }]]));
+  Assert.ok(!model.cardForNode(pending), "nothing was invented for it");
+
+  field().close();
+});
+
 /**
  * A restart is revisitation, and revisitation is where a thumbnail pays.
  *

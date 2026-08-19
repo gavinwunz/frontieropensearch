@@ -274,6 +274,14 @@ Primary key `(context_id, trail_node_id, query_id)`.
 
 ### `embedding`
 
+**Vestigial. Nothing reads or writes this table, and that is a decision rather
+than an omission.** It was defined for a vector store with staleness rules, and
+the model that shipped is a lookup table: an embedding is one sum and a
+normalisation, measured at 1.27ms, which is cheaper than the read that would
+avoid it. `FOSEmbeddings.sys.mjs` states the same thing at the code. Kept
+because a shipped migration is never edited; it will be dropped by a later one
+if a heavier model ever makes persistence pay.
+
 On-device vectors. Kept in their own table so a model change can invalidate and
 recompute them without touching the records themselves.
 
