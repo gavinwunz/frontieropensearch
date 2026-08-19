@@ -535,6 +535,39 @@ let JSWINDOWACTORS = {
     safeForUntrustedWebProcess: true,
   },
 
+  // Frontier OpenSearch: the page's half of link marks. `FOSLinkSurface` drives
+  // it; the parent class is empty and exists only so that the chrome window can
+  // reach the child at all.
+  //
+  // `allFrames` is off. A mark set spans one viewport and one alphabet, and a
+  // page of iframes would have each frame collecting its own links with its own
+  // indices and no way to merge them into twenty-six letters. Marking the top
+  // document only is the honest bound, and it is recorded in `GRAMMAR.md` §2
+  // rather than left to be discovered.
+  FOSLinks: {
+    parent: {
+      esModuleURI: "resource:///actors/FOSLinksParent.sys.mjs",
+    },
+    child: {
+      esModuleURI: "resource:///actors/FOSLinksChild.sys.mjs",
+      events: {
+        // Both, and neither creates the actor. A page that was never marked has
+        // nothing to take down, and instantiating an actor in every content
+        // process on every navigation to find that out is a cost the feature
+        // does not need to impose on people who never use it.
+        pagehide: { createActor: false },
+        unload: { createActor: false },
+      },
+    },
+
+    messageManagerGroups: ["browsers"],
+    // The child reads the page's links and draws over them. It runs wherever
+    // the page runs, including in a process the content is not trusted in,
+    // which is the point: a hands-free user needs the letters on every site,
+    // not only on privileged ones.
+    safeForUntrustedWebProcess: true,
+  },
+
   FormValidation: {
     parent: {
       esModuleURI: "resource:///actors/FormValidationParent.sys.mjs",

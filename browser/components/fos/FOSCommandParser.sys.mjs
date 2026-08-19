@@ -52,7 +52,7 @@ function tokenize(input) {
  *
  * @param {string} input
  * @param {object} [options]
- * @param {MarkRegistry} [options.marks]
+ * @param {MarkRegistry|ScopedMarks} [options.marks]
  *   When supplied, marks are checked for liveness and for whether the pending
  *   action accepts the object's type. Without it the parse is purely
  *   syntactic, which is what unit tests and the grammar's own tests want.
@@ -68,7 +68,7 @@ export function parse(input, { marks = null } = {}) {
   // token cannot continue the parse, the line was never a command and is
   // prose — so it becomes a query rather than an error.
   //
-  // This matters far more than it looks. Ten of the fifteen action words are
+  // This matters far more than it looks. Eleven of the sixteen action words are
   // ordinary English (`what`, `back`, `up`, `name`, `field`, `context`,
   // `branch`, `pack`, `model`, `stop`), so the queries that collide with them
   // are not exotic: "what is a memex", "back pain", "field of view",
@@ -181,21 +181,44 @@ export function parse(input, { marks = null } = {}) {
   return result(COMMANDS, { commands });
 }
 
+/**
+ * Whether a mark can fill this verb's slot, and if not, why not.
+ *
+ * The lookup is handed the verb's accepted types rather than asking what holds
+ * the letter and comparing afterwards. That is what lets a letter mean one
+ * thing among the window's objects and another among the current page's links:
+ * marks live in more than one scope (`ScopedMarks`), and the only thing that
+ * can pick the right scope is the slot being filled. Comparing afterwards would
+ * have the registry choose first and the grammar object second, which for
+ * `follow c` on a page whose `c` is a link and whose window has a node `c`
+ * gives the node and a wrong-type error for a command that was perfectly
+ * well-formed.
+ *
+ * The two errors stay distinct. A letter nothing holds anywhere is dead; a
+ * letter held by the wrong kind of object is wrong-typed, and the user is told
+ * which kind it is, because that mark is on their screen and telling them it
+ * does not exist would send them looking for it.
+ *
+ * @param {string} letter A mark letter, a-z.
+ * @param {object} spec The action's entry in the table.
+ * @param {?object} marks A `MarkRegistry` or a `ScopedMarks`.
+ * @param {object} tok The token being resolved, for the error's position.
+ */
 function checkMark(letter, spec, marks, tok) {
   if (!marks) {
     return null;
   }
-  if (!marks.isLive(letter)) {
+  const entry = marks.entryAt(letter, spec.accepts);
+  if (!entry) {
     return { code: E_DEAD_MARK, token: tok.raw, at: tok.start, letter };
   }
-  const type = marks.typeAt(letter);
-  if (spec.accepts.length && !spec.accepts.includes(type)) {
+  if (spec.accepts.length && !spec.accepts.includes(entry.type)) {
     return {
       code: E_WRONG_TYPE,
       token: tok.raw,
       at: tok.start,
       letter,
-      got: type,
+      got: entry.type,
       accepts: spec.accepts,
     };
   }

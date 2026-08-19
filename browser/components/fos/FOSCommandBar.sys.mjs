@@ -24,7 +24,7 @@
  */
 
 import { QUERY, parse } from "./FOSCommandParser.sys.mjs";
-import { MarkRegistry } from "./FOSMarks.sys.mjs";
+import { MarkRegistry, ScopedMarks } from "./FOSMarks.sys.mjs";
 import { FOSActionDispatcher, resolveInput } from "./FOSActions.sys.mjs";
 import {
   R_ACTION,
@@ -73,6 +73,22 @@ export class FOSCommandBar {
 
   /** The window's mark registry. Pillars register their objects here. */
   marks = new MarkRegistry();
+
+  /**
+   * Every alphabet a mark in this bar could be resolved against.
+   *
+   * The window's own registry is the first and, for three of the four
+   * addressable kinds, the only one. The page adds a second (`FOSLinkSurface`):
+   * links turn over on every navigation and there are far too many of them to
+   * share twenty-six letters with the cards and nodes a user has spent a session
+   * learning, so they get their own alphabet and the verb's accepted types
+   * decide which one answers.
+   *
+   * Reading goes through this and writing goes through `marks`, which is what
+   * keeps the split from leaking: a pillar registering an object never has to
+   * know that scopes exist, because there is only one place to put an object.
+   */
+  #lookup = new ScopedMarks([this.marks]);
 
   /** The window's action dispatcher. Pillars register their verbs here. */
   actions;
@@ -128,6 +144,31 @@ export class FOSCommandBar {
       );
       return abandoned;
     });
+  }
+
+  /**
+   * Add an alphabet for marks to be resolved against.
+   *
+   * Surfaces whose objects outlive a page register them in `marks` and never
+   * call this. It exists for the one case that cannot: a scope whose objects are
+   * so numerous and so short-lived that putting them in the window's registry
+   * would evict everything the user had learned.
+   *
+   * @param {object} registry A `MarkRegistry`.
+   */
+  addMarkScope(registry) {
+    this.#lookup.add(registry);
+  }
+
+  /**
+   * The read-only view across every alphabet, as the parser sees it.
+   *
+   * Exposed for tests and for anything that needs to resolve a mark exactly the
+   * way this bar would. Writing still goes through `marks`; there is no way to
+   * register an object through this.
+   */
+  get markLookup() {
+    return this.#lookup;
   }
 
   get isOpen() {
@@ -190,7 +231,7 @@ export class FOSCommandBar {
    * @returns {object} What was run: `{type, ran}` or `{type, resolved}`.
    */
   run(text = this.#input?.value ?? "") {
-    const result = parse(text, { marks: this.marks });
+    const result = parse(text, { marks: this.#lookup });
 
     if (result.type === QUERY) {
       const resolved = this.actions.openQuery(result.query);
@@ -198,7 +239,7 @@ export class FOSCommandBar {
       return { type: QUERY, resolved };
     }
 
-    const view = viewFor(result, { marks: this.marks, input: text });
+    const view = viewFor(result, { marks: this.#lookup, input: text });
     if (!view.canRun) {
       // An incomplete or ill-formed line leaves the bar open with the status
       // already explaining why. Closing it here would throw away what the user
@@ -325,7 +366,7 @@ export class FOSCommandBar {
 
   #update() {
     const text = this.#input.value;
-    const result = parse(text, { marks: this.marks });
+    const result = parse(text, { marks: this.#lookup });
 
     // Only a query needs the URL-or-search decision, and it is the one part of
     // the view that cannot be computed without Gecko, so it is resolved here
@@ -335,7 +376,11 @@ export class FOSCommandBar {
       resolved = resolveInput(result.query);
     }
 
-    this.#view = viewFor(result, { marks: this.marks, resolved, input: text });
+    this.#view = viewFor(result, {
+      marks: this.#lookup,
+      resolved,
+      input: text,
+    });
     // Typing clears the selection, which is also upstream's rule: a list that
     // renumbers under a held selection is how a user ends up opening a page
     // they never looked at.

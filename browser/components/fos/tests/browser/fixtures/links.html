@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Links</title>
+<link rel="stylesheet" href="page.css">
+<style>
+  /* The link that is off the bottom of every viewport this test runs in.
+     GRAMMAR.md §2 says marks go to what is on screen, and this is the element
+     that proves the line is drawn where the section says it is. */
+  #below { margin-block-start: 400vh; display: block; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Links</h1>
+  <p class="standfirst">A fixture for link marks. Every element here exists to make one decision in <code>FOSLinkMarks</code> observable from a chrome test.</p>
+</header>
+
+<!-- Two links to one destination: the picture and the headline above it. They
+     are one thing to a reader and must share one letter. -->
+<figure>
+  <a id="thumb" href="xanadu.html"><img src="page.css" alt="Xanadu, illustrated"></a>
+  <figcaption><a id="headline" href="xanadu.html">Project Xanadu</a></figcaption>
+</figure>
+
+<p>An ordinary run of prose with <a id="memex" href="memex.html">the memex essay</a> linked from the middle of it, which is the shape most links on the web actually have.</p>
+
+<!-- No text at all. The label has to come from somewhere, or the letter is
+     assigned from nothing and cannot be guessed. -->
+<p>
+  <a id="icon" href="nls.html" aria-label="Demonstration"><span aria-hidden="true">&#9654;</span></a>
+  <a id="titled" href="sourdough.html" title="Baking notes"><span aria-hidden="true">&#9679;</span></a>
+</p>
+
+<!-- Not a link element, but the page has promised it behaves like one in the
+     same vocabulary a screen reader reads. -->
+<p><span id="rolelink" role="link" tabindex="0">Gravity</span></p>
+
+<!-- Neither of these may be marked: one has no box at all, and the other has a
+     box the user cannot see. -->
+<p>
+  <a id="hidden" href="lisbon.html" style="display: none">Lisbon</a>
+  <a id="invisible" href="lisbon.html" style="visibility: hidden">Lisbon again</a>
+</p>
+
+<a id="below" href="lisbon.html">Four screens down</a>
+</body>
+</html>

@@ -345,6 +345,19 @@ var gBrowserInit = {
       })
       .catch(console.error);
 
+    // The page itself, as an addressable surface. It goes in after the three
+    // pillars and before the voice front end for the same reason the voice
+    // front end goes last: what it adds is a verb and an alphabet, and both
+    // have to exist before anything can say a line that uses them.
+    //
+    // It costs a window that never runs `follow` two things — a registration in
+    // the action table and a progress listener — and no content-process actor
+    // at all, because the actor is not instantiated until the first collect.
+    const { FOSLinkSurface } = ChromeUtils.importESModule(
+      "resource:///modules/FOSLinkSurface.sys.mjs"
+    );
+    FOSLinkSurface.forWindow(window).wire(bar);
+
     // The voice front end. It binds the talk key and nothing else: no verb, no
     // DOM, no engine and no device until the key is first held, so a window
     // whose user never speaks pays for two key listeners. It goes in last

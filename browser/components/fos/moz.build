@@ -27,6 +27,8 @@ EXTRA_JS_MODULES += [
     "FOSForget.sys.mjs",
     "FOSForgetPreview.sys.mjs",
     "FOSGrammar.sys.mjs",
+    "FOSLinkMarks.sys.mjs",
+    "FOSLinkSurface.sys.mjs",
     "FOSLocationDisplay.sys.mjs",
     "FOSMarks.sys.mjs",
     "FOSPlacesFloor.sys.mjs",
@@ -38,4 +40,13 @@ EXTRA_JS_MODULES += [
     "FOSVoiceInput.sys.mjs",
     "FOSVoiceSession.sys.mjs",
     "FOSVoiceTranscript.sys.mjs",
+]
+
+# The page's half of link marks. Actors are packaged separately from the
+# window's modules because they are loaded into a content process: everything
+# above this line runs in the parent and may import Gecko's chrome-only modules,
+# and nothing here may.
+FINAL_TARGET_FILES.actors += [
+    "actors/FOSLinksChild.sys.mjs",
+    "actors/FOSLinksParent.sys.mjs",
 ]

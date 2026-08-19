@@ -201,6 +201,28 @@ export class MarkRegistry {
   }
 
   /**
+   * The whole entry holding a letter, or null.
+   *
+   * The one method `ScopedMarks` needs that the others can be written in terms
+   * of, which is why it exists: a composite asking `isLive` and then `typeAt`
+   * would resolve the letter twice and could resolve it in two different scopes
+   * between the calls. Answering once, with everything, removes the question.
+   *
+   * The `accepts` argument is taken and ignored here. A single registry has no
+   * scope to choose between, so it always answers with what it holds and lets
+   * the caller judge the type — which is what keeps a bare `MarkRegistry` and a
+   * `ScopedMarks` interchangeable at the parser's one call site.
+   *
+   * @param {string} letter A mark letter, a-z.
+   * @param {?string[]} [_accepts] Unused. See above.
+   */
+  // eslint-disable-next-line no-unused-vars
+  entryAt(letter, _accepts = null) {
+    const entry = this.#byLetter.get(letter);
+    return entry ? { ...entry } : null;
+  }
+
+  /**
    * Whether a letter is currently held by a live object.
    *
    * @param {string} letter A mark letter, a-z.
@@ -250,5 +272,137 @@ export class MarkRegistry {
   clear() {
     this.#byId.clear();
     this.#byLetter.clear();
+  }
+}
+
+/**
+ * Several registries read as one, resolved by what the pending verb accepts.
+ *
+ * There are twenty-six letters and there is no getting more of them. Trail
+ * nodes hold nearly all of them in any session past its first few minutes,
+ * which is fine — until the page itself becomes addressable. A page has tens or
+ * hundreds of links, they turn over completely on every navigation, and if they
+ * competed for the same alphabet they would either get nothing or evict every
+ * node mark the user had learned. Either outcome loses the property `GRAMMAR.md`
+ * §2 exists to protect.
+ *
+ * So the page gets its own alphabet, and `c` means one thing among the window's
+ * objects and another among the current page's links. That is not the ambiguity
+ * it looks like, because a mark is only ever *consumed* in a slot whose accepted
+ * types the grammar already knows: `enter` accepts a node and `follow` accepts a
+ * link, so neither the parser nor the speaker is ever choosing between them.
+ * This class is where that resolution happens — the scopes are ordered, and the
+ * first one holding the letter with an accepted type answers.
+ *
+ * Stickiness survives intact rather than being excepted. §2 says a mark is held
+ * until its object goes away; a link's object goes away when the page view does,
+ * so a page-scoped alphabet is that rule applied to a shorter-lived object, not
+ * a carve-out from it.
+ *
+ * Read-only on purpose: `assign` and `release` stay on the registry that owns
+ * the objects, so there is never a question of which scope a new object lands
+ * in.
+ */
+export class ScopedMarks {
+  #scopes = [];
+
+  /**
+   * @param {object[]} [scopes] Registries, most specific first.
+   */
+  constructor(scopes = []) {
+    this.#scopes = [...scopes];
+  }
+
+  /**
+   * Add a scope, if it is not already present.
+   *
+   * Appended rather than prepended: the window's own objects are registered
+   * first and keep priority, so a page cannot shadow a mark the user learned on
+   * a card. It never needs to — the two are only ever consulted for different
+   * accepted types — but the tie has to break somewhere, and it should break
+   * towards the longer-lived object.
+   *
+   * @param {object} registry A `MarkRegistry`.
+   */
+  add(registry) {
+    if (registry && !this.#scopes.includes(registry)) {
+      this.#scopes.push(registry);
+    }
+    return this;
+  }
+
+  /**
+   * The entry holding a letter, preferring one the pending verb can apply to.
+   *
+   * Returns a wrong-typed entry rather than null when that is all there is, so
+   * that the parser can still tell "no such mark" from "that mark is a node and
+   * this verb wants a link". Reporting the second as the first would send a user
+   * looking for a mark that is on their screen.
+   *
+   * @param {string} letter A mark letter, a-z.
+   * @param {?string[]} [accepts] The types the pending verb accepts.
+   */
+  entryAt(letter, accepts = null) {
+    let fallback = null;
+    for (const scope of this.#scopes) {
+      const entry = scope.entryAt(letter);
+      if (!entry) {
+        continue;
+      }
+      if (!accepts?.length || accepts.includes(entry.type)) {
+        return entry;
+      }
+      fallback ??= entry;
+    }
+    return fallback;
+  }
+
+  /**
+   * @param {string} letter A mark letter, a-z.
+   * @param {?string[]} [accepts] The types the pending verb accepts.
+   */
+  isLive(letter, accepts = null) {
+    return !!this.entryAt(letter, accepts);
+  }
+
+  /**
+   * @param {string} letter A mark letter, a-z.
+   * @param {?string[]} [accepts] The types the pending verb accepts.
+   */
+  typeAt(letter, accepts = null) {
+    return this.entryAt(letter, accepts)?.type ?? null;
+  }
+
+  /**
+   * @param {string} letter A mark letter, a-z.
+   * @param {?string[]} [accepts] The types the pending verb accepts.
+   */
+  objectAt(letter, accepts = null) {
+    return this.entryAt(letter, accepts)?.id ?? null;
+  }
+
+  /**
+   * Candidates across every scope, filtered to the wanted types.
+   *
+   * A letter appearing in two scopes contributes one row, from the earlier
+   * scope. With a type filter that cannot happen — the scopes hold disjoint
+   * types — so this only matters for an unfiltered list, where showing `c`
+   * twice with two labels would be a list the user cannot act on.
+   *
+   * @param {?string[]} types Object types to keep, or null for all.
+   */
+  candidates(types = null) {
+    const out = [];
+    const taken = new Set();
+    for (const scope of this.#scopes) {
+      for (const row of scope.candidates(types)) {
+        if (!taken.has(row.letter)) {
+          taken.add(row.letter);
+          out.push(row);
+        }
+      }
+    }
+    out.sort((a, b) => a.letter.localeCompare(b.letter));
+    return out;
   }
 }

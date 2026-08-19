@@ -1,0 +1,89 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* The letters drawn on a page's links.
+ *
+ * The only FOS sheet that does not build on `fos-tokens.css`, and the reason is
+ * where it is loaded: this is linked from inside anonymous content in a *content*
+ * document, so a `:root` rule would resolve against the page's own root element
+ * and would push the design system's custom properties into a site's cascade.
+ * The tokens it needs are therefore restated here, on the layer itself, and the
+ * values are the ones `fos-tokens.css` carries — if that file's accent or radius
+ * changes, this one changes with it by hand. Three declarations is a smaller
+ * price than a fork leaking variables into every page its user visits.
+ *
+ * Everything is `!important` and every inherited property is reset. The page
+ * cannot see this subtree and cannot select it, but it *can* still reach it
+ * through inheritance from the document root — a site with `letter-spacing` or a
+ * `filter` on `html` would otherwise smear the letters it is the whole point of
+ * this feature to make readable.
+ */
+
+.fos-link-hints {
+  position: absolute !important;
+  inset: 0 !important;
+  /* No box of its own: it is a coordinate space, not a layer over the page.
+     Without this it would be a full-page element eating pointer events, which
+     would leave the mouse unable to click the links the letters are pointing at. */
+  pointer-events: none !important;
+  z-index: 2147483647 !important;
+}
+
+.fos-link-hint {
+  all: initial !important;
+  position: absolute !important;
+  /* Anchored to the link's top-left corner and lifted clear of it, so the letter
+     sits beside what it names rather than over the first character of it. A hint
+     that covers the start of the link text makes the link harder to read at the
+     exact moment the user is deciding whether they want it. */
+  transform: translate(-30%, -45%) !important;
+
+  display: block !important;
+  box-sizing: border-box !important;
+  min-width: 1.15em !important;
+  padding: 0.1em 0.3em !important;
+
+  font-family: ui-monospace, "SF Mono", "Cascadia Mono", "Liberation Mono", monospace !important;
+  /* Absolute rather than relative: a link inside a `font-size: 0.7em` footer
+     would otherwise get a hint too small to read, and the hint's legibility is
+     not a function of the page's typography. */
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  line-height: 1.25 !important;
+  letter-spacing: 0 !important;
+  text-align: center !important;
+  text-transform: lowercase !important;
+  white-space: pre !important;
+
+  /* The command bar's accent, and black on it. A fixed pair rather than
+     anything derived from the page: contrast has to hold over a photograph, a
+     dark theme and a white article, and the only way to promise that is to
+     bring both colours. */
+  color: #10121a !important;
+  background: #ffd166 !important;
+  border: 1px solid #10121a !important;
+  border-radius: 3px !important;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 45%) !important;
+
+  pointer-events: none !important;
+  /* Drawn instantly. Every other FOS surface animates in; this one is read
+     within a few hundred milliseconds of appearing and a fade is time the user
+     spends waiting to be able to speak. */
+  opacity: 1 !important;
+}
+
+/* Neither colour changes with the platform theme, for the reason above: the
+   backdrop is the page, not the chrome, and the page's theme is not ours to
+   read. This block exists to say that it was considered rather than missed. */
+@media (prefers-contrast) {
+  .fos-link-hint {
+    border-width: 2px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fos-link-hint {
+    transition: none !important;
+  }
+}

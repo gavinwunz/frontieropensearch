@@ -158,13 +158,13 @@ export const ACTIONS = Object.freeze({
     summary: "Download the local model that ranks suggestions by meaning",
   },
 
-  // The page — the two verbs the entry surface owns rather than a pillar. One
-  // asks for a page and one gives up on asking; they are grouped together, and
-  // apart from the three pillars, because that is what they have in common and
-  // because the alternative was filing `stop` under "Context", which is a
-  // heading the user reads and would be simply untrue. `search` moves here with
-  // it: it was in the context group for want of a fourth, not because the
-  // context engine owns it.
+  // The page — the verbs the entry surface owns rather than a pillar. One asks
+  // for a page, one gives up on asking, and one reaches into the page that
+  // arrived; they are grouped together, and apart from the three pillars,
+  // because that is what they have in common and because the alternative was
+  // filing `stop` under "Context", which is a heading the user reads and would
+  // be simply untrue. `search` moves here with it: it was in the context group
+  // for want of a fourth, not because the context engine owns it.
   //
   // Abandoning a request became reachable-by-nothing the moment the fork
   // started writing `browser.userTypedValue` (see `FOSActions.#markAsPending`).
@@ -185,6 +185,45 @@ export const ACTIONS = Object.freeze({
     accepts: [],
     text: false,
     summary: "Give up on the page being loaded and say where you are again",
+  },
+
+  // The one verb that reaches into the page rather than around it.
+  //
+  // Everything else in this table addresses the browser's own objects — cards,
+  // nodes, contexts, trails — and for fifteen verbs that was the whole table.
+  // Enumerating the window's keyset (§5.1.1) is what made the omission
+  // impossible to keep missing: the fork had a complete spoken grammar for
+  // every surface surrounding the page and no way at all to click a link in
+  // it. `FOSMarks` had listed "link" among the addressable kinds in its own doc
+  // comment since the day marks landed, and nothing had ever registered one.
+  //
+  // Rango, which is the most developed voice-browsing extension there is, is
+  // very nearly this one capability and ships no spoken form for back, reload,
+  // find or zoom at all. That is the evidence about where hands-free browsing
+  // actually stops, and it is not at the toolbar.
+  //
+  // **Optional, and the bare form is what makes the links addressable.** This
+  // is the shape §8's "voice writes the whole line" forces, and it is a better
+  // shape than the one that rule ruled out. A required target would mean the
+  // marks appear only while a target slot is pending, which the keyboard can
+  // sit in and a voice turn cannot — a spoken "follow" would leave a half-line
+  // in the bar and the next utterance would replace it rather than complete it.
+  // So `follow` alone is a whole command that puts the marks on the page, and
+  // `follow cap` is a whole command that follows one. Both are complete lines
+  // in both modalities, and neither needs a mode.
+  //
+  // It also answers the question a hint overlay always raises, which is where
+  // the candidate list goes. For every other verb the list is in the bar,
+  // because the objects are not on screen as themselves. For links they are:
+  // the mark is drawn *on* the link it addresses, which is strictly more
+  // information than a row reading "cap — Downloads" and is why every tool that
+  // has solved this draws hints rather than listing them.
+  follow: {
+    pillar: "page",
+    target: "optional",
+    accepts: ["link"],
+    text: false,
+    summary: "Mark the links on this page, or follow the one marked",
   },
 
   // The escape. GRAMMAR.md §3 makes search the unmarked default, which leaves

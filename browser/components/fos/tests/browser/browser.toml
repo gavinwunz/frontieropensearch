@@ -1,6 +1,7 @@
 [DEFAULT]
 support-files = [
   "keyset-manifest.js",
+  "fixtures/links.html",
   "fixtures/lisbon.html",
   "fixtures/memex.html",
   "fixtures/nls.html",
@@ -21,6 +22,8 @@ support-files = [
 ["browser_field.js"]
 
 ["browser_fosrestore.js"]
+
+["browser_links.js"]
 
 ["browser_locationdisplay.js"]
 

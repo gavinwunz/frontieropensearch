@@ -6,6 +6,7 @@ browser.jar:
     content/browser/fos/fos-tokens.css (content/fos-tokens.css)
     content/browser/fos/fos-commandbar.css (content/fos-commandbar.css)
     content/browser/fos/fos-field.css (content/fos-field.css)
+    content/browser/fos/fos-links.css (content/fos-links.css)
     content/browser/fos/fos-locationdisplay.css (content/fos-locationdisplay.css)
     content/browser/fos/fos-contextsidebar.css (content/fos-contextsidebar.css)
     content/browser/fos/fos-trailrail.css (content/fos-trailrail.css)

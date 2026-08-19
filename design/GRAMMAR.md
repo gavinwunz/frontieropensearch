@@ -73,6 +73,82 @@ looking at the screen. Positional labels are a lookup; sticky marks are a name.
 
 Freed letters are reused only once no live object holds them.
 
+### The page has its own alphabet
+
+Twenty-six letters is enough for cards, nodes and contexts. It is not close to
+enough once the *page* becomes addressable, and the two cannot share.
+
+A session past its first few minutes has trail nodes holding most of the
+alphabet. A single page has tens or hundreds of links, and they all turn over on
+every navigation. Put them in one registry and either the links get nothing, or
+they evict the marks the user spent the session learning — and the second is
+worse than the first, because it breaks stickiness, which is the rule the whole
+feature rests on.
+
+So **links are marked in a separate scope**, and a letter means one thing among
+the window's objects and another among the current page's links. That is not the
+ambiguity it looks like. A mark is only ever *consumed* in a slot whose accepted
+types the grammar already knows — `enter` accepts a node, `follow` accepts a
+link — so neither the parser nor the speaker is ever choosing between them.
+`ScopedMarks` is where that resolution happens, and `FOSCommandParser` hands it
+the verb's accepted types rather than asking what holds the letter and comparing
+afterwards. Comparing afterwards has the registry choose first and the grammar
+object second, which rejects `follow cap` as wrong-typed on any page whose `c` is
+a link while some node also holds `c` — a command that was well-formed, and that
+the user could see was well-formed, because the letter was drawn on the link in
+front of them.
+
+Stickiness survives intact rather than being excepted: a mark is held until its
+object goes away, and a link's object goes away when the page view does.
+
+### Link mode
+
+Links are addressable **when the marks are up**, and they are put up by a whole
+command rather than by a mode.
+
+`follow` takes an optional target. `follow` alone marks the links on the current
+page; `follow cap` follows the one marked `c`. Both are complete lines, and that
+is not a stylistic choice — it is what §8's "voice writes the whole line" forces.
+The tempting alternative is a required target, so that the *pending slot* raises
+the marks: the keyboard user types `follow ` and the letters appear. The keyboard
+can sit in a pending slot and a voice turn cannot, so a spoken "follow" would
+leave a half-finished line in the bar that the next utterance would replace
+rather than complete. Two whole commands is the only shape that is identical in
+both modalities.
+
+**For links, the page is the candidate list.** Every other verb shows its
+candidates in the command bar, because its objects are not on screen as
+themselves. Links are: the letter is drawn *on* the link it addresses, which
+carries strictly more than a row reading "cap — Downloads", and is why every tool
+that has solved this — Vimium, Rango, Cursorless's hats — draws hints rather than
+listing them.
+
+Four rules decide what gets a letter, and the last two are bounds rather than
+decisions:
+
+- **What is on screen**, as §2 requires: a link scrolled out of the viewport, or
+  hidden by CSS, gets nothing. Scrolling does not reassign — `follow` again does.
+- **One mark per destination.** The thumbnail and the headline above it are one
+  thing to a reader and were two hints in every tool that has drawn hints. Both
+  still carry a badge; they share the letter.
+- **The first twenty-six in document order**, and *the rest are counted out
+  loud*. A page can have eighty links on screen and something still has to
+  choose; a long navigation menu can spend the whole alphabet before the article
+  starts. That is a real cost and the notice names it, because a silent
+  truncation reads as "these are the links" and a user who cannot see the page
+  has no way to find out otherwise. The two candidate answers — two-word marks,
+  and narrowing by typed text — are in `IDEAS.md` and neither is built.
+- **The top document only.** A page of iframes would have each frame collecting
+  its own links with its own indices and no way to merge them into twenty-six
+  letters, so the actor is registered without `allFrames`. This is a bound, not a
+  design; it is written down here rather than left to be discovered.
+
+The letters are drawn in **anonymous content** (`insertAnonymousContent`), the
+mechanism the find bar's highlighter uses. The page cannot see them, cannot style
+them, and cannot be reflowed by them — the three failures every hint overlay
+injected into the page DOM has had, of which the second is the one that silently
+turns a link back into something only a mouse can reach.
+
 ## 3. The grammar
 
 ```
@@ -243,12 +319,35 @@ resolves.
 **The page (no pillar)**
 - `search <text>` — §3's escape, above
 - `stop` — give up on the page being loaded and say where you are again
+- `follow` / `follow <mark>` — mark this page's links, or follow one
 
-These two belong to the entry surface rather than to a pillar, and the bar
-groups them under their own heading for that reason: one asks for a page and the
-other gives up on asking. `search` sat in the context group before `stop`
-existed, for want of a fourth heading rather than because the context engine
-owned it.
+These belong to the entry surface rather than to a pillar, and the bar groups
+them under their own heading for that reason: one asks for a page, one gives up
+on asking, and one reaches into the page that arrived. `search` sat in the
+context group before `stop` existed, for want of a fourth heading rather than
+because the context engine owned it.
+
+**`follow` is the first verb that addresses something inside the page, and its
+absence was the largest hole in this document.** Fifteen verbs addressed the
+browser's own objects — cards, nodes, contexts, trails — and §2 had listed
+in-page links among the addressable kinds since marks landed, and nothing had
+ever registered one. So the fork had a complete spoken grammar for every surface
+*around* a page and no hands-free way at all to click a link in one.
+
+It was found by ordering the §5.1.1 debt list rather than by reading this
+section. Rango, the most developed voice-browsing extension there is, ships no
+spoken form for back, forward, reload, find, zoom, bookmark, print or save, and
+is very nearly *only* content interaction — click, hover, focus, scroll, element
+hints. That settles nothing about the principle: §5 has already refused the
+argument that a desktop voice layer sending a keystroke discharges the rule. What
+it settles is where hands-free browsing actually stops, and it is not at the
+toolbar. A backlog of twenty-six unvoiced chrome commands reads as the §5 backlog
+and was not; the backlog's first item was a kind of mark that had been declared
+and never built.
+
+The mechanics — the page's own alphabet, what gets a letter, and why the marks go
+up by a whole command rather than by a mode — are in §2 under "Link mode", with
+the rest of what marks are.
 
 **`stop` is the verb that had to exist once the fork started saying where it was
 going.** A request that has been made and not answered is held on the browser
