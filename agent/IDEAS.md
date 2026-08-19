@@ -4802,3 +4802,38 @@ github.com/cursorless-dev/cursorless (hats), `dom/webidl/Document.webidl`.
   **This fork is the only browser that can truncate its back-stack without losing anything,
   and that is worth stating in the code rather than discovering later.**
 - **Phase:** trails, run 56. Built.
+
+## Run 57 — what "the navigation is done" means, and who else had to pick a line
+
+### Playwright already drew this exact line and named it `commit`
+- **Found:** 2026-08-19, checking the contract chosen for `enter` against prior art rather
+  than shipping it on reasoning alone. Sources: [Playwright navigations](https://playwright.dev/docs/navigations),
+  [waitUntil options](https://www.browserless.io/blog/waituntil-option-for-puppeteer-and-playwright),
+  [Selenium page load strategy](https://www.selenium.dev/documentation/webdriver/drivers/options/).
+- **What it is:** Every automation tool that drives a browser has had to answer "when has a
+  navigation finished", and none of them answers it once. Playwright's `page.goto` takes
+  `waitUntil` ∈ `commit | domcontentloaded | load | networkidle`; WebDriver has the same
+  ladder with three rungs — `none`, `eager`, `normal`. Playwright's `commit` is documented as
+  firing *when the response headers have been parsed and session history has been updated*,
+  and it is the option recommended for navigations where a load event is never coming at all
+  (Phoenix LiveView's WebSocket-driven pages are the worked example).
+- **Verdict:** adopt, and it is the line `enter` now resolves on. Independent arrival at the
+  same answer, which is the most that can be asked of a design decision made from first
+  principles.
+- **Why it matters here specifically:** "session history has been updated" is not incidental
+  to this fork — it is the whole of what a re-entry does. The tree is a layer over session
+  history, so the moment the chain has moved is the moment the traversal is no longer
+  pending, and everything after that is an ordinary navigation. Waiting for `load` as well
+  would be Selenium's `normal` strategy, and the tools that offer it all warn that it makes
+  you wait on assets nobody asked about.
+- **The one place the analogy stops:** Playwright's `commit` is defined on response headers,
+  which a bfcache traversal does not have. Gecko's `onLocationChange` is the commit
+  notification for both a network load and a traversal out of the bfcache, so keying on it
+  covers the case the automation tools do not have to think about — and a re-entry into the
+  tab's own chain is exactly that case, on the cheap path this fork prefers.
+- **Rejected: making it a parameter.** Playwright offers four rungs because it cannot know
+  what its caller wants. This can: the callers are `walk`, the Field, the rail, the sidebar,
+  the context engine and the bar, and not one of them wants to be held until the assets
+  arrive. Anything that does already has `onSettled`, which is the `load` rung under a name
+  this codebase already uses. Two surfaces, no options, no verb spelling to teach.
+- **Phase:** trails, run 57. Built.
