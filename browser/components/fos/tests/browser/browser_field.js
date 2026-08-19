@@ -1034,8 +1034,16 @@ add_task(async function test_re_entry_captures_the_page_it_leaves() {
     listenerFinished = true;
   });
 
+  // Waited for, not just started. `enter` resolves once it has asked for the
+  // node, and the load it asked for lands later — as a traversal now, since
+  // the parent is still an entry of this tab's chain. Leaving that in flight
+  // is not this test's business but it is the next test's: a fresh load
+  // started on top of a pending traversal is a race the harness reports as an
+  // unrelated timeout three assertions away.
+  const landed = BrowserTestUtils.waitForLocationChange(gBrowser, PAGE_A);
   try {
     await session().enter(parent);
+    await landed;
   } finally {
     off();
   }

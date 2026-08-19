@@ -695,6 +695,14 @@ export class FOSTrailSession {
    * traversing to the current index is a no-op that would report success and
    * move nothing.
    *
+   * `index >= 0` is part of "in range" and is not defensive padding. A browser
+   * with no session history reports index -1, and a node recorded against one
+   * — which happens the moment a page is captured before its history exists —
+   * put a -1 in the map. `gotoIndex(-1)` takes the content process down, and
+   * the symptom is a test three tasks later hanging on an unrelated load, so
+   * the bound is asserted here rather than trusted from the source it came
+   * from.
+   *
    * @param {object} browser The browser element.
    * @param {number} nodeId The node being entered.
    * @returns {?number} An index to traverse to, or null to restore instead.
@@ -706,7 +714,12 @@ export class FOSTrailSession {
       return null;
     }
     for (const [index, id] of entries) {
-      if (id === nodeId && index !== history.index && index < history.count) {
+      if (
+        id === nodeId &&
+        index !== history.index &&
+        index >= 0 &&
+        index < history.count
+      ) {
         return index;
       }
     }
@@ -739,7 +752,9 @@ export class FOSTrailSession {
    */
   #recordHistoryEntry(browser, nodeId) {
     const index = browser.browsingContext?.sessionHistory?.index;
-    if (typeof index !== "number") {
+    // -1 is what a browser with no session history reports, and it is not an
+    // entry anything can be traversed to.
+    if (typeof index !== "number" || index < 0) {
       return;
     }
     let entries = this.#historyByBrowser.get(browser);
@@ -1004,10 +1019,18 @@ export class FOSTrailSession {
       this.store.resumeTrail(node.trail_id);
       this.#trailByBrowser.set(browser, node.trail_id);
       this.#setCurrent(browser, nodeId);
-      // No `#restoring`: this load is a traversal and announces itself as one.
-      // `onLocationChange`'s `LOAD_CMD_HISTORY` branch resolves the same node
-      // from the same map and lands on it, which is why a gesture and this verb
-      // are now one movement rather than two that agree most of the time.
+      // Flagged like the blob path, and for the same reason rather than by
+      // analogy: the load about to start belongs to the node being *arrived*
+      // at, so the progress listener must not read it as a departure from the
+      // node in front of the user. Leaving the flag off announced a departure
+      // from the page being arrived at, a moment after the real departure had
+      // already been announced — two departures for one move, the second of
+      // them of a page nobody had left.
+      //
+      // Which branch of `onLocationChange` then handles the arrival does not
+      // matter: the flag's own branch and the `LOAD_CMD_HISTORY` branch agree
+      // on the node, because both read it out of the same map.
+      this.#restoring.set(browser, { nodeId, url: node.url });
       browser.gotoIndex(index);
       this.store.restore(nodeId);
       this.#changed();
