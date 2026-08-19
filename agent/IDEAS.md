@@ -4003,6 +4003,27 @@ that can resolve better than the run-to-run noise — which, given the numbers
 above, means the gesture needs a harness with the window manager out of it, and
 that is a different piece of work from the fix it would be evaluating.
 
+### The instrument, validated rather than asserted
+
+A measurement that says "the fast path is cheap" is worth nothing unless it
+would have said something different had the fast path not run. So the same
+mutation used to check the assertions — `#repositionOverview` returning false
+unconditionally, which makes every pass a full rebuild — was run again with the
+numbers captured:
+
+| | reposition | forced rebuild |
+| --- | --- | --- |
+| `resize-pass-script` p50 | 1.60ms | **7.65ms** |
+| `resize-pass-layout` p50 | 0.44ms | **6.59ms** |
+| passes / rebuilds over the gesture | 19 / 0 | 14 / **14** |
+
+14.2ms against `crowded-overview-render`'s 15.6ms measured independently in the
+same run: the bracket is timing the rebuild, and the whole of it. So the
+instrument resolves a reposition from a rebuild with a 7x margin, and the 2.0ms
+figure is 2.0ms because a reposition is what ran — not because the clock was
+looking somewhere else. This is the check the burst benchmark never had, and
+the reason it went eleven runs saying something false.
+
 ### What to do about the 22ms
 
 **Nothing, and now for a stated reason rather than by deferral.** It is paint of

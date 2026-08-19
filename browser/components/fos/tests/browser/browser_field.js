@@ -740,6 +740,7 @@ add_task(async function a_resize_rebuilds_when_the_model_has_moved_on() {
     "and the stage has not noticed"
   );
 
+  const rebuildsBefore = surface.resizeRebuilds;
   try {
     stage.style.width = `${Math.round(stage.clientWidth * 0.6)}px`;
     window.dispatchEvent(new Event("resize"));
@@ -750,6 +751,14 @@ add_task(async function a_resize_rebuilds_when_the_model_has_moved_on() {
       window.document.querySelectorAll(".fos-field-mini").length,
       before - 1,
       "the resize rebuilt, so the dismissed card is gone from the stage"
+    );
+    // And the counter saw it. Every other assertion about `resizeRebuilds` is
+    // that it stayed at zero, which a counter that never counts would satisfy
+    // too — this is the one that makes those mean something.
+    Assert.equal(
+      surface.resizeRebuilds - rebuildsBefore,
+      1,
+      "and the pass is counted as the rebuild it was"
     );
   } finally {
     stage.style.width = "";
