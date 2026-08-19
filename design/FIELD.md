@@ -307,6 +307,16 @@ when a trail is finished — a whole trail's worth of pages marked individually
 dismissed would misreport what the user did, and would come back looking
 discarded rather than filed if the trail were ever picked up again.
 
+There is exactly one way a card leaves the Field without either of those being
+said, and it is not a third verb: **a page whose record has been forgotten**.
+Clear Recent History and Forget About This Site delete the node, so there is
+nothing left to write `dismissed_at` on and nothing for `enter` to restore. The
+model calls that `drop` rather than `dismiss` precisely so the distinction
+cannot blur — a card that could not be restored but looked dismissed would be
+the one thing this section promises never happens. A region goes the same way
+when its trail is forgotten whole, which is `done` without the user having
+finished anything. See `context-engine/SCHEMA.md` §Forgetting.
+
 ## 9. How to tell whether this was built as specified
 
 Four properties, each falsifiable, each mapping to a decision above.

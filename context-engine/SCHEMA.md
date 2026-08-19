@@ -127,16 +127,39 @@ removed, or that anything was, and nothing is recoverable from it — but the
 shape of the branch survives. A caller who needs the shape gone too should
 forget the range rather than the host.
 
-**Forgetting does not yet reach the live session.** The store is the durable
-record and this clears it; the Field's cards and the rail's tree are in-memory
-objects built during the session and are untouched, so a page forgotten while it
-is on screen stays on screen until the browser restarts, and further activity on
-it writes rows referencing a node that is gone. Emptying the engine's id map
-would be worse rather than better — the next reconciliation pass would re-create
-every node from the in-memory tree and write back exactly what was forgotten. The
-answer is to prune the session tree and the Field alongside the store, which
-needs an answer to what happens to the tab you are looking at when you forget the
-site it is on, and that is its own piece of work.
+**Forgetting reaches the live session, and that is why the summary carries
+ids.** The store is the durable record, but the rail's tree and the Field's
+cards are in-memory objects built during the session: a store that has forgotten
+a page and a window that has not is a browser still showing a record it says it
+has deleted, and one that goes on writing visits against a row that is gone.
+`ForgetSummary` therefore reports `nodeIds` and `contextIds` as well as counts,
+`FOSForget` broadcasts it on `fos-context-forgotten`, and every window's engine
+prunes its own tree, cards and id maps to match. `all` stands in for the id list
+when everything went — the one case where a list of every id in the database
+would say no more than a boolean, and the case where it would be longest.
+
+Two rules make that safe.
+
+- **The tree is pruned first and the id map cleaned to match it, never the other
+  way round.** A node missing from the engine's map is precisely what makes
+  reconciliation decide it has never been written and add it, so emptying the
+  map while the in-memory tree still held the nodes would write every forgotten
+  page straight back on the next settle. The map is a record of what is on disk;
+  the tree is what the map is about.
+- **The in-memory tree forgets by the rules above, to the letter.** Two trees
+  that disagree are worse than either, so `TrailStore.forget` reparents onto the
+  nearest surviving ancestor and drops an emptied trail exactly as the SQL does.
+
+**The tab is not closed.** A page open when its site is forgotten keeps its
+document, its scroll position and anything typed into it; what goes is the
+record of it. That is Firefox's own answer rather than an invention —
+`SessionStore.onPurgeDomainData` drops every closed tab and every tab of a
+closed window matching the domain, and does not touch an open one — and closing
+a tab would be a data-loss surprise from a menu item whose whole promise was to
+delete data. The tab is left *unrecorded* instead: its browser loses its node,
+so nothing further is written for what is still on screen. Navigating onward
+records again, because forgetting is a delete and not a blocklist; a user who
+wants a session that records nothing has a private window.
 
 ## Migrations
 

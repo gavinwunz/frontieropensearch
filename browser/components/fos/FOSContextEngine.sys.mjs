@@ -68,10 +68,12 @@ ChromeUtils.defineESModuleGetters(lazy, {
   // optional download, so this is deferred for the same reason the floor is —
   // a navigation must not pull an ML engine in behind it.
   FOSEmbeddings: "resource:///modules/FOSEmbeddings.sys.mjs",
-  // Only for the topic it names, and only from `attach` — which runs once as a
-  // window opens and already awaits the disk, so it is not the navigation path
-  // this file is otherwise careful about.
-  FOSForget: "resource:///modules/FOSForget.sys.mjs",
+  // The topic only, and read only from `attach` and `detach` — `attach` runs
+  // once as a window opens and already awaits the disk, so it is not the
+  // navigation path this file is otherwise careful about. Keyed by the export's
+  // own name because `defineESModuleGetters` resolves each key to the export of
+  // that name, not to the module namespace.
+  FORGOTTEN_TOPIC: "resource:///modules/FOSForget.sys.mjs",
 });
 
 /** One database per profile, shared by every window. */
@@ -318,9 +320,21 @@ export class FOSContextEngine {
     // rapt attention, which would make `read` mean nothing at all.
     this.#window.addEventListener("activate", this);
     this.#window.addEventListener("deactivate", this);
+    // Nothing used to tear an engine down, and a `WeakMap` made that survivable
+    // — the window went and the engine went with it. The observer below is a
+    // strong reference held by a service that outlives every window, so from
+    // here on an engine that is never detached is a window that is never
+    // collected. Closing the window also closes the visit that was open on it,
+    // which is a dwell time that used to be dropped.
+    this.#window.addEventListener("unload", this, { once: true });
 
-    Services.obs.addObserver(this, lazy.FOSForget.FORGOTTEN_TOPIC);
-    recording.add(this);
+    // Guarded, because `attach` is idempotent by design — a window that
+    // re-attaches must not register twice, which trips a diagnostic assertion
+    // in the observer service rather than being merely wasteful.
+    if (!recording.has(this)) {
+      recording.add(this);
+      Services.obs.addObserver(this, lazy.FORGOTTEN_TOPIC);
+    }
 
     this.#reconcile();
     return this;
@@ -332,17 +346,15 @@ export class FOSContextEngine {
     }
     this.#window.removeEventListener("activate", this);
     this.#window.removeEventListener("deactivate", this);
-    recording.delete(this);
-    try {
-      Services.obs.removeObserver(this, lazy.FOSForget.FORGOTTEN_TOPIC);
-    } catch (e) {
-      // Detaching an engine that never attached is not an error.
+    this.#window.removeEventListener("unload", this);
+    if (recording.delete(this)) {
+      Services.obs.removeObserver(this, lazy.FORGOTTEN_TOPIC);
     }
     this.#closeVisit(null);
   }
 
   observe(subject, topic, data) {
-    if (topic !== lazy.FOSForget.FORGOTTEN_TOPIC) {
+    if (topic !== lazy.FORGOTTEN_TOPIC) {
       return;
     }
     let summary;
@@ -434,6 +446,10 @@ export class FOSContextEngine {
   }
 
   handleEvent(event) {
+    if (event.type === "unload") {
+      this.detach();
+      return;
+    }
     if (event.type === "activate") {
       this.#focused = true;
       if (this.#visit) {

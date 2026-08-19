@@ -187,6 +187,27 @@ Only the last of those is C++, and it is a rebranding requirement rather than a
 pillar's. Everything else in the fork's own diff is the branding directory
 (`browser/branding/frontieropensearch/`) and prefs.
 
+**The list above is what the fork asks of Firefox. The harder question is what
+Firefox already does *to* the fork's data**, and a short list of touched files
+is exactly what hides it: every integration point Gecko exposes and the fork has
+not implemented is a claim the fork is silently making. `nsIClearDataService`
+was the first one found — Clear Recent History cleared Places and left the
+richer record beside it — and it is unlikely to be the last. Named and not yet
+checked: session restore, profile migration, `about:preferences`' data panel,
+and sanitize-on-shutdown, which is the nastiest of the four because a user who
+sets "clear history when I close the browser" has asked for precisely this and
+would get it for Places only.
+
+Forgetting is also where the fork's own data crosses back over that boundary in
+the other direction. The store is per profile and a session is per window, so
+`FOSForget` broadcasts what it deleted on the `fos-context-forgotten` observer
+topic and each window's engine prunes itself: there may be no windows open or
+five, and the store must not have to know which. §6's rule that recording never
+blocks browsing is suspended for exactly one operation — a clear waits for every
+window's queue to drain before deleting, because a write already in flight would
+otherwise land on the far side of the delete and put back a row the user has
+just asked to be rid of.
+
 Upstream Firefox guidance in `AGENTS.md` and `docs/` still applies to everything
 below that line.
 

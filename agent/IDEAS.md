@@ -3494,3 +3494,74 @@ https://windows.gadgethacks.com/news/windows-recall-privacy-concerns-the-real-ri
 *Memory in the Age of AI Agents*, https://arxiv.org/pdf/2512.13564;
 *Digital Forgetting in Large Language Models: A Survey of Unlearning Methods*,
 https://arxiv.org/pdf/2404.02062
+
+## Run 45
+
+### What happens to the tab you are looking at when you forget the site it is on
+
+- **Found:** the question run 44 left open, answered from Gecko's own source
+  rather than from first principles.
+- **Verdict:** **adopt** Firefox's existing answer verbatim — the tab stays, the
+  record goes.
+- **Phase:** built this run.
+
+`SessionStore.onPurgeDomainData` is the precedent and it is unambiguous:
+purging a domain removes every *closed* tab and every tab of a *closed* window
+whose history mentions it, and does not touch an open tab in an open window.
+`onPurgeSessionHistory` behaves the same way at the whole-profile scale — it
+wipes the session file, the closed-tab lists and the closed windows, and leaves
+the documents that are on screen alone. So the browser this is a fork of already
+has a settled position: **a delete of browsing data is not a close of the
+things you are using.**
+
+Worth recording that the answer came from `grep` rather than from a search
+engine. The web results for "does Forget About This Site close open tabs" are
+support-forum guesswork; the source is forty lines and definitive. For any
+question of the form "what does Firefox already do here", the tree is the
+primary source and reading it is faster than reading about it.
+
+What the fork adds is the *unrecorded* state that Firefox has no need for,
+because Firefox has nothing per-tab to un-wire: the browser loses its trail
+node, so nothing further is written for a page still on screen, and the next
+navigation starts recording again. That last part is deliberate and follows from
+the same authority — Forget About This Site is not a blocklist, and a user who
+wants a session that records nothing already has a private window. Building
+forgetting into a per-site "never record this" toggle would be a fourth verb
+nobody asked for, and would quietly become a second thing to remember to use.
+
+### Undo versus confirmation for a delete, and why this delete gets neither
+
+- **Found:** searching for whether forgetting should be reversible, before
+  building the live half.
+- **Verdict:** **reject** an undo window. **Adopt, later**, the
+  explicit-consequence rung of the same ladder.
+
+The UX literature is consistent and states the rule as a ladder of friction — no
+confirmation, simple confirmation, explicit-consequence confirmation,
+type-to-confirm — with the choice between *undo* and *confirm* turning on one
+question: is the action actually reversible? Undo is right whenever it is,
+because it keeps the common intended case fast and charges only the rare
+accident; a confirmation dialog is for what cannot be taken back, and its power
+is spent by frequency, so a browser that confirms everything has confirmed
+nothing.
+
+Forgetting is on the irreversible side by construction and deliberately so.
+`SCHEMA.md` already rules out a tombstone table — a record of the thing the user
+asked to have no record of — and an undo window is that same object with a timer
+on it. So the existing upstream confirmation is the right rung and the fork
+should add no friction of its own.
+
+The nuance worth keeping is that **the blast radius of this delete is not
+guessable, and in Firefox it is.** Forgetting one host in a flat history removes
+the rows for that host. Forgetting one host here removes pages from the middle of
+several trails, can strand questions asked from them, and can delete a whole
+context whose label named an afternoon's work. The counts are already computed —
+`ForgetSummary` reports them — so a dry run that reports what *would* go, shown
+in the dialog that already exists, is a small piece of work that puts this on the
+explicit-consequence rung where it belongs. Not novel as an interaction; useful
+here specifically because the store is associative. Candidate task, not built.
+
+**Sources:** `browser/components/sessionstore/SessionStore.sys.mjs`
+(`onPurgeDomainData`, `onPurgeSessionHistory`);
+https://www.nngroup.com/articles/confirmation-dialog/;
+https://www.saasui.design/blog/saas-destructive-actions-confirmation-ux-patterns
