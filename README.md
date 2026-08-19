@@ -24,6 +24,10 @@ research contexts. Suggestions rank by the context you are in rather than by
 global visit frequency. Any context can be exported as a markdown brief.
 
 Everything is local. There is no account, no sync service, and no telemetry.
+And because a record you cannot remove is not private just for staying on your
+machine, everything the Context Engine holds is cleared by the browser's own
+Clear Recent History and Forget About This Site — for a site, for a time range,
+or entirely.
 
 ## What it looks like
 

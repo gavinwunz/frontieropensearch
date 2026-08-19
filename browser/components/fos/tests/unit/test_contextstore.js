@@ -1138,6 +1138,46 @@ add_task(async function test_forgetting_a_host_reparents_rather_than_orphans() {
   await store.close();
 });
 
+add_task(
+  async function test_reparenting_climbs_past_a_run_of_forgotten_nodes() {
+    const store = await freshStore();
+    const trailId = await store.addTrail({});
+    const root = await store.addNode({
+      trailId,
+      url: "https://keep.example/root",
+    });
+    const first = await store.addNode({
+      trailId,
+      parentId: root,
+      url: "https://forget.example/one",
+    });
+    const second = await store.addNode({
+      trailId,
+      parentId: first,
+      url: "https://forget.example/two",
+    });
+    const leaf = await store.addNode({
+      trailId,
+      parentId: second,
+      url: "https://keep.example/leaf",
+    });
+
+    await store.forgetHost("forget.example");
+
+    const [row] = await store.connection.execute(
+      `SELECT parent_id FROM trail_node WHERE id = :leaf`,
+      { leaf }
+    );
+    Assert.equal(
+      row.getResultByName("parent_id"),
+      root,
+      "the nearest *surviving* ancestor, not the nearest one — a parent that is " +
+        "itself being forgotten is not somewhere a child can be hung"
+    );
+    await store.close();
+  }
+);
+
 add_task(async function test_forgetting_a_host_takes_subdomains() {
   const store = await freshStore();
   const trailId = await store.addTrail({});

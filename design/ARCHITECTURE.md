@@ -174,6 +174,14 @@ inner loop of minutes rather than hours:
 | `browser/components/tabbrowser/content/tab-bar-visibility.js` | the tab strip stays hidden — the Field replaces it |
 | `browser/base/jar.mn`, `browser/components/moz.build` | packaging |
 | `browser/components/about/AboutRedirector.cpp` | `about:rights` is a local page, not a redirect to Mozilla's terms |
+| `toolkit/components/cleardata/ClearDataService.sys.mjs` | the Context Engine is registered as a `CLEAR_HISTORY` cleaner |
+
+The last row is the only edit outside `browser/`, and it is there because the
+service has no runtime registration API — a cleaner is a literal in a table in
+that file, so being reachable from Clear Recent History means editing it. The
+edit is kept to a delegation behind a `MOZ_BUILD_APP` guard, with everything it
+does living in `FOSForget.sys.mjs`, so the upstream diff stays a few lines and
+the reasoning stays with the component that owns the data.
 
 Only the last of those is C++, and it is a rebranding requirement rather than a
 pillar's. Everything else in the fork's own diff is the branding directory
@@ -203,6 +211,10 @@ is where the seams between three pillars show.
 - **No cloud, no account, no sync, no telemetry.** The store is a local file and
   the component has no network access at all. This is a constraint on the
   design, not a setting: a feature that needs a server does not get built.
+  Local is half of the claim and not the whole of it: a record the user cannot
+  remove is not private merely for staying on the machine, so everything the
+  engine holds is reachable by the clearing surfaces Firefox already ships. See
+  `context-engine/SCHEMA.md` §Forgetting.
 - **No tab strip and no linear history.** Not hidden — replaced. Anything that
   reintroduces "the list of things you have open" as the primary model is a
   regression however convenient it looks.

@@ -3383,3 +3383,114 @@ says so, which is what stops the next audit re-finding it.
 **Sources:** https://maggieappleton.com/bidirectionals;
 https://en.wikipedia.org/wiki/Project_Xanadu;
 SearchBar (Morris, Morris & Venolia, CHI 2008), already logged above.
+
+## Run 44 — the record that could not be removed
+
+### Local is half of a privacy claim, and Recall is where the other half was argued in public
+
+- **Found:** looking for a lens the schema audit had not already spent. The
+  question was not "what does a column do" but "what does the fork *claim*, and
+  is the claim true at a surface the user can reach". `README.md` and
+  `SCHEMA.md` both open with the same one: everything is local, no sync, no
+  account, no upload. It is true. Then: what happens when the user wants it
+  gone? `grep` for `DELETE` in `FOSContextStore.sys.mjs` returned nothing at
+  all, and `nsIClearDataService` had never heard of the database.
+- **What it is:** Microsoft Recall's defence was that snapshots never leave the
+  device and Microsoft cannot read them, which was accurate and did not settle
+  it. The criticism that stuck was that a local record is still a record: it sat
+  behind a PIN, remote-access tooling reached it, and the sensitive-content
+  filter provably missed card numbers and passwords in independent testing. What
+  Microsoft shipped in answer was three verbs — stop recording, delete a range,
+  delete everything for a site or app.
+- **Verdict:** **adopt** the three verbs. **Reject** the fourth thing Recall
+  reached for, a filter that decides on the user's behalf what is sensitive.
+- **Phase:** the store's forget and the cleaner registration, built this run.
+
+The three verbs are the useful finding and the reason this was cheap: Firefox
+has shipped all three for twenty years. Clear Recent History is the range,
+Forget About This Site is the site, private browsing is stop-recording. So the
+work was never to design a forgetting surface — it was to be *reachable from the
+ones that exist*. A fork that invents its own "clear my context engine" panel
+would have built a second thing to remember to use, which is how a privacy
+control ends up unused.
+
+Rejecting the filter is the sharper half. Recall's filter is the feature that
+was tested and found wanting, and the failure is structural rather than a bug to
+be fixed in the next release: a classifier deciding what is too sensitive to
+record is wrong in both directions at once, and the direction that matters is
+silent. This fork records only URLs, titles, typed queries and timings, so there
+is no equivalent of a screenshot of a password field — and the honest answer to
+"do not record this" is the one Firefox already has, which is a window that does
+not record.
+
+**The four criteria do not apply, and saying why matters.** They are the bar for
+adopting an *idea*, and this is not one; it is a defect, of the same kind run 42
+found in `field_placement` and explicitly not the kind run 43 found in
+`source_node_id`. The test that separates them is whether anything promised the
+behaviour. Nothing promised `source_node_id` a reader, so it was a latent
+feature and could wait. Two documents and a shipped menu item promised that
+clearing history clears your history, and it did not, so this could not.
+
+### A claim is only as true as the surface that acts on it
+
+- **Found:** by the audit above, and stated here because it is the transferable
+  part.
+- **Verdict:** adopt as a lens, to be re-run whenever a doc makes a promise.
+
+Run 42 checked the schema against the code. Run 43 checked a column against what
+it was for. This run checked a *sentence* against a menu item, and that is a
+different reach: the gap was not inside the component at all, it was between the
+component and a part of Firefox the fork had never thought about. `grep DELETE`
+over one file found it in a second.
+
+The fork's own boundary is what hid it. `ARCHITECTURE.md` §7 lists every file
+touched outside `browser/components/fos/` and treats the shortness of that list
+as a virtue — which it is, for build times. But the same discipline means the
+fork mostly asks "what does my component do" and rarely "what does Firefox
+already do *to* my component's data", and every integration point Gecko exposes
+is a claim the fork is silently making by not implementing it. Worth re-running
+against the others: session restore, profile migration, `about:preferences`'
+data panel, and the sanitize-on-shutdown path, none of which know the Context
+Engine exists either.
+
+### Deletion is a graph operation, and the memex's edges are what make it one
+
+- **Found:** designing the delete, once it was clear one was needed.
+- **Verdict:** adopt the four rules; recorded in `context-engine/SCHEMA.md`.
+
+The naive delete — remove the rows matching a host — is wrong in this schema in
+four separate places, and three of the four are consequences of the fork's own
+inventions rather than of SQL. A trail is a tree, so a node has children that a
+list would not have. A query knows the page it was typed from, which run 43 made
+a visible backlink, so forgetting a page has a *second* edge to sever and the
+sidebar would otherwise still address it. A context is derived, so its label can
+name what was just forgotten while holding no evidence for it. And a merged
+context keeps its own membership rows, so emptiness has to be judged over a
+family rather than a row.
+
+That is worth stating as a general property rather than four fixes: **the more
+associative a store is, the more of it a delete has to reason about.** Bush's
+associative indexing is the whole point of this project, and the cost lands
+exactly here — a flat history has one row to remove and no question to answer.
+It is also why "never prune a node a context still references" in `SCHEMA.md`
+had to be explicitly overridden rather than quietly worked around: automatic
+pruning and user-requested forgetting look like the same operation and want
+opposite defaults.
+
+**Rejected: automatic forgetting.** The managed-forgetting literature is real
+and long-running — ForgetIT, and the current agent-memory work classifying
+forgetting as time-based, frequency-based or importance-driven — and the case
+for it is that unbounded memory adds noise and retrieval cost. It fails criterion
+2 here and fails it badly. This browser's stated promise is not losing things,
+and the pages worth keeping are the long tail by construction: an importance
+score that evicts them is the bookmark graveyard arriving by a new route. The
+useful distinction the same literature draws is between the *right to forget* and
+the *right to delete*, and only the second is a feature. The first is a policy
+about what a system may do on its own, and the answer here is nothing.
+
+**Sources:** https://support.microsoft.com/en-us/windows/privacy-and-control-over-your-recall-experience-d404f672-7647-41e5-886c-a3c59680af15;
+https://proton.me/business/blog/disable-windows-recall;
+https://windows.gadgethacks.com/news/windows-recall-privacy-concerns-the-real-risk-is-local-access/;
+*Memory in the Age of AI Agents*, https://arxiv.org/pdf/2512.13564;
+*Digital Forgetting in Large Language Models: A Survey of Unlearning Methods*,
+https://arxiv.org/pdf/2404.02062

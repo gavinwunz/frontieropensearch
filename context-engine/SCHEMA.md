@@ -48,9 +48,10 @@ bare URL with scroll numbers bolted on.
 A history tree only grows. Nyxt's `history-tree` names this as its main
 limitation — nodes are freed only when their owner disappears, so the structure
 expands without bound (`agent/IDEAS.md`). Soft dismissal via `dismissed_at`
-makes this *worse* here, because nothing is ever deleted by normal use. That is
-the right default for a browser whose entire promise is not losing things, but
-it needs a stated policy rather than silence:
+makes this *worse* here, because nothing is ever deleted by normal use — only
+by being asked for, which is Forgetting below. That is the right default for a
+browser whose entire promise is not losing things, but it needs a stated policy
+rather than silence:
 
 - **Nothing is pruned automatically in Phase 2.** Correctness first. A tree of a
   few hundred thousand nodes is well within SQLite's comfort, and guessing at an
@@ -66,6 +67,76 @@ it needs a stated policy rather than silence:
 - **Never prune a node a context still references.** `context_member` and
   `entity_mention` point at nodes; the Context Engine's value is the long tail,
   so a node cited by a saved context outlives any age rule.
+
+## Forgetting
+
+Pruning above is the database's own housekeeping and is deliberately absent.
+Forgetting is the opposite thing: the user asked, and every rule in that section
+gives way to it — including "never prune a node a context still references",
+because a context is derived from evidence and has no standing to outlive the
+evidence being withdrawn.
+
+There was no delete of any kind here until schema version 2 had already
+shipped, and that was the more serious half of the gap: `nsIClearDataService`
+did not know this database existed, so Clear Recent History and Forget About
+This Site cleared Places and left the richer record beside it intact. The fork
+records more than the history database it replaces — not only which pages were
+open but what was typed to reach them, which page each search was typed from,
+how long each page was read, and what the whole session was about — so a menu
+item that says it is clearing your history and clears half of it is a false
+statement, not an incomplete feature. "Everything is local" was true and is not
+the whole of a privacy claim; Windows Recall is the case that settled that
+argument in public.
+
+Forgetting is `FOSContextStore.forgetHost`, `forgetRange` and `forgetAll`,
+reached from the shipped surfaces through `FOSForget.sys.mjs`, which registers
+the store as a `CLEAR_HISTORY` cleaner. No new schema was needed: forgetting is
+a delete, not a tombstone. A tombstone table would be a second record of the
+thing the user asked to have no record of.
+
+Four rules decide what a delete takes with it. Each had a plausible alternative
+that loses more than it should.
+
+- **A forgotten node's children are reparented onto its nearest surviving
+  ancestor.** Deleting the subtree would mean that forgetting one page forgets
+  everything found from it, and those pages are usually on other sites — so
+  forgetting one host would take an afternoon of unrelated research with it.
+  This is the opposite of the pruning rule above, which refuses to touch a node
+  in the middle of a live trail precisely because it would orphan children;
+  reparenting is what makes the same operation safe when it is asked for.
+- **A query goes with the page it landed on, or — if it never landed — with the
+  page it was typed from.** `trail_node_id` is what a query is *about*;
+  `source_node_id` is only where the user was standing. A query that landed
+  somewhere still remembered is an answer the user still has.
+- **A surviving query's `source_node_id` is nulled.** That column is the
+  backlink behind the sidebar's "This page made you ask", so leaving it would
+  keep a forgotten page addressable through the query table — the one place the
+  fork records an association that exists nowhere else.
+- **An emptied context is deleted, and merge families are weighed whole.** A
+  context's `label` is derived from its own material, so a context whose every
+  member has gone is a label naming what was just forgotten with nothing left to
+  justify it. Members are counted across the merge family because a merged
+  context keeps its own membership rows (see `context.merged_into`), so judging
+  one row alone would delete half a live enquiry. Entities and emptied trails go
+  by the same argument: a name with nothing behind it.
+
+**What reparenting leaves is an inference, and it is the honest cost of the
+first rule.** After forgetting the middle of A → B → C, the trail reads A → C,
+which is a navigation that never happened. The edge does not say what was
+removed, or that anything was, and nothing is recoverable from it — but the
+shape of the branch survives. A caller who needs the shape gone too should
+forget the range rather than the host.
+
+**Forgetting does not yet reach the live session.** The store is the durable
+record and this clears it; the Field's cards and the rail's tree are in-memory
+objects built during the session and are untouched, so a page forgotten while it
+is on screen stays on screen until the browser restarts, and further activity on
+it writes rows referencing a node that is gone. Emptying the engine's id map
+would be worse rather than better — the next reconciliation pass would re-create
+every node from the in-memory tree and write back exactly what was forgotten. The
+answer is to prune the session tree and the Field alongside the store, which
+needs an answer to what happens to the tab you are looking at when you forget the
+site it is on, and that is its own piece of work.
 
 ## Migrations
 
