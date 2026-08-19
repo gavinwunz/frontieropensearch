@@ -312,25 +312,46 @@ actually been built as specified:
    This rule used to end "— and it will be caught by construction, since the
    action table is the single source of both", which was false and was worth
    more than the sentence cost. The action table is the single source of both
-   modalities *for the verbs in it*, and nothing whatever checks that the
-   browser's actions are in it. Counted in a running window rather than argued:
-   the chrome binds 101 `<key>` elements to 49 distinct commands, and three of
-   those are this fork's. The other forty-six are Firefox's, inherited whole,
-   every one of them reachable by a gesture and none of them by a word.
+   modalities *for the verbs in it*, and nothing whatever checked that the
+   browser's actions were in it.
 
-   Not all forty-six are violations — most reach no *action* in the sense §5
-   means (text editing belongs to whatever is dictating, window management to
-   the window manager, the devtools keys to a surface that is not browsing) —
-   but that distinction has never been written down, which means it has never
-   been checked either. The verbs are conformant by construction. The window
-   is not, and the honest form of this rule is that the gap is enumerable and
-   has not yet been enumerated.
-
-   What this cost, concretely: `Browser:Back` was bound to four gestures, none
+   What that cost, concretely: `Browser:Back` was bound to four gestures, none
    of them known to pillar B, and each press appended a node for a page the
    user was arriving at *from* — so the tree grew a spine nobody browsed. It
    was found by counting the keyset, not by using the browser, and it had been
    there since the pillar landed. See `ARCHITECTURE.md` §7.
+
+   ### 5.1.1 The keyset manifest
+
+   The gap is now enumerated, and stays enumerated.
+   `browser/components/fos/tests/browser/keyset-manifest.js` classifies every
+   command a `<key>` in the window can reach, each with a written reason, and
+   `browser_zzkeymanifest.js` fails if the window binds a command the manifest
+   does not name, or if the manifest names one the window no longer binds. That
+   is what makes "by construction" a claim about the window rather than about
+   the table: a binding this fork adds, or one that arrives with an upstream
+   merge, is red until somebody has said what §5 makes of it.
+
+   The rule that sorts the entries is the one already applied to Tab-completion
+   and to rail hoisting: **§5 governs actions, and an affordance that runs no
+   action needs no word.** The classes are `verb`, `affordance`, `editing`,
+   `devtools`, `desktop`, `display`, `replaced`, `unbound` and `debt`; the
+   manifest's own header says what claiming each one commits you to. `debt` is
+   the class for the cases where the rule does not get you out of it — a real
+   browsing action, reachable by hand and by nothing else — and the file is
+   deliberately allowed to be green with `debt` entries in it, because a red
+   suite for known debt gets the file disabled rather than the debt paid.
+
+   The enumeration runs in a driven window, not over the source. `#ifdef` and
+   platform blocks mean the file and the window disagree, and fourteen of the
+   devtools keys are installed at window load and are not in the markup at all.
+
+   The count the manifest replaces was itself wrong, which is worth keeping:
+   §5.1 said "101 `<key>` elements, 49 distinct commands". The keys were right
+   and the commands were not. A key with no `command` attribute still runs
+   something — a listener on the keyset, or nothing at all — and thirty-six of
+   them were invisible to a count that read the attribute. The window binds
+   **101 keys reaching 85 commands**, of which **two** have a verb.
 2. **The ASR spike is not on the critical path for any of this.** Marks, the
    grammar, the parser and every action are keyboard-testable today. Speech
    recognition on the in-tree engine is still unproven (`IDEAS.md`), and this

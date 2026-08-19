@@ -1,5 +1,6 @@
 [DEFAULT]
 support-files = [
+  "keyset-manifest.js",
   "fixtures/lisbon.html",
   "fixtures/memex.html",
   "fixtures/nls.html",
@@ -42,6 +43,8 @@ support-files = [
 ["browser_zzforgetpreview.js"]
 
 ["browser_zzhistorygesture.js"]
+
+["browser_zzkeymanifest.js"]
 
 ["browser_zzmergeoffer.js"]
 

@@ -4540,3 +4540,122 @@ was already making and the reason an inherited keybinding does not discharge it.
   the one it fixed, so this wants deciding, not adding.
 - **The manifest and its test**, above. The next run's item, and the audit's
   actual product.
+
+## Run 54 — the manifest, and the count that was itself wrong
+
+### What was built
+
+`browser/components/fos/tests/browser/keyset-manifest.js` plus
+`browser_zzkeymanifest.js`: every command a `<key>` in a running window can
+reach, classified, each with a written reason, and a test that fails when the
+window binds something the manifest does not name or the manifest names
+something the window no longer binds. This is the artefact run 53 said the
+audit's actual product would be, and it turns `GRAMMAR.md` §5.1's "by
+construction" into a claim about the window rather than about the action table.
+
+The classification rule was not invented here — it is this file's own, stated
+for Tab-completion and again for rail hoisting: **§5 governs actions, and an
+affordance that runs no action needs no word.** Nine classes apply it:
+`verb`, `affordance`, `editing`, `devtools`, `desktop`, `display`, `replaced`,
+`unbound`, `debt`.
+
+### The audit's own count was wrong by 42%
+
+Run 53 reported "101 `<key>` elements reaching 49 distinct commands". The keys
+were right. The commands were not:
+
+| | run 53 | actual |
+| --- | --- | --- |
+| `<key>` elements | 101 | 101 |
+| distinct commands | 49 | **85** |
+| reachable by a word | — | **2** |
+
+The gap is entirely keys with no `command` attribute. Thirty-six of them —
+every devtools key, every sidebar toggle, the nine tab-selection keys, `goHome`,
+`bookmarkAllTabsKb`, the six `internal="true"` editing keys — dispatch through a
+`command` listener on `mainKeyset` keyed by element id, or through nothing at
+all. A count that read the attribute could not see them. **The instrument that
+found the last defect had a systematic blind spot, and the only thing that
+exposed it was building the enumeration into something that had to be complete
+rather than merely indicative.**
+
+Worth generalising: run 53's transferable lesson was "a surface you replaced
+gets audited, a surface you inherited does not". This run's is one turn further
+in — **the audit gets audited when, and only when, something downstream depends
+on it being exhaustive.** A number in a design document is checked by nobody. A
+number a test derives is checked every run.
+
+### Two commands out of eighty-five have a word
+
+`FOS:Field` (`field`) and `Browser:Stop` (`stop`, added run 52). That is the
+whole of it. The other eighty-three sort as: 26 `debt`, 18 `devtools`,
+12 `affordance`, 9 `replaced`, 8 `editing`, 5 `desktop`, 3 `unbound`,
+1 `display`.
+
+The three findings that only came out of writing the reasons:
+
+- **`Tools:Sanitize` is the sharpest entry in the file.** Clear Recent History,
+  which run 44 taught to delete from the context store — the store's first
+  delete of any kind, built on the argument that a record the user cannot
+  remove is not private for staying on the machine. The fork built the
+  capability itself, from scratch, and reached it only through an inherited
+  dialog with no word. Every previous §5 gap was something Firefox left us;
+  this one we made.
+- **`FOS:CommandBar` is an affordance, and that is the cleanest illustration
+  of §5 in the file.** Opening the bar focuses a surface and runs nothing, and
+  the spoken path does not pass through it at all — a verb is said outright.
+  A word for "open the bar" would be a word for a step only the keyboard has.
+- **`key_showAllTabs` is bound to nothing.** Nothing in the tree listens for
+  it; it exists so the View menu can print Ctrl+Shift+Tab. It looks exactly
+  like a binding, and only an enumeration that has to account for every key
+  would ever ask.
+
+### `unbound` is checked, not claimed
+
+Every other class is a judgement. `unbound` is a fact about the window — the
+key carries no `key` or `keycode` — so the test asserts it, and an entry that
+acquires a keystroke fails as debt. Without that it would be the shelf every
+awkward binding got parked on, which is the one failure mode a
+self-administered manifest has. The `verb` class is checked the same way and
+against the action table, so a renamed verb cannot leave a command claiming to
+be spoken for by a word nobody can say.
+
+The file is deliberately **green with 26 debt entries in it**. A ratchet on the
+count was considered and rejected: it is satisfied by reclassifying, which is
+the exact move the file exists to prevent, and a genuinely new unvoiced command
+fails the classification check anyway. A red suite for known debt gets the file
+disabled, not the debt paid.
+
+### Rango, and the gap the manifest cannot see
+
+- **Found:** 2026-08-19, searching what hands-free users actually need spoken
+  forms for, to order the 26.
+- **What it is:** Rango (github.com/david-tejada/rango) is the most developed
+  voice-browsing extension there is, used with Talon and Dragon. Its command
+  set is almost entirely *content* interaction — click, hover, focus, copy,
+  scroll, "visit {website}", element hints — and it **deliberately ships no
+  spoken form for back, forward, reload, find, zoom, bookmark, print or save.**
+- **Verdict:** reject as an argument about the principle; adopt as an argument
+  about the ordering, and record the hole it exposes.
+- **Why:** Rango omits the browser-level controls because the desktop voice
+  layer sends the keystroke for them. §5 has already had that argument and
+  lost it on purpose — run 53's W3C source says voicing a shortcut ("press
+  control papa") is not a native spoken command — so this is evidence about
+  practice, not about the rule, and the 26 stay debt.
+
+  What it does settle is what to build before any of them. **The manifest
+  enumerates the chrome and the chrome only, and there is no hands-free way to
+  click a link.** Marks address cards, nodes, trails and contexts; `FOSMarks`
+  lists `"link"` among the addressable kinds in its own doc comment and nothing
+  registers one, no verb `accepts` one. So the fork has a complete grammar for
+  everything around the page and nothing at all for what is in it — and the
+  whole existence of Rango is the evidence that this, not reload, is where
+  hands-free browsing actually stops. A `debt` list of 26 chrome commands
+  reads as the §5 backlog and is not: the backlog's first item is a kind of
+  mark that was declared and never built.
+- **Phase:** post-plan. Ahead of every item in the debt list.
+
+**Sources:** github.com/david-tejada/rango, github.com/talonhub/community,
+handsfreecoding.org/2021/12/12/talon-in-depth-review/ (Dragon's data-entry-first
+vs Talon's command-first policy, which is the same choice `GRAMMAR.md` §3 makes
+and settles the other way).
