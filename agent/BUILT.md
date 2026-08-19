@@ -10,6 +10,25 @@ this, and what was decided when it was built" — the reasoning in full is in
 `design/` and `context-engine/`. Nothing here is waiting on anybody; what is,
 is in `STATE.md`.
 
+- **`stop` — giving up on a page that is not coming.** The fifteenth verb, and
+  the exit from the state the entry above created. A request that has been made
+  and not answered is named by the address bar and reissued by session restore;
+  Firefox splits abandoning it in two — `Browser:Stop` aborts the load,
+  `handleRevert` takes the request back — and this build could reach neither by
+  grammar and only the first by key, because its address bar takes no focus.
+  `stop` is both halves in one verb, since neither is any use alone: stopping
+  without forgetting leaves the browser naming a destination it is not going
+  to, and forgetting without stopping lets the page land a minute later over
+  whatever the user did instead. The toolbar's stop button and `key_stop` are
+  hooked through the same `Browser:Stop` command event, so all three routes
+  leave the same state. Firefox's own tab progress listener does clear the
+  field at a failed `STATE_STOP` — what this adds is that the bar and the
+  session are right synchronously rather than a round trip later, which is
+  recorded in `ARCHITECTURE.md` §7 so it is not later read as redundant. The
+  notice names the page that was dropped, which is what makes giving up cheap.
+  Placing it added the teach list's fourth group, **"The page"**, and moved
+  `search` into it: both belong to the entry surface rather than to a pillar.
+
 - **The page being asked for is shown and remembered while it is in flight.**
   The second missing write found by run 50's lens, and not in a database:
   `browser.userTypedValue` holds a request that has been made and not answered,

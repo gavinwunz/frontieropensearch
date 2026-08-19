@@ -85,6 +85,7 @@ test("prose is a query and is always runnable", () => {
     "back pain",
     "field of view",
     "branch prediction",
+    "stop motion animation",
   ]) {
     const v = view(line);
     assert.equal(v.status.kind, S_QUERY, line);

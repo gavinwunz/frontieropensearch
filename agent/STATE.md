@@ -43,75 +43,68 @@ History and Forget About This Site — **forgetting reaching the live session**,
 surviving a profile refresh, and surviving being unreadable**, and, this run,
 **a page the command bar was asked for being recorded as a typed visit** — the
 fork's first audit of what it writes into *Firefox's* data rather than what
-Firefox does to its own — and, this run, **the page being asked for being shown
-and remembered while it is still in flight**, that lens' second finding and the
-first one that was not in a database at all.
+Firefox does to its own — **the page being asked for being shown and remembered
+while it is still in flight**, that lens' second finding and the first one that
+was not in a database at all — and, this run, **`stop`: the way out of the state
+the last one created**, the fifteenth verb and the first added since the phase
+plan ran out.
 
 ## In progress
 
 Nothing waits on a person. **Nothing is running — the harness is free.**
 
-Run 51 took item 3 off the list — `browser.userTypedValue` — which run 50 had
-filed as "real but small". It was real. It was not small: "small" came from
-reading only the session-restore half of it.
+Run 52 took item 3 off the list — abandoning a pending request — and the useful
+part is that **the probe's premise was half wrong, and checking it was the
+work.**
 
-**The address bar wrote three things on every load and the dispatcher that
-replaced it wrote none of them.** Run 50 fixed the first (`markPageAsTyped`).
-This run fixed the other two, which had to go in together.
+Run 51's note said Firefox reverts a pending value through
+`UrlbarInput.handleRevert`, which this fork cannot reach because its bar takes
+no focus. True, and not the mechanism that matters. **Firefox's tab progress
+listener nulls `userTypedValue` and repaints the bar at a failed `STATE_STOP`**,
+and says why in its own comment — *"restore the current document's location in
+case the request was stopped before the location changed"*. So the fork had
+inherited a recovery it never wrote, and a change built on "there is no way out
+of this state" would have been built on a false premise.
 
-`browser.userTypedValue` is a field on the browser element holding a request
-made and not yet answered. `Tabbrowser.addTab` says why it exists better than
-any doc comment in the tree — *"pretend the user typed this so it'll be
-available till the document successfully loads"* — and two things read it.
-`UrlbarInputBase.setURI` opens with `let value = this.userTypedValue` and shows
-that instead of the current URI, so Firefox's bar says where you are going from
-the moment you ask; this fork's bar went on claiming you were still where you
-were for the whole of every load, and for good if the load stalled.
-`TabState.collect` copies it out with `userTypedClear`, and `_restoreTabEntry`
-branches on the pair: with both set it reissues the *request*, without them it
-restores the history entry. So a browser killed mid-load came back to the page
-being left, having discarded the one asked for.
+What was actually missing was narrower and better:
 
-**The value was already computed.** Firefox's rule is one branch — the search
-terms for a search, the decoded URL otherwise — and `resolveInput` has produced
-exactly that split as `display` since the command bar's "Go to …" / "Search
-for …" row needed it. Punycode goes through `displaySpec`, which routes to the
-IDN service's spoof-checked conversion rather than decoding unconditionally.
+- **No grammar reached it.** `Browser:Stop` is bound to the toolbar button and
+  to `key_stop`. Both are gestures, so abandoning a load was reachable by hand
+  and not by voice — which `GRAMMAR.md` §5 forbids outright. Not a fork-specific
+  oversight: talonhub/community's browser command set, the most-used hands-free
+  browser vocabulary there is, has `reload it` and no stop-loading command.
+- **The inherited recovery is an event round trip late.** In that interval the
+  bar still names a page nobody is going to and `TabState.collect` still records
+  the request. Mutation-tested rather than argued: dropping `clearPending` fails
+  three assertions synchronously and passes the same field's assertion four
+  seconds later — the exact shape of a second mechanism arriving late, which
+  run 51's own method note says to find before rewriting an assertion.
 
-**`initialPageLoadedFromUserAction` is the half that made it one change rather
-than two.** The fork does not clear the field; the tab progress listener does,
-on the location change ending the load, via `didStartLoadSinceLastUserTyping()`.
-That flag is raised at `STATE_START` — except for an initial page arriving over
-a blank tab, deliberately, because that load is chrome's doing and must not wipe
-what a user was typing. Writing the pending value without opting out of that
-carve-out leaves `about:newtab` in the address bar permanently, over a page that
-finished loading: worse than the staleness the change fixes.
+**`stop` is one verb doing both halves**, because neither is any use alone:
+stopping the load while the browser goes on naming the destination is the same
+wrong answer with the spinner off, and forgetting the request without stopping
+it lets the page land a minute later over whatever the user did instead. The
+second is a caught mutation, and it is why the test spends four seconds waiting
+for a page that must not arrive.
 
-**No private guard, unlike the typed mark, and the asymmetry is deliberate.**
-The typed mark writes a process-global map an ordinary window reads back; this
-writes one field on one browser element, and session store never persists a
-private window to disk. A guard would only blind a private window's bar to its
-own pending loads.
+**All three routes to `Browser:Stop` leave the same state.** The nav-bar kept
+its stop button and Escape over the page is still `key_stop`; a verb that took
+the request back while the button did not would ship two stops with different
+outcomes, both of which look like they worked. A listener on the command
+element, which is the same event `mainCommandSet` already handles.
 
-**The redraw is the one thing here Firefox does not do.** Its bar is the surface
-that was typed into and is already showing the value before the field is set;
-this fork moved entry to the command bar and left the bar as a display, so
-without an explicit `gURLBar.setURI()` the field would be set, read by session
-store, and never once seen. Checked rather than assumed, because showing a URL
-the browser is not at is the shape of a real vulnerability family (MFSA 2013-04,
-CVE-2016-1707, the 2020 mobile sweep) and bug 610357 still carries the phishing
-constraint in a source comment. It does not bind: every one of those bugs is web
-content choosing the URL and the timing, and this field is written only by
-`FOSActionDispatcher`, whose callers are the command bar and the context
-sidebar. The safety is `pageproxystate="invalid"`, which `identity-block.css`
-and `browser-siteIdentity.js` use to hide the identity box and refuse the
-identity panel — verified in the tree and asserted in the test.
+**The fourth group heading was forced, not invented.** The teach list groups by
+pillar and `search` had been filed under "Context" for want of a fourth heading.
+Filing `stop` there too would have been a user-visible heading that is untrue,
+so there is now **"The page"**, holding the two verbs the entry surface owns.
+Stale verb counts across six files ("the twelve words") were corrected to
+fifteen in passing.
 
-Green: **965 FOS browser-chrome checks** (up from 949; the file adds 16), 322
-node checks, xpcshell clean, 0 failures across the suite. **Five mutations, four
-caught** — the pending write dropped (10 checks fail), a search made pending as
-its result URL, the initial-page declaration dropped, the redraw dropped — and
-**one deliberate survivor**, below. Lint clean on every changed file.
+Green: **990 FOS browser-chrome checks** (up from 965; the file goes 16 to 40),
+322 node checks, xpcshell clean, 0 failures across the suite. **Five mutations,
+five caught** — `clearPending` dropped from the abandon, the stop dropped from
+it, the `Browser:Stop` hook removed, the declaration left behind, the notice's
+two branches swapped. Lint clean on every changed file.
 
 `main` is at `phase-3`. `agent/dev` is pushed through this run's commits.
 
@@ -125,18 +118,34 @@ its result URL, the initial-page declaration dropped, the redraw dropped — and
    and **a region's height is a ratchet** (`FIELD.md` §6) — all unchanged, all
    belonging with the Field's restructure rather than piecemeal.
 
-3. **The lens has one probe left that is not the Field's.** `IDEAS.md` run 51
-   lists three, and two of them are the Field's problem: the tab title during a
-   load belongs with the restructure, and `SessionStore` search mode is very
-   likely a genuine non-issue given the fork has no search mode. The one that
-   stands on its own is **abandoning a pending request**. Firefox's Escape
-   reverts the bar and clears `userTypedValue`; this fork's bar is read-only so
-   there is nothing to revert *in the bar*, but a pending value now exists with
-   no way to abandon it short of the load finishing. It wants to be the command
-   bar's own cancel rather than a second Escape handler, which makes it a
-   grammar question as much as a plumbing one — read `GRAMMAR.md` first.
+3. **The lens run 50 opened has nothing left that stands alone.** Of run 51's
+   three probes, `stop` took one; the tab title during a load belongs with the
+   Field's restructure, and `SessionStore` search mode is very likely a genuine
+   non-issue in a build with no search mode. Do not keep the lens open for its
+   own sake — it has returned three findings from three probes, and a fourth
+   chosen to keep it open would be manufactured.
+
+4. **`Browser:Reload` is the asymmetry `stop` created.** Reload is the other
+   half of the same toolbar control and has no spoken form, so it is now the
+   only nav-bar action reachable by hand and not by voice — a `GRAMMAR.md` §5
+   question rather than a lens one. Deliberately not done this run: reload
+   writes no state, so it fails the test that produced the last three findings,
+   and a verb added because its neighbour got one is a verb added for symmetry
+   rather than for a task. Decide it on §5's terms or not at all.
 
 ## Found this run, not yet chased
+
+- **A recovery you inherited reads exactly like a gap you have.** The premise
+  this run started from — "run 51 created a state with no exit" — was false, and
+  reading the tab progress listener rather than trusting the note found the
+  `STATE_STOP` branch that already clears the field. The change survived because
+  what was missing turned out to be different and narrower (no grammar reached
+  it; the clearing is a round trip late), but it would have been perfectly easy
+  to ship a fix for a defect that did not exist and to have a green test prove
+  it. **Companion to run 51's rule rather than a new one:** that rule says find
+  the second mechanism when a mutation is caught only by an assertion on the
+  implementation; this one says look for it *before* writing the code, whenever
+  the finding is "Firefox does X and we do not".
 
 - **A fixture that crashes clears the thing you are measuring.** The
   initial-page test first used `about:newtab`, and removing
@@ -224,7 +233,7 @@ its result URL, the initial-page declaration dropped, the redraw dropped — and
 
 ## Background jobs
 
-**Nothing is running.** `fossuite51` was the last, and it finished — 965
+**Nothing is running.** `fossuite52` was the last, and it finished — 990
 browser-chrome checks, 0 failures.
 
 `agent/mutate.sh` is new: apply one replacement, **assert it applied**, run a
