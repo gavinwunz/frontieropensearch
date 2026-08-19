@@ -681,3 +681,194 @@ add_task(async function test_an_insert_returns_its_own_id_under_concurrency() {
   }
   await store.close();
 });
+
+// ---- merged contexts ------------------------------------------------------
+
+/**
+ * Two trails, each with its own context by provenance, and a query in each.
+ *
+ * @param {object} store
+ * @returns {Promise<object>} `{trails: [id, id], contexts: [id, id]}`.
+ */
+async function twoEnquiries(store) {
+  const trails = [];
+  const contexts = [];
+  for (let i = 0; i < 2; i++) {
+    const trailId = await store.addTrail({ now: 1000 + i });
+    const contextId = await store.addContext({
+      label: `enquiry ${i}`,
+      now: 1000 + i,
+    });
+    const nodeId = await store.addNode({
+      trailId,
+      url: `https://example.invalid/${i}`,
+      title: `Page ${i}`,
+    });
+    await store.addMember(contextId, { nodeId, source: "provenance" });
+    const queryId = await store.recordQuery({
+      raw: `question ${i}`,
+      normalisedIntent: `question ${i}`,
+      sourceNodeId: nodeId,
+      now: 1000 + i,
+    });
+    await store.addMember(contextId, { queryId, source: "provenance" });
+    trails.push(trailId);
+    contexts.push(contextId);
+  }
+  return { trails, contexts };
+}
+
+add_task(async function test_a_merge_moves_which_context_a_trail_is_in() {
+  // The whole reason the merge is a column on `context` rather than a
+  // membership row: `contextsForTrails` filters on provenance, so a merge
+  // recorded as membership would leave both trails in their own contexts and
+  // change nothing a user could see.
+  const store = await freshStore();
+  const { trails, contexts } = await twoEnquiries(store);
+
+  let map = await store.contextsForTrails(trails);
+  Assert.equal(map.get(trails[0]), contexts[0], "separate before the merge");
+  Assert.equal(map.get(trails[1]), contexts[1]);
+
+  await store.mergeContexts(contexts[1], contexts[0]);
+
+  map = await store.contextsForTrails(trails);
+  Assert.equal(map.get(trails[0]), contexts[0], "both resolve to the root");
+  Assert.equal(map.get(trails[1]), contexts[0]);
+  await store.close();
+});
+
+add_task(async function test_the_earlier_enquiry_survives_a_merge() {
+  // An offer is symmetric, so accepting it from either side has to produce the
+  // same database. Merging the low id into the high one still keeps the low.
+  const store = await freshStore();
+  const { contexts } = await twoEnquiries(store);
+
+  const merged = await store.mergeContexts(contexts[0], contexts[1]);
+  Assert.equal(merged.root, contexts[0], "the enquiry that started first wins");
+  Assert.equal(merged.merged, contexts[1]);
+  await store.close();
+});
+
+add_task(async function test_a_merge_leaves_every_provenance_row_alone() {
+  const store = await freshStore();
+  const { contexts } = await twoEnquiries(store);
+  const before = await store.connection.execute(
+    `SELECT context_id, source FROM context_member ORDER BY context_id`
+  );
+
+  await store.mergeContexts(contexts[1], contexts[0]);
+
+  const after = await store.connection.execute(
+    `SELECT context_id, source FROM context_member ORDER BY context_id`
+  );
+  Assert.equal(after.length, before.length, "no membership row was written");
+  Assert.deepEqual(
+    after.map(row => row.getResultByName("context_id")),
+    before.map(row => row.getResultByName("context_id")),
+    "and none was re-pointed — why a page is where it is still answers"
+  );
+  await store.close();
+});
+
+add_task(async function test_a_merged_context_reads_as_one_whole() {
+  const store = await freshStore();
+  const { contexts } = await twoEnquiries(store);
+  await store.mergeContexts(contexts[1], contexts[0]);
+
+  // Asked about either half, `what` and `pack` both answer about the whole.
+  for (const asked of contexts) {
+    const contents = await store.contextContents(asked);
+    Assert.equal(contents.context.id, contexts[0], "answers as the root");
+    Assert.equal(contents.queries.length, 2, "both enquiries' questions");
+    Assert.equal(contents.pages.length, 2, "both enquiries' pages");
+  }
+  await store.close();
+});
+
+add_task(async function test_a_merged_context_is_no_longer_switchable() {
+  const store = await freshStore();
+  const { contexts } = await twoEnquiries(store);
+  await store.mergeContexts(contexts[1], contexts[0]);
+
+  const listed = await store.contexts();
+  Assert.deepEqual(
+    listed.map(row => row.id),
+    [contexts[0]],
+    "offering both halves back would be the browser arguing with the user"
+  );
+  Assert.equal(listed[0].members, 4, "and it counts what it absorbed");
+  await store.close();
+});
+
+add_task(async function test_merging_into_a_merged_context_follows_the_chain() {
+  // The invariant that keeps resolution one hop: `merged_into` must never name
+  // a context that is itself merged.
+  const store = await freshStore();
+  const a = await store.addContext({ label: "a", now: 1000 });
+  const b = await store.addContext({ label: "b", now: 1001 });
+  const c = await store.addContext({ label: "c", now: 1002 });
+
+  await store.mergeContexts(b, a);
+  await store.mergeContexts(c, b);
+
+  const roots = await store.mergeRoots();
+  Assert.equal(roots.get(b), a);
+  Assert.equal(roots.get(c), a, "not b, which is itself merged");
+  Assert.deepEqual([...(await store.contextFamily(c))].sort(), [a, b, c]);
+  await store.close();
+});
+
+add_task(async function test_merging_what_is_already_one_does_nothing() {
+  const store = await freshStore();
+  const a = await store.addContext({ label: "a", now: 1000 });
+  const b = await store.addContext({ label: "b", now: 1001 });
+  await store.mergeContexts(b, a);
+  Assert.equal(await store.mergeContexts(a, b), null, "already one enquiry");
+  Assert.equal(await store.mergeContexts(a, a), null, "and never with itself");
+  await store.close();
+});
+
+add_task(async function test_a_declined_pair_is_remembered_both_ways_round() {
+  const store = await freshStore();
+  const a = await store.addContext({ label: "a", now: 1000 });
+  const b = await store.addContext({ label: "b", now: 1001 });
+
+  Assert.equal((await store.declinedMerges()).size, 0);
+  // Declined from the far side, to prove the key is normalised rather than
+  // recorded in whichever order the caller happened to pass.
+  await store.declineMerge(b, a);
+
+  const declined = await store.declinedMerges();
+  Assert.ok(declined.has(`${a}:${b}`), "keyed low:high whichever way it came");
+  await store.declineMerge(a, b);
+  Assert.equal((await store.declinedMerges()).size, 1, "and only once");
+  await store.close();
+});
+
+add_task(async function test_context_query_texts_are_raw_and_capped() {
+  const store = await freshStore();
+  const contextId = await store.addContext({ label: "a", now: 1000 });
+  for (let i = 0; i < 5; i++) {
+    const queryId = await store.recordQuery({
+      raw: `Question ${i}`,
+      normalisedIntent: `question ${i}`,
+      now: 1000 + i,
+    });
+    await store.addMember(contextId, { queryId, source: "provenance" });
+  }
+
+  const all = await store.contextQueryTexts([contextId]);
+  Assert.equal(all.get(contextId).length, 5);
+  Assert.ok(
+    all.get(contextId).includes("Question 4"),
+    "raw, not normalised — the model's rows are words as written"
+  );
+
+  const capped = await store.contextQueryTexts([contextId], 2);
+  Assert.equal(capped.get(contextId).length, 2, "most recent first, then cut");
+  Assert.deepEqual(capped.get(contextId), ["Question 4", "Question 3"]);
+
+  Assert.equal((await store.contextQueryTexts([])).size, 0);
+  await store.close();
+});

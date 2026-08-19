@@ -211,6 +211,7 @@ export function crossingRows(crossings, currentTrailId, now) {
  * @param {?number} [options.currentNodeId] The node the user is on, marked.
  * @param {?string} [options.mark] The active context's own mark, if named.
  * @param {?object} [options.marks] A `markOf(nodeId)` lookup, or null.
+ * @param {?object} [options.mergeOffer] From `FOSContextEngine.mergeOffer`.
  * @param {number} [options.now] Unix ms.
  * @returns {object} `{title, named, mark, summary, sections, empty}`.
  */
@@ -222,6 +223,7 @@ export function sidebarFor(
     currentNodeId = null,
     mark = null,
     marks = null,
+    mergeOffer = null,
     now = Date.now(),
   } = {}
 ) {
@@ -241,6 +243,47 @@ export function sidebarFor(
   const { context, queries, pages, entities } = contents;
   const markOf = id => marks?.markOf?.(id) ?? null;
   const sections = [];
+
+  // The merge offer goes first, and it is the only section that asks the user
+  // for something rather than telling them something.
+  //
+  // It goes above the crossings, which have led this panel since they were
+  // added and did so on a good argument — they are the least expected thing
+  // here. The offer takes the place anyway because it is the only section that
+  // is *answerable*: a crossing is still true at the bottom of a scroll, and a
+  // question nobody scrolled to has been asked badly. It is also the only
+  // section that can be gone for a reason the user chose, since declining
+  // removes it permanently, so unlike every other row here it can never settle
+  // into furniture.
+  if (mergeOffer) {
+    const other = mergeOffer.label?.trim() || "an unnamed context";
+    sections.push({
+      id: "merge",
+      title: "Same enquiry?",
+      note:
+        `“${other}” looks like the same enquiry as this one. ` +
+        `Merging shows both in this panel and exports both in a pack.`,
+      rows: [
+        {
+          kind: "merge",
+          action: "merge-accept",
+          contextId: mergeOffer.contextId,
+          label: "Yes — these are one enquiry",
+          enterable: true,
+        },
+        {
+          kind: "merge",
+          action: "merge-decline",
+          contextId: mergeOffer.contextId,
+          // Says what it does, because it is permanent. "Not now" would be a
+          // lie: there is no later, by design — an offer that comes back after
+          // being turned down teaches the user to stop reading this panel.
+          label: "No — and stop asking about these two",
+          enterable: true,
+        },
+      ],
+    });
+  }
 
   // Crossings lead, when there are any. They are the least expected thing on
   // the surface and the only row that is about the page rather than the

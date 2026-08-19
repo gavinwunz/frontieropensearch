@@ -190,7 +190,15 @@ export class FOSContextSidebar {
       ? await this.#engine.crossings(currentNode.url)
       : [];
 
+    // Asked for here rather than on the navigation path, which is the whole
+    // timing argument: opening this panel is a voluntary glance at "what do I
+    // know", and "are these two the same enquiry" is the same question. It
+    // costs an embed of the contexts' queries and returns null on a machine
+    // without the weights.
+    const mergeOffer = await this.#engine.mergeOffer();
+
     return sidebarFor(contents, {
+      mergeOffer,
       crossings,
       // The database's trail id, not the in-memory one: `crossings` rows come
       // from SQLite and the two id spaces are not the same numbers.
@@ -334,7 +342,7 @@ export class FOSContextSidebar {
       item.addEventListener("mousedown", event => {
         event.preventDefault();
         this.#selected = index;
-        this.#enter(row);
+        this.#activate(row);
       });
     }
 
@@ -358,13 +366,49 @@ export class FOSContextSidebar {
   }
 
   /**
-   * Act on a row: go to the page it stands for.
+   * Act on a row.
    *
-   * Every enterable row resolves to a trail node, whichever section it came
-   * from — a question resolves to the page it opened, a crossing to the visit
-   * that other trail made. That is what keeps this one gesture rather than
-   * three, and it is why re-entry is the sidebar's only action: the store's
-   * rows are all provenance, and provenance is somewhere you have been.
+   * One gesture, and now two things it can mean. Re-entry was the only action
+   * here for as long as every row was provenance — a question resolves to the
+   * page it opened, a crossing to the visit another trail made, and all of it
+   * is somewhere you have been. The merge offer is the first row that is not a
+   * record of anything: it is a question, so it answers to the same key and
+   * does something else with it.
+   *
+   * Dispatching on an explicit `action` rather than on `kind` keeps that
+   * honest. A row's kind says what it is made of and several kinds share the
+   * one behaviour, so branching on kind would have meant listing every
+   * provenance kind in one arm and growing that list for ever.
+   *
+   * @param {object} row A view-model row.
+   */
+  #activate(row) {
+    switch (row.action) {
+      case "merge-accept":
+        this.#engine.report(async () => {
+          const merged = await this.#engine.acceptMerge(row.contextId);
+          await this.render();
+          return merged
+            ? "Merged. Both enquiries are one context now."
+            : "Those are already one context.";
+        });
+        return;
+
+      case "merge-decline":
+        this.#engine.report(async () => {
+          await this.#engine.declineMerge(row.contextId);
+          await this.render();
+          return "Kept apart. You will not be asked about those two again.";
+        });
+        return;
+
+      default:
+        this.#enter(row);
+    }
+  }
+
+  /**
+   * Go to the page a row stands for.
    *
    * @param {object} row A view-model row.
    */
@@ -446,7 +490,7 @@ export class FOSContextSidebar {
         event.preventDefault();
         const row = this.#selected === null ? null : this.#rows[this.#selected];
         if (row?.enterable) {
-          this.#enter(row);
+          this.#activate(row);
         }
         break;
       }

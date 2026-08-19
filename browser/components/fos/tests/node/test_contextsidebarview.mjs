@@ -344,3 +344,64 @@ test("moveSelection recovers when the selection is no longer enterable", () => {
   assert.equal(moveSelection(rows, 1, 1), 2);
   assert.equal(moveSelection(rows, 1, -1), 0);
 });
+
+// ---- the merge offer ------------------------------------------------------
+
+test("sidebarFor shows no merge section without an offer", () => {
+  const view = sidebarFor(contents({ pages: [page()] }), { now: NOW });
+  assert.ok(!view.sections.some(section => section.id === "merge"));
+});
+
+test("sidebarFor puts an offer above even the crossings", () => {
+  const view = sidebarFor(contents({ pages: [page()] }), {
+    crossings: [
+      { node_id: 5, trail_id: 9, trail_name: "Other", created_at: NOW - DAY },
+    ],
+    currentTrailId: 1,
+    mergeOffer: { contextId: 4, label: "Memex reading", score: 0.31 },
+    now: NOW,
+  });
+  assert.equal(view.sections[0].id, "merge");
+  assert.equal(view.sections[1].id, "crossings");
+});
+
+test("the offer names the other context and says what merging does", () => {
+  const [section] = sidebarFor(contents({ pages: [page()] }), {
+    mergeOffer: { contextId: 4, label: "Memex reading", score: 0.31 },
+    now: NOW,
+  }).sections;
+  assert.match(section.note, /Memex reading/);
+  assert.match(section.note, /pack/);
+});
+
+test("the offer names an unlabelled context for what it is", () => {
+  const [section] = sidebarFor(contents({ pages: [page()] }), {
+    mergeOffer: { contextId: 4, label: null, score: 0.31 },
+    now: NOW,
+  }).sections;
+  assert.match(section.note, /an unnamed context/);
+});
+
+test("both answers are offered, and both carry the context to act on", () => {
+  const [section] = sidebarFor(contents({ pages: [page()] }), {
+    mergeOffer: { contextId: 4, label: "Memex reading", score: 0.31 },
+    now: NOW,
+  }).sections;
+  assert.deepEqual(
+    section.rows.map(row => row.action),
+    ["merge-accept", "merge-decline"]
+  );
+  // Both have to be reachable by the one gesture the panel has.
+  assert.ok(section.rows.every(row => row.enterable));
+  assert.ok(section.rows.every(row => row.contextId === 4));
+});
+
+test("the decline says it is permanent rather than saying 'not now'", () => {
+  const [section] = sidebarFor(contents({ pages: [page()] }), {
+    mergeOffer: { contextId: 4, label: "Memex reading", score: 0.31 },
+    now: NOW,
+  }).sections;
+  const decline = section.rows.find(row => row.action === "merge-decline");
+  assert.match(decline.label, /stop asking/);
+  assert.doesNotMatch(decline.label, /not now/i);
+});

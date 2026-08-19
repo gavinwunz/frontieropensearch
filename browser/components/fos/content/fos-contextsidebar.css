@@ -220,3 +220,31 @@
   color: var(--fos-text-color-quiet);
   font-style: italic;
 }
+
+/* ---- the merge offer ----------------------------------------------------- */
+
+/* The only section that asks rather than tells, so it is the only one drawn as
+   a block. Everything else on this panel is a list of things that happened and
+   reads as one; a question that looked the same would be answered by accident.
+
+   Marked out by a border rather than by an accent colour: the offer is the
+   browser being unsure, and dressing uncertainty in the colour reserved for
+   the current node would overstate it. */
+.fos-sidebar-section[data-section="merge"] {
+  margin: var(--space-small) var(--fos-gutter-panel);
+  border: 1px solid var(--fos-border-color);
+  border-radius: var(--border-radius-medium);
+}
+
+.fos-sidebar-section[data-section="merge"] .fos-sidebar-heading,
+.fos-sidebar-section[data-section="merge"] .fos-sidebar-note,
+.fos-sidebar-section[data-section="merge"] .fos-sidebar-row {
+  padding-inline: var(--space-small);
+}
+
+/* Both answers are the same weight. A decline styled as the quiet one would be
+   the panel leaning on an inference it has already been told is right about
+   half the time. */
+.fos-sidebar-row[data-kind="merge"] .fos-sidebar-label {
+  font-size: var(--fos-font-size-small);
+}
