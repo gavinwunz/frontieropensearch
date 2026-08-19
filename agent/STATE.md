@@ -106,8 +106,9 @@ badge), the first twenty-six in document order, and the top document only. The
 third **says the count out loud** when it truncates, because a silent truncation
 reads as "these are the links" to a user who cannot see the page.
 
-Green: **1283 FOS browser-chrome checks across 28 files, 0 failures** before the
-last test was added — the new file contributes 39. Node: 344, 0 failures.
+Green: **1285 FOS browser-chrome checks across 28 files, 0 failures**, on two
+consecutive full-suite runs — the new file contributes 39. Node: 344, 0
+failures.
 **Seven mutations, seven caught, one only after the test was strengthened** —
 see below. Lint clean on every changed file.
 
@@ -193,9 +194,10 @@ see below. Lint clean on every changed file.
 
 ## Background jobs
 
-**`fossuite55b` is running** — the confirming full-suite pass with the last
-test added. `fossuite55` finished before it: **1283 browser-chrome checks across
-28 files, 0 failures.** Check `./agent/bg-status.sh` first thing.
+**Nothing is running — the harness is free.** `fossuite55` and `fossuite55b`
+both finished green: 1283 checks and then 1285 with the last test added, across
+28 files, 0 failures either time. Check `./agent/bg-status.sh` first thing
+anyway.
 
 `agent/mutate.sh`: apply one replacement, **assert it applied**, run a command,
 restore. Run 44's rule about a mutation that silently matched nothing reading

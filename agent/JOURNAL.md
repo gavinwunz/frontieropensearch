@@ -1609,6 +1609,7 @@ scrolls between the marks. Transferable: **a test that re-runs an idempotent
 operation proves nothing about the state it was meant to reset** — change
 something between the runs, or the assertion is free.
 
-Green: 1283 FOS browser-chrome checks across 28 files, 0 failures, before the
-last test was added; the new file contributes 39. Node 344, 0 failures. Seven
-mutations, seven caught (one only after strengthening). Lint clean.
+Green: 1285 FOS browser-chrome checks across 28 files, 0 failures, on two
+consecutive full-suite runs; the new file contributes 39. Node 344, 0 failures.
+Seven mutations, seven caught — one only after the test was strengthened. Lint
+clean on every changed file.
