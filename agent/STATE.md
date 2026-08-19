@@ -35,22 +35,28 @@ demo flow runs as one automated sequence. Read `BUILT.md` when the question is
 Shipped since the phase plan ran out, in order: the cross-trail merge offer, the
 embedding tier and its measurement, the model-download verb and the consent rule
 behind it, the voice path with both gestures and its silence bounds, `done` and
-the re-entry resume it forced, and — this run — the Field's arrangement
-surviving a restart.
+the re-entry resume it forced, the Field's arrangement surviving a restart, and
+— this run — "This page made you ask", the sidebar's second page-scoped
+section.
 
 ## In progress
 
 Nothing waits on a person. **Nothing is running — the harness is free.**
 
-Run 42 ran the schema audit off the last run's list and built what its one real
-hit turned up: the Field's arrangement now survives a restart. `run42.sh` is the
-focused job (`browser_field.js` and `browser_contextengine.js`); `run42full.sh`
-is the whole FOS suite. Green: **291 node checks, xpcshell clean, 841
-browser-chrome checks, 0 failures** — up from 807.
+Run 43 built item 1 off the last run's list: `query.source_node_id` had been
+written on every query since `001-initial.sql` and read by nothing. The sidebar
+now shows "This page made you ask" beside the crossings — the two directions of
+one edge, both keyed by URL. `run43.sh` is the focused job (`browser_commandbar`,
+`browser_contextengine`, `browser_contextsidebar`, which is what reproduces a
+shared-window failure in two minutes rather than twenty); `run43full.sh` is the
+whole FOS suite. Green: **304 node checks, xpcshell clean, 850 browser-chrome
+checks, 0 failures** — up from 841.
 
-**Nine mutations, all nine caught**, across the model, the store, the surface and
-the engine. Unlike run 41 the pass found no bug, which is the outcome to expect
-when it is run as part of building rather than as an audit afterwards.
+**Eleven mutations, all eleven caught**, across the store's SQL, the view model
+and the wiring. Unlike run 42 the run did find a bug, and found it by running
+rather than by mutating: see the exclusion below.
+
+Run 42's lint debt is cleared — seven errors, one of them load-bearing.
 
 Older gated jobs, unchanged and not needed this run: `run36`/`run37` (embedding
 measurement and the tier on it), `run39` (the merge offer), `run29`/`run30` (the
@@ -73,22 +79,12 @@ should run that file and check the positive branch is taken.
 
 ## Next task
 
-The phase plan is complete, so nothing pulls the next run in a particular
-direction. Two runs running, *going looking* has beaten working down this list —
-run 41 found `done` that way and run 42 found the Field's restart. The audit that
-produced both is now finished, so the next run needs a different lens rather than
-a rerun of that one.
+The phase plan is complete. *Going looking* has now beaten working down this
+list three runs running — 41 found `done`, 42 found the Field's restart, 43
+found the exclusion bug by running what it had just built. The schema audit that
+fed 42 and 43 is spent, so the next run needs a different lens again.
 
-1. **The audit's two live leftovers, which are features rather than defects.**
-   `query.source_node_id` is written on every query and never read: it is the
-   edge between a page and a question typed *while looking at it*, which is not
-   the edge `trail_node_id` records. "Questions asked from this page" is a
-   sidebar row nobody has built, and the data has been accumulating since
-   `001-initial.sql`. Cheap, and it uses a datum that is unrecoverable after the
-   fact. (`visit.started_at` is the other and is genuinely just a record — no
-   work there.)
-
-2. **Sustained resize of the crowded overview.** Recorded in `IDEAS.md` run 32
+1. **Sustained resize of the crowded overview.** Recorded in `IDEAS.md` run 32
    and *not* solved: the burst is fixed (53ms → 1.19ms) but one rebuild is
    18.27ms p50, longer than a frame, so continuous resizing of the worst case
    the design permits still costs ~21ms a frame over the control. The fix is to
@@ -96,58 +92,71 @@ a rerun of that one.
    value — it is the deliberate worst case, and dragging a window edge with the
    overview up is rare.
 
-3. **Why this build has no remote tabs.** Three upstream urlbar files fail on it
+2. **Why this build has no remote tabs.** Three upstream urlbar files fail on it
    and the fork is not what breaks them. The next step is
    `UrlbarProviderRemoteTabs.isActive` in a driven browser with
    `services.sync.username` set, not more reading.
 
-4. **The rails still overlay the page.** Run 32 took them off the *toolbar*,
+3. **The rails still overlay the page.** Run 32 took them off the *toolbar*,
    which was never a deliberate trade; covering the page still is, and STATE has
    always said it belongs with the Field's restructure rather than piecemeal.
    `--fos-chrome-block-start` makes taking layout space a smaller step than it
    was, which is worth knowing when that restructure comes.
 
-5. **The 17 timed-out urlbar files, if they are ever worth it**, and **a
+4. **The 17 timed-out urlbar files, if they are ever worth it**, and **a
    region's height is a ratchet** (`FIELD.md` §6, open rather than a defect —
    and now load-bearing in a second place, since a restored position grows a
    region to fit).
 
+The schema audit's leftovers are both closed as of this run: `source_node_id`
+now has a reader, and `visit.started_at` is documented in `SCHEMA.md` as a
+record rather than a gap, which is what stops the next audit re-finding it.
+
 The size problem is half fixed: STATE was 110KB and is now ~58KB, with the Done
-log moved verbatim to `agent/BUILT.md`. `IDEAS.md` (200KB) and `JOURNAL.md`
-(135KB) are still read in full every run and are the remaining cost.
+log moved verbatim to `agent/BUILT.md`. `IDEAS.md` and `JOURNAL.md` are still
+read in full every run and are the remaining cost.
 
 ## Found this run, not yet chased
 
-- **A schema is a list of claims, and the audit that checks them is now spent.**
-  Every column was checked for a reader and a writer this run, so the cheap
-  version of that search is done and should not be re-run wholesale — only over
-  columns added since. What it found twice, though, generalises past schemas:
-  *the gap is where two correct halves were never joined.* `field_placement` had
-  a table, a store method with a carefully reasoned COALESCE, a design that
-  demanded it in two places, and a model flag to hang it on. Nobody was careless
-  and nothing was half-built; the seam simply had no owner. Worth pointing the
-  same lens at other seams — a module pair where each side has a method the
-  other never calls.
+- **An exclusion rule copied from a neighbouring section needs its own
+  argument.** This run's one real bug. The provoked section left out any
+  question the active context already listed, by analogy with the crossings
+  dropping the current trail — and with one enquiry pinned that is every
+  question there is, so the section was empty in exactly the sustained work it
+  exists for. The test that distinguishes the two cases: **could the excluded
+  row ever have been false?** "This page is on the trail you are looking at" is
+  true of every page by construction and carries nothing. "This question came
+  from this page" is a fact the enquiry's own list does not state. Worth
+  applying wherever one surface borrows a filter from another.
 
-- **A false positive is what tells you the method works.** `context.centroid`
-  looked exactly like the real hits and was already documented as deliberately
-  unwritten. That is the control: the audit finds *undocumented* gaps rather
-  than unusual-looking columns. An audit that produces no false positives is
-  probably matching on the wrong thing.
+- **Reproduce a shared-window failure on the alphabetical prefix, not the whole
+  suite.** `browser_contextsidebar.js` passed alone and failed in the suite.
+  Every file in `tests/browser/` shares one window and they run alphabetically,
+  so the three files up to and including the failing one reproduced it exactly —
+  a two-minute cycle instead of twenty. Then diagnosed by dumping
+  `activeContextId` and the context's query ids rather than re-running. Both
+  halves are worth reaching for by default; `agent/run43.sh` is that prefix.
 
-- **Deterministic reconstruction is a persistence strategy, and the cheaper
-  one.** Only user placements are stored, because seeding is deterministic and
-  an auto-placed card recomputes its own position for free. Persisting it would
-  also *freeze* a position the system is still entitled to revise — so the row
-  would cost storage and take away a freedom. Worth asking of anything about to
-  be persisted: can it be recomputed, and does storing it remove a choice?
+- **Write a column before its reader exists only when the datum is
+  unrecoverable.** This run shipped a feature with months of backfill because
+  `source_node_id` had been recorded all along, and no amount of later work
+  could have reconstructed which page a past search was typed from. That is the
+  whole argument for an unread column, and `visit.started_at` fails it —
+  `dwell_ms` is derived as it goes and nothing is lost — which is why one became
+  work and the other a note.
 
-- **A promise in a design doc is not a test.** `FIELD.md` §9 lists five
-  falsifiable acceptance properties and the restart half of property 2 had been
-  false since it was written, silently, while the file that names those
-  properties as its purpose passed. The clause was untestable in the place it
-  was tested — the model is in-memory — so it was never asserted anywhere. When
-  a property spans layers, check which layer its test lives in.
+- **A written-and-never-read column is not automatically a defect.**
+  `field_placement` was one: the design promised the behaviour in two places and
+  it was false. `source_node_id` was not: nothing promised it and everything
+  about it was correct. The two want opposite handling — a defect is found by
+  checking claims against behaviour and is urgent; a latent feature is found by
+  asking what a column would be *for*.
+
+- **`spoken` on a sidebar query row is set and never read.** The view model
+  carries `input_mode === "voice"` on every question row and no renderer looks
+  at it; the rail does use its equivalent. Same shape as the column audit, one
+  layer up, and noted rather than chased — it is a view-model field, so nothing
+  is accumulating and nothing is unrecoverable.
 
 ## Background jobs
 
@@ -163,7 +172,7 @@ a time and no `build faster` across a running one. A job that has to follow
 another one belongs in the same script, waiting on
 `systemctl --user is-active`, rather than in a second unit that races it.
 
-The upstream tab tests were run to completion this run: **193 of 194 pass**.
+The upstream tab tests were run to completion in run 42: **193 of 194 pass**.
 The one failure, `browser_bfcache_exemption_about_pages.js`, crashes a content
 process on `about:newtab` in a private window and **fails identically with both
 FOS surface prefs off** — verified by re-running it that way. It joins the
@@ -175,6 +184,19 @@ is the file list without the three excluded ones.
 None.
 
 ## Known staged state, not a defect
+
+**The two question sections can show the same list, and that is a small-N
+artefact.** "This page made you ask" and "Questions asked" index one set of
+facts along the page and along the enquiry, so they coincide exactly when every
+question in the enquiry was asked from the page you are on — visible in a
+scratch screenshot taken with a three-question fixture, all three asked from one
+URL. In a real session questions come from several pages and the top section is
+a strict, informative subset. Hiding one when they coincide was considered and
+rejected: it is a rule that fires invisibly and would make the panel's shape
+depend on a coincidence. Revisit only with a real session's questions in front
+of you, and if it needs an answer the answer is probably to say on each of the
+enquiry's rows which page it came from, not to hide a section.
+
 
 The rail **overlays** the content area rather than reflowing it, so it covers
 the left of the page while open. The context sidebar does the same on the right,
@@ -635,6 +657,30 @@ three-strikes rule only works if the counter is actually kept**, so count a
 repeated failure even when each run has a new explanation for it.
 
 ## Decisions taken
+
+- 2026-08-19 — **A page's questions are shown whatever enquiry they belong to.**
+  Excluding those the active context already lists emptied the section under one
+  pinned enquiry — which is one tab, one trail, the ordinary case. The crossings'
+  excluded row could never have been false; this one could, so the analogy that
+  produced the rule does not reach it.
+- 2026-08-19 — **Both page-scoped reads are keyed by URL, not by node.** A node
+  is one visit, and a question asked during the visit you are in the middle of
+  is one you still remember. SearchBar's 3.5-then-5.0 says the value is at
+  resumption, and the rows worth having are months old and on other nodes for
+  the same document.
+- 2026-08-19 — **One row per question, at its first asking, with a landing node
+  from whichever asking reached one.** The first asking is when the page
+  provoked it — the same claim the crossings make about a trail's first arrival
+  — but a question answered on the second try is answered, and a row showing the
+  first attempt's dead end would say the opposite of what happened.
+- 2026-08-19 — **The provoked section follows the crossings.** Both are about
+  the page rather than the enquiry and belong together above everything that is
+  not; a crossing is the rarer of the two, so it keeps the top of the panel.
+- 2026-08-19 — **The fork can afford a bi-directional link because it owns both
+  ends.** Two-way links lost on the open web to moderation, not to merit — no
+  say in who links to you. A private local record has none of that, and the far
+  end of this edge is the user's own question rather than a document, so there
+  is nobody else to admit. `IDEAS.md` run 43.
 
 - 2026-08-19 — **Only positions a human chose are persisted.** Seeding is
   deterministic, so an auto-placed card reproduces itself on the next start and
