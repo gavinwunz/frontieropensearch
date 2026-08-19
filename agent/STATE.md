@@ -39,53 +39,59 @@ the re-entry resume it forced, the Field's arrangement surviving a restart,
 "This page made you ask" as the sidebar's second page-scoped section,
 **forgetting** — the store's first delete of any kind, joined to Clear Recent
 History and Forget About This Site — **forgetting reaching the live session**,
-**private browsing being kept out of the database at all**, and, this run, **the
-record surviving a profile refresh, and surviving being unreadable.**
+**private browsing being kept out of the database at all**, **the record
+surviving a profile refresh, and surviving being unreadable**, and, this run,
+**a page the command bar was asked for being recorded as a typed visit** — the
+fork's first audit of what it writes into *Firefox's* data rather than what
+Firefox does to its own.
 
 ## In progress
 
 Nothing waits on a person. **Nothing is running — the harness is free.**
 
-Run 49 took item 1 off the list by finding that it was not a task. It had sat at
-the top since run 32 on the strength of a real number with the wrong cause
-attached, and nothing in the way it was measured could have told the difference.
+Run 50 took item 3 off the list — the new lens — and it paid on the first
+question asked.
 
-`#onResize` does one of two things — the overview's reposition fast path, or a
-full `render` when that path refuses — and **nothing counted which.**
-`resizePasses` deliberately counts neither, and is right not to; the coalescing
-claim is about neither. So a sustained resize that is slow because it rebuilds
-was indistinguishable from one that is slow for reasons outside this module.
+**The fork never told Places that it asked for a page.**
+`nsINavHistoryService.markPageAsTyped` is how a piece of chrome declares that
+it, and not a link on a page, wanted a URL; the method's own comment states the
+default in one line — *"if this is not called visits will be marked as
+TRANSITION_LINK"*. Firefox declares it from four surfaces (address bar, history
+menu, history sidebar, places organiser); this fork replaced all four with
+`FOSActionDispatcher` and declared it from none. Measured, not reasoned:
+`moz_historyvisits.visit_type` was 1 where 2 was due.
 
-Counting them: over a 30-frame sustained resize of the crowded overview, 18–21
-passes and **0 rebuilds, in every one of five runs.** The fast path already
-covers the whole gesture. There is no rebuild in it to extend the fast path
-over. The 18.27ms render figure is honest and is the cost of a *level switch* —
-a keystroke, once — not of a resize frame.
+It was never cosmetic. `SQLFunctions.cpp` scores a typed visit a tier above a
+link visit on every visit, and `FOSPlacesFloor` ranks the command bar's fifth
+tier by exactly that column — deliberately, on the grounds that re-sorting
+would be inventing an opinion about a score it did not build. Which was right,
+and is what hid this: **the dispatcher demoted the pages the user named and the
+floor read the demotion back as though it were Places' opinion.** Neither
+module could see the other.
 
-The burst benchmark could not have said so, and is wrong in two ways that both
-flatter it: it never timed the pass (the events register a frame callback and
-the clock is read again before that frame runs), and its writes were no-ops (the
-window never changed size, so the reposition wrote every declaration the value
-already on the element). `resize-pass-script` / `resize-pass-layout` take both
-faults out — stage genuinely resized, pass bracketed by two frame callbacks
-registered either side of it. **One real pass is ~2.0ms** (1.60 script, 0.44
-layout). At 19 passes over 30 frames that is ~1.3ms a frame against a ~23ms gap:
-**the Field's script is ~5% of the gap it was blamed for.** The rest is the
-engine painting 489 boxes that are genuinely changing size — and not thumbnails,
-which this benchmark never paints.
+Fixed with both halves, because half is worse than none. A *result page* is
+marked typed like anything else and kept off the typed weight by the visit's
+source, which `History.cpp` reads from a `triggeringSearchEngine` attribute
+`Tabbrowser._updateTriggerMetadataForLoad` puts on the browser element from
+`globalHistoryOptions`. Marking typed without passing the engine would lift
+every result page above the pages found from it. Passing `undefined` for a
+plain URL is equally load-bearing — the attribute lives on the browser element,
+not on the load, so a URL after a search would otherwise be filed under the
+last engine used.
 
-`will-change: transform` on `.fos-field-mininest` was the obvious lever and was
-**measured over four runs a side and rejected**: gaps of 15.2/18.0/21.8/24.0ms
-promoted against 25.6/24.3/22.5/20.2ms baseline. Overlapping distributions; a
-3.4ms mean difference on a metric whose own spread is 20–26ms is not a result.
-One run a side looked like a 10ms win. `IDEAS.md` run 49 has the table so it
-stays rejected.
+**The private guard is not the docshell's, and looks redundant until it isn't.**
+The typed mark is not a write and not private state: `MarkPageAsTyped` inserts
+into one *global* in-memory map keyed by URL spec, `RECENT_EVENT_THRESHOLD` =
+fifteen minutes. Mark from a private window, open the same page in an ordinary
+one inside that window, and the profile gets a typed visit that private
+browsing put there. Removing the guard fails
+`test_a_private_window_does_not_mark_the_profile` with `2 == 1`.
 
-Green: **904 FOS browser-chrome checks** (up from 901), 248 xpcshell subtests,
-**322 node checks**, 0 failures across the whole suite. **Three mutations, all
-three caught** — the counter's increment removed, the fast path forced to
-refuse, and that same mutation re-run to validate the instrument rather than
-the code. Lint clean on every changed file.
+Green: **949 FOS browser-chrome checks** (up from 904; the file adds 17), 322
+node checks, xpcshell clean, 0 failures across the suite. **Three mutations,
+all three caught** — the mark dropped (3 tasks fail), the private guard removed
+(the leak appears), the search condition inverted (6 checks fail, including the
+clearing one). Lint clean on every changed file.
 
 `main` is at `phase-3`. `agent/dev` is pushed through this run's commits.
 
@@ -99,12 +105,14 @@ the code. Lint clean on every changed file.
    and **a region's height is a ratchet** (`FIELD.md` §6) — all unchanged, all
    belonging with the Field's restructure rather than piecemeal.
 
-3. **A new lens.** Runs 44, 46 and 47 each found a defect by asking what Firefox
-   does *to* this component's data, and that question is exhausted. The
-   candidate run 47 left is the reverse: what this component does to
-   *Firefox's* data — the fork writes to Places through `FOSActions`, and
-   nothing has ever audited that direction. Worth ten minutes before it is
-   worth code.
+3. **`browser.userTypedValue`, the same lens' next probe.** The urlbar sets it
+   before a load and SessionStore persists it, so a tab caught mid-load of a
+   typed URL restores to what was asked for rather than to what was there. The
+   fork never sets it. Real but small, and it tangles with trail re-entry
+   restoring through `setTabState`, which is a different owner — so it wants
+   its own look rather than a rider on something else. `IDEAS.md` run 50 has
+   the two probes and the one thing that lens rejected (`moz_inputhistory`,
+   deliberately not written, because provenance replaced the adaptive signal).
 
 ## Found this run, not yet chased
 

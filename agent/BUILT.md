@@ -10,6 +10,26 @@ this, and what was decided when it was built" — the reasoning in full is in
 `design/` and `context-engine/`. Nothing here is waiting on anybody; what is,
 is in `STATE.md`.
 
+- **A page the command bar was asked for is recorded as a typed visit.** The
+  fork replaced the address bar, the history menu and the history sidebar with
+  one dispatcher and dropped what all three told Places on the way:
+  `markPageAsTyped`, whose absence the method's own comment defines — "if this
+  is not called visits will be marked as TRANSITION_LINK". So every page a user
+  asked for by name was recorded as though a page had linked to it, and because
+  the frecency SQL scores a typed visit a tier above a link visit and
+  `FOSPlacesFloor` ranks the command bar's fifth tier by exactly that score, the
+  fork was demoting the pages its user named and reading the demotion back into
+  its own suggestions. A search is marked typed too and kept off the typed
+  weight by its source, which Places reads from the `triggeringSearchEngine`
+  attribute the load carries — so the engine goes with the mark, and passing
+  nothing for a plain URL is what clears the attribute the last search left. The
+  private-window guard is not the docshell's: the typed hint is one global
+  in-memory map keyed by URL spec with a fifteen-minute life, so without the
+  guard a private window marking a page and an ordinary window opening it a
+  minute later write a typed visit into the profile. `browser_zztransition.js`,
+  17 checks, three mutations all caught. `ARCHITECTURE.md` §7 and `IDEAS.md`
+  run 50.
+
 - **A profile refresh carries the Context Engine forward, and a database it
   cannot read no longer strands the browser.** `FirefoxProfileMigrator` — what
   "Refresh" runs — copies an explicit list of files and this fork's database was
