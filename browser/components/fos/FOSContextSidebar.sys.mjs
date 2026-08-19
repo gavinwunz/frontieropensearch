@@ -183,12 +183,18 @@ export class FOSContextSidebar {
       currentNodeId === null
         ? null
         : this.#session.store.getNode(currentNodeId);
-    // Crossings are keyed by URL, which is what makes them cross trails at all.
-    // A window sitting on no node has no page to ask about, and asking for the
-    // crossings of an empty URL would return every node that has never had one.
-    const crossings = currentNode?.url
-      ? await this.#engine.crossings(currentNode.url)
-      : [];
+    // Both of the page-scoped reads are keyed by URL, which is what makes them
+    // reach across trails at all. A window sitting on no node has no page to
+    // ask about, and asking about an empty URL would match every row that has
+    // never had one. They are asked for together because they are the two
+    // directions of one edge: what reached this page, and what it sent you on
+    // to ask.
+    const [crossings, questions] = currentNode?.url
+      ? await Promise.all([
+          this.#engine.crossings(currentNode.url),
+          this.#engine.questionsFrom(currentNode.url),
+        ])
+      : [[], []];
 
     // Asked for here rather than on the navigation path, which is the whole
     // timing argument: opening this panel is a voluntary glance at "what do I
@@ -200,6 +206,7 @@ export class FOSContextSidebar {
     return sidebarFor(contents, {
       mergeOffer,
       crossings,
+      questions,
       // The database's trail id, not the in-memory one: `crossings` rows come
       // from SQLite and the two id spaces are not the same numbers.
       currentTrailId: this.#engine.activeTrailRowId,

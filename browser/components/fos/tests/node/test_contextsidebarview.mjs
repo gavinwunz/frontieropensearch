@@ -19,6 +19,7 @@ import {
   crossingRows,
   dwellLabel,
   moveSelection,
+  questionRows,
   relativeTime,
   sidebarFor,
   summariseContents,
@@ -175,6 +176,121 @@ test("crossingRows names an unnamed trail for what it is", () => {
   assert.equal(row.label, "an unnamed trail");
   assert.equal(row.named, false);
   assert.equal(row.enterable, true);
+});
+
+/**
+ * @param {object} [overrides]
+ * @returns {object} A `questionsFrom` row.
+ */
+function asked(overrides = {}) {
+  return {
+    id: 1,
+    raw: "what is a memex",
+    normalised_intent: "what is a memex",
+    input_mode: "keyboard",
+    created_at: NOW - DAY,
+    trail_node_id: 40,
+    ...overrides,
+  };
+}
+
+test("questionRows reads the edge out of a page, not the edge in", () => {
+  const { rows } = questionRows([asked()], { now: NOW });
+  assert.equal(rows.length, 1);
+  // The node offered is where the question *went*, which is the only place
+  // there is to go: the page it was asked from is the one already on screen.
+  assert.equal(rows[0].nodeId, 40);
+  assert.equal(rows[0].label, "what is a memex");
+  assert.equal(rows[0].detail, "1d ago");
+  assert.equal(rows[0].enterable, true);
+});
+
+test("questionRows leaves out what the panel already shows below", () => {
+  const { rows, total } = questionRows(
+    [asked({ id: 1, raw: "here too" }), asked({ id: 2, raw: "only here" })],
+    { exclude: new Set([1]), now: NOW }
+  );
+  assert.deepEqual(
+    rows.map(row => row.label),
+    ["only here"]
+  );
+  // The total counts what is left after the exclusion, so the note it feeds
+  // cannot claim questions the section is deliberately not showing.
+  assert.equal(total, 1);
+});
+
+test("questionRows reports one question once, at its first asking", () => {
+  const { rows } = questionRows(
+    [
+      asked({ id: 1, created_at: NOW - 2 * DAY }),
+      asked({ id: 2, created_at: NOW - HOUR }),
+    ],
+    { now: NOW }
+  );
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].detail, "2d ago");
+});
+
+test("a question answered on the second try is answered", () => {
+  const { rows } = questionRows(
+    [
+      asked({ id: 1, created_at: NOW - 2 * DAY, trail_node_id: null }),
+      asked({ id: 2, created_at: NOW - HOUR, trail_node_id: 77 }),
+    ],
+    { now: NOW }
+  );
+  assert.equal(rows.length, 1);
+  // The row is still the first asking, but it is not a dead end: the landing
+  // node comes from the attempt that reached one.
+  assert.equal(rows[0].detail, "2d ago");
+  assert.equal(rows[0].nodeId, 77);
+  assert.equal(rows[0].enterable, true);
+});
+
+test("two different questions are two rows", () => {
+  const { rows } = questionRows(
+    [
+      asked({ id: 1, raw: "a", normalised_intent: "a" }),
+      asked({ id: 2, raw: "b", normalised_intent: "b" }),
+    ],
+    { now: NOW }
+  );
+  assert.equal(rows.length, 2);
+});
+
+test("questions the normaliser emptied do not collapse into one row", () => {
+  const { rows } = questionRows(
+    [
+      asked({ id: 1, raw: "the a of", normalised_intent: "" }),
+      asked({ id: 2, raw: "of the an", normalised_intent: "  " }),
+    ],
+    { now: NOW }
+  );
+  assert.equal(rows.length, 2);
+});
+
+test("a question that opened nothing is shown here too, and is not enterable", () => {
+  const { rows } = questionRows([asked({ trail_node_id: null })], { now: NOW });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].nodeId, null);
+  assert.equal(rows[0].enterable, false);
+});
+
+test("the limit drops the oldest and leaves the rest in order", () => {
+  const many = Array.from({ length: 5 }, (unused, i) =>
+    asked({
+      id: i + 1,
+      raw: `q${i}`,
+      normalised_intent: `q${i}`,
+      created_at: NOW - (5 - i) * HOUR,
+    })
+  );
+  const { rows, total } = questionRows(many, { limit: 3, now: NOW });
+  assert.equal(total, 5);
+  assert.deepEqual(
+    rows.map(row => row.label),
+    ["q2", "q3", "q4"]
+  );
 });
 
 // ---- the whole surface ----------------------------------------------------
@@ -350,6 +466,77 @@ test("moveSelection recovers when the selection is no longer enterable", () => {
 test("sidebarFor shows no merge section without an offer", () => {
   const view = sidebarFor(contents({ pages: [page()] }), { now: NOW });
   assert.ok(!view.sections.some(section => section.id === "merge"));
+});
+
+test("the provoked section follows the crossings, and both precede the rest", () => {
+  const view = sidebarFor(
+    contents({
+      pages: [page()],
+      queries: [{ id: 1, raw: "in this context", created_at: NOW }],
+    }),
+    {
+      crossings: [
+        { node_id: 5, trail_id: 9, trail_name: "Other", created_at: NOW - DAY },
+      ],
+      questions: [asked({ id: 2, raw: "asked from here" })],
+      currentTrailId: 1,
+      now: NOW,
+    }
+  );
+  assert.deepEqual(
+    view.sections.map(section => section.id),
+    ["crossings", "provoked", "questions", "pages"]
+  );
+});
+
+test("the provoked section is absent when this page has provoked nothing", () => {
+  const view = sidebarFor(contents({ pages: [page()] }), {
+    questions: [],
+    now: NOW,
+  });
+  assert.equal(
+    view.sections.find(section => section.id === "provoked"),
+    undefined
+  );
+});
+
+test("a question already listed under the context is not shown twice", () => {
+  const shared = { id: 7, raw: "shared", created_at: NOW - HOUR };
+  const view = sidebarFor(contents({ queries: [shared] }), {
+    questions: [asked({ ...shared, normalised_intent: "shared" })],
+    now: NOW,
+  });
+  assert.equal(
+    view.sections.find(section => section.id === "provoked"),
+    undefined
+  );
+  assert.equal(view.sections[0].id, "questions");
+});
+
+test("the provoked note says so when the limit has hidden some", () => {
+  const many = Array.from({ length: 12 }, (unused, i) =>
+    asked({
+      id: i + 1,
+      raw: `q${i}`,
+      normalised_intent: `q${i}`,
+      created_at: NOW - (12 - i) * HOUR,
+    })
+  );
+  const view = sidebarFor(contents(), { questions: many, now: NOW });
+  const section = view.sections.find(s => s.id === "provoked");
+  assert.equal(section.rows.length, 8);
+  assert.match(section.note, /12 questions/);
+  assert.match(section.note, /8 most recent/);
+});
+
+test("the provoked note is a plain count when nothing is hidden", () => {
+  const view = sidebarFor(contents(), {
+    questions: [asked()],
+    now: NOW,
+  });
+  const section = view.sections.find(s => s.id === "provoked");
+  assert.match(section.note, /^1 question asked here/);
+  assert.doesNotMatch(section.note, /most recent/);
 });
 
 test("sidebarFor puts an offer above even the crossings", () => {

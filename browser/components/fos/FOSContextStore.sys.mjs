@@ -394,6 +394,46 @@ export class FOSContextStore {
     );
   }
 
+  /**
+   * Every question ever asked while looking at a URL.
+   *
+   * `crossings` reads the edges *into* a page; this reads the edges *out* of
+   * one. `query.source_node_id` is the node the user was on when they typed,
+   * which is not `query.trail_node_id` — the node the query went on to open.
+   * The two are recorded by different mechanisms at different moments and they
+   * answer different questions: "what did I find by asking this" against "what
+   * did this page make me want to know".
+   *
+   * Keyed by URL rather than by node, for the same reason `crossings` is: a
+   * node is one visit, and a question asked from this page during the visit
+   * you are in the middle of is one you still remember. The value is in the
+   * ones from months ago, and those are on other nodes for the same document.
+   *
+   * @param {string} url
+   * @returns {Promise<object[]>} Query rows, earliest first, each carrying the
+   *   node it opened — which may be null, for a question that opened nothing.
+   */
+  async questionsFrom(url) {
+    const rows = await this.#connection.execute(
+      `SELECT q.id, q.raw, q.normalised_intent, q.input_mode, q.created_at,
+              q.trail_node_id
+       FROM query q JOIN trail_node s ON s.id = q.source_node_id
+       WHERE s.url = :url
+       ORDER BY q.created_at`,
+      { url }
+    );
+    return rows.map(row =>
+      plain(row, [
+        "id",
+        "raw",
+        "normalised_intent",
+        "input_mode",
+        "created_at",
+        "trail_node_id",
+      ])
+    );
+  }
+
   // ---- restoration --------------------------------------------------------
 
   /**

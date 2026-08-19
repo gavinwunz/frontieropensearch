@@ -49,6 +49,9 @@ const ENTITY_FLOOR = 0.5;
 /** How many entities the "About" section will show. */
 const ENTITY_LIMIT = 12;
 
+/** How many of a page's questions the "This page made you ask" section shows. */
+const QUESTION_LIMIT = 8;
+
 /**
  * @param {number} n
  * @param {string} noun Singular.
@@ -202,11 +205,95 @@ export function crossingRows(crossings, currentTrailId, now) {
 }
 
 /**
+ * The questions the page you are on has made you ask.
+ *
+ * The other direction of the same edge as `crossingRows`, and the reason
+ * `query.source_node_id` is recorded. A crossing says another enquiry arrived
+ * here; this says this page sent you somewhere. `trail_node_id` — the page a
+ * question opened — is what the "Questions asked" section below is built on,
+ * and it is not this: one is where an answer was found, the other is where the
+ * wanting started.
+ *
+ * This is the associative half of the memex that a browser normally throws
+ * away. A page's outgoing links are the author's associations; the questions
+ * you typed while reading it are yours, and nothing has ever kept them.
+ *
+ * **What is already on the surface is left out.** A question asked in the
+ * context this panel is describing is listed under "Questions asked" a few
+ * rows down, so repeating it here is the panel telling the user something they
+ * can already see — the same rule that excludes the current trail from the
+ * crossings. What is left is the questions this page provoked on *other*
+ * enquiries, which is the part nothing else in the browser can answer.
+ *
+ * **One row per question, at its first asking.** A question asked here twice is
+ * one thing this page made you want to know; the claim is not "you asked this
+ * four times". Its landing node is taken from the earliest asking that reached
+ * one, though, because a question answered on the second try is answered — a
+ * row that showed the first attempt's dead end would say the opposite of what
+ * happened.
+ *
+ * @param {object[]} questions Rows from `FOSContextStore.questionsFrom`.
+ * @param {object} [options]
+ * @param {Set<number>} [options.exclude] Query ids already shown elsewhere.
+ * @param {number} [options.limit] How many rows to keep.
+ * @param {number} [options.now] Unix ms.
+ * @returns {{rows: object[], total: number}} Rows earliest first, and how many
+ *   distinct questions there were before the limit.
+ */
+export function questionRows(
+  questions,
+  { exclude = new Set(), limit = QUESTION_LIMIT, now = Date.now() } = {}
+) {
+  const byIntent = new Map();
+  for (const query of questions) {
+    if (exclude.has(query.id)) {
+      continue;
+    }
+    // The normalised intent is what the engine itself matches on, so it is the
+    // key that already decides elsewhere whether two questions are the same
+    // question. Falling back to the raw text keeps a query the normaliser
+    // emptied from collapsing every such query into one row.
+    const key = query.normalised_intent?.trim() || query.raw;
+    const seen = byIntent.get(key);
+    if (!seen) {
+      byIntent.set(key, { ...query });
+      continue;
+    }
+    if (seen.trail_node_id == null && query.trail_node_id != null) {
+      seen.trail_node_id = query.trail_node_id;
+    }
+  }
+
+  const distinct = [...byIntent.values()].sort(
+    (a, b) => a.created_at - b.created_at
+  );
+  // The limit drops the oldest and the rows stay in the order they happened:
+  // this is a record of what a page has provoked over months, and reversing it
+  // to fit a cap would make the newest question look like the first one.
+  return {
+    rows: distinct.slice(-limit).map(query => ({
+      kind: "query",
+      queryId: query.id,
+      nodeId: query.trail_node_id ?? null,
+      label: query.raw,
+      title: query.normalised_intent ?? query.raw,
+      detail: relativeTime(query.created_at, now),
+      spoken: query.input_mode === "voice",
+      // Same rule as the context's questions: a question that opened nothing
+      // is still something you did, and it must not look clickable.
+      enterable: query.trail_node_id != null,
+    })),
+    total: distinct.length,
+  };
+}
+
+/**
  * The whole sidebar, as sections of rows.
  *
  * @param {?object} contents From `FOSContextStore.contextContents`.
  * @param {object} [options]
  * @param {object[]} [options.crossings] Rows from `crossings(currentUrl)`.
+ * @param {object[]} [options.questions] Rows from `questionsFrom(currentUrl)`.
  * @param {?number} [options.currentTrailId] The trail the user is on.
  * @param {?number} [options.currentNodeId] The node the user is on, marked.
  * @param {?string} [options.mark] The active context's own mark, if named.
@@ -219,6 +306,7 @@ export function sidebarFor(
   contents,
   {
     crossings = [],
+    questions = [],
     currentTrailId = null,
     currentNodeId = null,
     mark = null,
@@ -286,8 +374,11 @@ export function sidebarFor(
   }
 
   // Crossings lead, when there are any. They are the least expected thing on
-  // the surface and the only row that is about the page rather than the
-  // context, so burying them under a long page list would waste them.
+  // the surface, and — with the questions below them — one of the two sections
+  // that are about the *page* rather than about the context, so burying them
+  // under a long page list would waste them. The two page-scoped sections are
+  // the two directions of one edge and belong together, above everything that
+  // describes the enquiry as a whole.
   const crossed = crossingRows(crossings, currentTrailId, now);
   if (crossed.length) {
     sections.push({
@@ -298,6 +389,32 @@ export function sidebarFor(
         "trail"
       )}.`,
       rows: crossed,
+    });
+  }
+
+  // Crossings first, then this: a crossing is rarer, so when both are present
+  // the rarer one is worth the top of the panel. Both are about the page, and
+  // this one reads the edge the other way round.
+  const provoked = questionRows(questions, {
+    exclude: new Set(queries.map(query => query.id)),
+    now,
+  });
+  if (provoked.rows.length) {
+    const total = provoked.total;
+    const shown = provoked.rows.length;
+    sections.push({
+      id: "provoked",
+      title: "This page made you ask",
+      // The count is of what this page provoked on other enquiries, which is
+      // what the section holds after the exclusion — saying "you have asked N
+      // questions here" would count rows the panel is deliberately not showing
+      // and leave the arithmetic looking broken.
+      note:
+        shown === total
+          ? `${plural(total, "question")} asked here, on other enquiries.`
+          : `${plural(total, "question")} asked here on other enquiries — ` +
+            `the ${shown} most recent are shown.`,
+      rows: provoked.rows,
     });
   }
 

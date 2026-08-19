@@ -149,6 +149,74 @@ add_task(async function test_trail_crossings() {
   await store.close();
 });
 
+add_task(async function test_questions_asked_from_a_page() {
+  // The other direction of the same edge as `crossings`, and the reader
+  // `query.source_node_id` went without from 001 until now.
+  const store = await freshStore();
+  const one = await store.addTrail({ name: "memex" });
+  const two = await store.addTrail({ name: "hypertext" });
+  // The same document, visited on two trails — which is what makes the URL and
+  // not the node the right key.
+  const here = await store.addNode({
+    trailId: one,
+    url: "https://example.org/bush",
+  });
+  const again = await store.addNode({
+    trailId: two,
+    url: "https://example.org/bush",
+  });
+  const elsewhere = await store.addNode({
+    trailId: two,
+    url: "https://example.org/other",
+  });
+  const landed = await store.addNode({
+    trailId: one,
+    url: "https://example.org/trails",
+  });
+
+  await store.recordQuery({
+    raw: "associative trails",
+    sourceNodeId: here,
+    trailNodeId: landed,
+    now: 1000,
+  });
+  await store.recordQuery({
+    raw: "who was vannevar bush",
+    sourceNodeId: again,
+    now: 2000,
+  });
+  await store.recordQuery({
+    raw: "xanadu",
+    sourceNodeId: elsewhere,
+    now: 3000,
+  });
+  await store.recordQuery({ raw: "typed from nowhere", now: 4000 });
+
+  const questions = await store.questionsFrom("https://example.org/bush");
+  Assert.deepEqual(
+    questions.map(query => query.raw),
+    ["associative trails", "who was vannevar bush"],
+    "both visits to the document answer, and nothing else does"
+  );
+  Assert.equal(
+    questions[0].trail_node_id,
+    landed,
+    "a question carries the page it opened, which is where its row goes"
+  );
+  Assert.equal(
+    questions[1].trail_node_id,
+    null,
+    "and a question that opened nothing says so rather than being dropped"
+  );
+
+  Assert.deepEqual(
+    (await store.questionsFrom("https://example.org/trails")).map(q => q.raw),
+    [],
+    "the page a question landed on is not the page it was asked from"
+  );
+  await store.close();
+});
+
 add_task(async function test_entities_dedupe_across_records() {
   const store = await freshStore();
   const trailId = await store.addTrail();
@@ -313,10 +381,18 @@ add_task(async function test_only_positions_a_human_chose_are_read_back() {
   const trailId = await store.addTrail();
   const auto = await store.addNode({ trailId, url: "https://example.org/a" });
   const chosen = await store.addNode({ trailId, url: "https://example.org/b" });
-  const untouched = await store.addNode({ trailId, url: "https://example.org/c" });
+  const untouched = await store.addNode({
+    trailId,
+    url: "https://example.org/c",
+  });
 
   await store.placeCard(auto, { x: 1, y: 1 });
-  await store.placeCard(chosen, { x: 7, y: 9, pinned: true, movedByUserAt: 42 });
+  await store.placeCard(chosen, {
+    x: 7,
+    y: 9,
+    pinned: true,
+    movedByUserAt: 42,
+  });
 
   const saved = await store.placements([auto, chosen, untouched]);
   Assert.equal(saved.size, 1, "an auto placement is not a placement");

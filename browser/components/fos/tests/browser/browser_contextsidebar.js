@@ -214,6 +214,115 @@ add_task(async function test_a_page_on_two_trails_reports_the_crossing() {
   BrowserTestUtils.removeTab(tab);
 });
 
+add_task(async function test_a_page_reports_the_questions_it_provoked() {
+  // The other direction of the crossing, and it needs the same two-trail setup
+  // for the same reason plus one more: a question asked in the context the
+  // panel is describing is already listed under "Questions asked", so this
+  // section is deliberately empty until the question comes from another
+  // enquiry. Asking on one tab and reading on another is the shortest way to
+  // be in that state.
+  await goTo(PAGE_A);
+  await engine().settled;
+
+  // Recorded rather than typed, for the reason browser_contextengine.js gives:
+  // typing a prose query would send the default engine a live request.
+  const raw = "vannevar bush associative trails";
+  engine().recordQuery(raw);
+  // The question's landing page, which is what its row will re-enter.
+  await goTo(PAGE_B);
+  await engine().settled;
+  const asking = gBrowser.selectedTab;
+  // Moved off the answer again, so that entering the row is a navigation and
+  // not a no-op that would pass either way.
+  await goTo(PAGE_A);
+  await engine().settled;
+
+  // A second tab is a second trail and so a second context, which is what puts
+  // the question outside the context the panel will be describing.
+  const tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, PAGE_A);
+  await engine().settled;
+
+  const panel = await openSettled();
+  const provoked = rowsOf(panel, "provoked");
+  Assert.greaterOrEqual(
+    provoked.length,
+    1,
+    "the page reports what it provoked"
+  );
+
+  const labels = provoked.map(
+    row => row.querySelector(".fos-sidebar-label").textContent
+  );
+  ok(labels.includes(raw), "and it is the question that was typed here");
+
+  const row = provoked[labels.indexOf(raw)];
+  ok(
+    row.hasAttribute("data-enterable"),
+    "the row is live, because the question reached a page"
+  );
+
+  // It goes to where the question *landed*, not back to the page it was asked
+  // from — which is the page already on screen. That page is on the trail the
+  // question was asked on, so `enter` restores it into the tab that owns that
+  // trail rather than dragging this one onto it: the load to wait for is the
+  // asking tab's, not the selected one's.
+  const entered = BrowserTestUtils.browserLoaded(
+    asking.linkedBrowser,
+    false,
+    PAGE_B
+  );
+  row.dispatchEvent(
+    new MouseEvent("mousedown", { bubbles: true, cancelable: true })
+  );
+  await entered;
+  Assert.equal(
+    gBrowser.selectedTab,
+    asking,
+    "entering an answer on another trail goes to that trail's tab"
+  );
+  Assert.equal(
+    asking.linkedBrowser.currentURI.spec,
+    PAGE_B,
+    "the row re-enters the page the question opened"
+  );
+
+  panel.close();
+  BrowserTestUtils.removeTab(tab);
+});
+
+add_task(
+  async function test_a_question_asked_here_and_now_is_not_shown_twice() {
+    // The exclusion, from the other side: a question in this context is a few
+    // rows further down the same panel, and a surface that says a thing twice in
+    // one screen is a surface the user stops reading.
+    await goTo(PAGE_A);
+    await engine().settled;
+
+    const raw = "hypertext and transclusion";
+    engine().recordQuery(raw);
+    await goTo(PAGE_B);
+    await engine().settled;
+    await goTo(PAGE_A);
+    await engine().settled;
+
+    const panel = await openSettled();
+    const provoked = rowsOf(panel, "provoked").map(
+      row => row.querySelector(".fos-sidebar-label").textContent
+    );
+    ok(
+      !provoked.includes(raw),
+      "the question is not repeated above the section that already lists it"
+    );
+
+    const asked = rowsOf(panel, "questions").map(
+      row => row.querySelector(".fos-sidebar-label").textContent
+    );
+    ok(asked.includes(raw), "and it is still listed there");
+
+    panel.close();
+  }
+);
+
 add_task(async function test_the_panel_opens_on_the_page_you_are_on() {
   // The rail opens with the current node selected; this panel opening with
   // nothing selected meant the two surfaces disagreed about what a selection

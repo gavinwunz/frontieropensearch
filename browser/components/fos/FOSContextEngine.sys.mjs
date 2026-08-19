@@ -896,6 +896,17 @@ export class FOSContextEngine {
     return this.#store ? this.#store.crossings(url) : [];
   }
 
+  /**
+   * Every question asked while looking at a URL, across every trail.
+   *
+   * @param {string} url
+   * @returns {Promise<object[]>} Rows, or empty before `attach`.
+   */
+  async questionsFrom(url) {
+    await this.#queue;
+    return this.#store ? this.#store.questionsFrom(url) : [];
+  }
+
   /** The database trail id for the trail the user is on, or null. */
   get activeTrailRowId() {
     return this.#trailIds.get(this.#session?.activeTrailId) ?? null;
