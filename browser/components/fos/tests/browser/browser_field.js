@@ -882,3 +882,131 @@ add_task(async function the_field_says_which_card_arrived() {
     BrowserTestUtils.removeTab(tab);
   }
 });
+
+/**
+ * Re-entry is a departure, and it is the departure this browser is built for.
+ *
+ * The progress listener cannot announce it: the load `enter` starts belongs to
+ * the node being arrived at, so `#restoring` suppresses the departure there —
+ * correctly, or the outgoing page's state would be written over the state
+ * being replayed. That left the one way of leaving a page that this design
+ * encourages above all others taking no picture of it. Branch, go back, branch
+ * again, and every page you branched *from* stayed a grey rectangle while the
+ * page you never left kept its snapshot. It is in
+ * `agent/reports/demo-3-field-region.png`: three children of one search, all
+ * grey, and the search itself not.
+ *
+ * `enter` is also the only departure that is not a race — nothing has started
+ * to move, so the outgoing document is still live and still painted — which is
+ * why the listener's promise is awaited here and nowhere else. Both halves are
+ * asserted, because a notification that fires after the restore has begun is
+ * worth no more than the one that never fired.
+ */
+add_task(async function test_re_entry_captures_the_page_it_leaves() {
+  await goTo(PAGE_A);
+  const parent = session().currentNodeId;
+  await goTo(PAGE_B);
+  const leaving = session().currentNodeId;
+
+  const departures = [];
+  let listenerFinished = false;
+  const off = session().onDeparture(async (nodeId, browser) => {
+    // Read inside the listener, not after: the claim is about what was in
+    // front of the browser at the moment it was told, and by the time `enter`
+    // returns the answer has changed either way.
+    departures.push({ nodeId, url: browser.currentURI?.spec });
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+    listenerFinished = true;
+  });
+
+  try {
+    await session().enter(parent);
+  } finally {
+    off();
+  }
+
+  Assert.deepEqual(
+    departures.map(d => d.nodeId),
+    [leaving],
+    "re-entry announced the page it left, once"
+  );
+  Assert.equal(
+    departures[0].url,
+    PAGE_B,
+    "while its browser was still showing it"
+  );
+  Assert.ok(
+    listenerFinished,
+    "and `enter` waited for the capture before replaying the arrival"
+  );
+});
+
+/**
+ * A snapshot is only worth filing if it is of the document it was asked for.
+ *
+ * `captureTabPreviewThumbnail` awaits twice before any pixels exist, so a
+ * capture fired from the ordinary navigation departure can have its document
+ * swapped underneath it — and `drawSnapshot` then paints whatever is in front
+ * of it and reports success. There is no error to catch: the failure is a
+ * picture of the next page, filed against this node, over the top of a correct
+ * one. Only the document's identity can tell the two apart.
+ *
+ * The stub below is that race made deterministic: it wins its await and loses
+ * its document, which is the exact shape the guard exists for.
+ */
+add_task(async function test_a_snapshot_of_the_wrong_document_is_discarded() {
+  await goTo(PAGE_C);
+  const nodeId = session().currentNodeId;
+  const browser = gBrowser.selectedBrowser;
+  const shotFor = id =>
+    window.document.querySelector(
+      `.fos-field-card[data-node-id="${id}"] .fos-field-shot`
+    );
+
+  // Armed once. The navigation this stub starts is itself a departure, which
+  // asks for another capture, which would start it again — the Field's own
+  // machinery turns a re-entrant stub into a browser that never finishes
+  // leaving the page.
+  const real = PageThumbs.captureTabPreviewThumbnail;
+  let armed = true;
+  PageThumbs.captureTabPreviewThumbnail = async () => {
+    if (!armed) {
+      return false;
+    }
+    armed = false;
+    BrowserTestUtils.startLoadingURIString(browser, PAGE_A);
+    await BrowserTestUtils.browserLoaded(browser, false, PAGE_A);
+    return true;
+  };
+
+  let swapped;
+  try {
+    // Opening the Field captures every tab for the node it is showing, which
+    // is this node, through the stub above.
+    field().open();
+    field().showRegion(session().store.getNode(nodeId).trail_id);
+
+    // The precondition, asserted rather than assumed: the card starts with
+    // nothing, so anything it has afterwards came from the capture under test
+    // and not from a snapshot it already had.
+    Assert.ok(
+      !shotFor(nodeId)?.style.backgroundImage,
+      "the card has no snapshot before the capture resolves"
+    );
+
+    swapped = await TestUtils.waitForCondition(
+      () => browser.currentURI?.spec === PAGE_A && browser,
+      "the stub moved the browser to another document"
+    );
+  } finally {
+    PageThumbs.captureTabPreviewThumbnail = real;
+  }
+
+  Assert.ok(swapped, "the race the guard exists for actually happened");
+  Assert.ok(
+    !shotFor(nodeId)?.style.backgroundImage,
+    "and the picture of the wrong document was dropped rather than filed"
+  );
+
+  field().close();
+});

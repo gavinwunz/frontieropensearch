@@ -50,7 +50,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   PageThumbs: "resource://gre/modules/PageThumbs.sys.mjs",
 });
 
-import { ensureStylesheet } from "./FOSChrome.sys.mjs";
+import { ensureStylesheet, releaseFocus, takeFocus } from "./FOSChrome.sys.mjs";
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const STYLESHEET = "chrome://browser/content/fos/fos-field.css";
@@ -174,6 +174,11 @@ export class FOSFieldSurface {
     return !!this.#root && !this.#root.hidden;
   }
 
+  /** The Field's stage element, or null before first open. Tests read this. */
+  get stage() {
+    return this.#stage;
+  }
+
   /** The focused card or region id. Tests read this. */
   get focus() {
     return this.#focus;
@@ -251,20 +256,40 @@ export class FOSFieldSurface {
     this.#session.onDeparture((nodeId, browser) =>
       this.#capture(browser, nodeId)
     );
-    // And once when the page settles, which is the floor under the line above.
-    // A departure capture is the better picture — it is the page as you left
-    // it, scrolled to where you were reading — but it is a race against the
+    // And when the page settles, which is the floor under the line above. A
+    // departure capture is the better picture — it is the page as you left it,
+    // scrolled to where you were reading — but it is a race against the
     // process swap and on this build it usually loses, so relying on it alone
     // left most pages with no snapshot at all and nothing to write to disk.
-    this.#session.onSettled((nodeId, browser) =>
+    //
+    // Twice, and the first one is the point. Waiting a second before the
+    // picture is right — a page that has just fired its load event is often
+    // still laying itself out — but it assumes the user is still there in a
+    // second, and the page they are least likely to still be on is the one
+    // they are *searching from*. Branch off a result within the second and the
+    // delayed capture is discarded as stale while the departure that follows
+    // has already lost its document, so the one card the eye goes to was the
+    // one card with nothing on it: three branches with pictures around a grey
+    // rectangle, in `agent/reports/demo-3-field-region.png`.
+    //
+    // So a node with no picture at all takes one immediately, half-drawn and
+    // all, and a node that already has one waits for the better one. That is
+    // Data Mountain's finding applied to its own edge case — a thumbnail is
+    // what makes a card more than a list row, and a rough thumbnail is much
+    // closer to a good one than to none. It also costs nothing on any page
+    // that has been seen before, which is most of them.
+    this.#session.onSettled((nodeId, browser) => {
+      if (!this.#thumbs.has(nodeId)) {
+        this.#capture(browser, nodeId);
+      }
       this.#window.setTimeout(() => {
         // The page may have been navigated on, or the tab closed, in the
         // second we waited; capturing then would file the wrong picture.
         if (this.#session.nodeForBrowser(browser) === nodeId) {
           this.#capture(browser, nodeId);
         }
-      }, SETTLE_DELAY_MS)
-    );
+      }, SETTLE_DELAY_MS);
+    });
     this.sync();
 
     bar.actions.register("field", () => {
@@ -458,12 +483,7 @@ export class FOSFieldSurface {
     this.#root.hidden = false;
     this.showOverview();
     this.#captureOpenTabs();
-    // `focusVisible: true` rather than a bare focus: this surface takes the
-    // keyboard off the page the moment it opens, so it has to show where the
-    // keyboard went — and a plain programmatic focus inherits whatever mode
-    // the window is already in, which after a click or a drag means no ring at
-    // all on a surface that now owns every keystroke.
-    this.#stage.focus({ focusVisible: true });
+    takeFocus(this.#window, this, this.#stage);
   }
 
   /** Leave the Field for the page level. */
@@ -478,7 +498,7 @@ export class FOSFieldSurface {
     this.#arrived.clear();
     this.#root.hidden = true;
     this.#level = LEVEL.PAGE;
-    this.#window.gBrowser?.selectedBrowser?.focus();
+    releaseFocus(this.#window, this);
   }
 
   showOverview() {
@@ -589,6 +609,22 @@ export class FOSFieldSurface {
    * @param {number} nodeId The node it is showing.
    */
   async #capture(browser, nodeId) {
+    // The document this picture is meant to be of. A departure capture is
+    // fired as the *next* load starts, and there are two awaits below before
+    // anything is drawn, so the browser can swap documents underneath us —
+    // and `drawSnapshot` will paint whatever is in front of it by then and
+    // report success. There is no error to catch: the failure is a picture of
+    // the wrong page, filed under this node, over the top of a correct one.
+    //
+    // The inner window id is the identity that changes exactly when the
+    // document does, so it is read before and checked after. A capture that
+    // lost the race is dropped, and the node keeps whichever earlier snapshot
+    // it had — always the better of the two outcomes, because a stale picture
+    // of the right page beats a fresh picture of a different one.
+    const showing = browser.browsingContext?.currentWindowGlobal?.innerWindowId;
+    if (!showing) {
+      return;
+    }
     const geom = this.model.geometry;
     const canvas = this.#window.document.createElementNS(HTML_NS, "canvas");
     const dpr = this.#window.devicePixelRatio || 1;
@@ -607,6 +643,11 @@ export class FOSFieldSurface {
       captured = false;
     }
     if (!captured) {
+      return;
+    }
+    if (
+      browser.browsingContext?.currentWindowGlobal?.innerWindowId !== showing
+    ) {
       return;
     }
 

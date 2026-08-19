@@ -225,7 +225,16 @@ export class FOSTrailSession {
    * away from has no browser behind it afterwards, so a snapshot taken any
    * later is a snapshot of the next page.
    *
-   * @param {Function} listener Called as `(nodeId, browser)`.
+   * Departures come from two places and they are not equally good. A page
+   * navigated away from by a click is announced from the progress listener, at
+   * the instant the next load starts, and that is a race a listener can lose —
+   * so a listener has to prove what it read was the document it was told
+   * about. A page left by `enter` is announced before anything has started to
+   * move, and there a returned promise is awaited: that path is exact.
+   *
+   * @param {Function} listener Called as `(nodeId, browser)`. May return a
+   *   promise, which the deliberate paths await and the progress listener
+   *   ignores.
    * @returns {Function} An unsubscribe function.
    */
   onDeparture(listener) {
@@ -258,25 +267,33 @@ export class FOSTrailSession {
   /**
    * @param {number} nodeId The node being left.
    * @param {object} browser The browser leaving it.
+   * @returns {Promise<void>} Settles when every listener has.
    */
   #departed(nodeId, browser) {
-    this.#notify(this.#departures, nodeId, browser);
+    return this.#notify(this.#departures, nodeId, browser);
   }
 
   /**
    * @param {Set<Function>} listeners Either listener set.
    * @param {number} nodeId The node concerned.
    * @param {object} browser The browser showing it.
+   * @returns {Promise<void>} Settles when every listener has. The progress
+   *   listener drops this on the floor — it must not hold up a load — but the
+   *   deliberate paths await it, because there the outgoing document is still
+   *   in front of us and waiting is what makes the capture certain instead of
+   *   a race.
    */
   #notify(listeners, nodeId, browser) {
+    const pending = [];
     for (const listener of listeners) {
       try {
-        listener(nodeId, browser);
+        pending.push(listener(nodeId, browser));
       } catch (e) {
         // A listener that throws must not stop the navigation it is watching.
         console.error(e);
       }
     }
+    return Promise.allSettled(pending).then(() => {});
   }
 
   /**
@@ -702,7 +719,29 @@ export class FOSTrailSession {
 
     const leaving = this.#nodeByBrowser.get(browser);
     if (leaving && leaving !== nodeId) {
-      await this.#captureFlushed(leaving, browser);
+      // Both halves of leaving a page, and this is the one path that gets to
+      // do them properly. Re-entry is the deliberate departure: nothing has
+      // started to move, so the outgoing document is still live and still
+      // painted, and a snapshot taken here cannot lose a race because there is
+      // no race to lose.
+      //
+      // The progress-listener path cannot notify departure here — it is
+      // suppressed by `#restoring`, correctly, because the load `enter` is
+      // about to start belongs to the node being *arrived* at. That left
+      // re-entry as the one way to leave a page that took no picture of it,
+      // and it is the way this browser is designed to be used: branch, go
+      // back, branch again. Every page you branched from stayed blank in the
+      // Field while the page you never left kept its snapshot — visible in
+      // `agent/reports/demo-3-field-region.png`, where the three children of
+      // the search are grey and the search itself is not.
+      //
+      // Concurrently rather than in sequence, because they read the same
+      // document by different routes and neither writes it: the cost of
+      // re-entry goes up by the slower of the two, not by their sum.
+      await Promise.all([
+        this.#captureFlushed(leaving, browser),
+        this.#departed(leaving, browser),
+      ]);
     }
 
     let restored = null;

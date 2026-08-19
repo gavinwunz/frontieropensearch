@@ -396,6 +396,31 @@ add_task(async function test_the_demo_flow() {
     );
   }
 
+  // Every card carries a picture, and the branch point most of all.
+  //
+  // This is the one place in the suite where the condition arises, which is
+  // why the assertion is here rather than beside the Field's other thumbnail
+  // tests: branching re-enters the page being branched from, `enter` returns
+  // before the restore commits, and the navigation that follows is therefore
+  // still suppressed by the restore flag. So the branch point is never
+  // departed at all, and its delayed settle capture was discarded as stale the
+  // moment the first branch was taken. It used to render as a grey rectangle
+  // ringed by three branches that all had pictures — dead centre of the
+  // Field's own screenshot, and the one card the eye goes to.
+  //
+  // `data:` and not `moz-page-thumb:`: the disk store's copy would satisfy a
+  // laxer check without the node ever having been photographed.
+  for (const node of [searchNode, ...branches]) {
+    const card = model.cardForNode(node.id);
+    const shot = win.document.querySelector(
+      `.fos-field-card[data-card-id="${card.id}"] .fos-field-shot`
+    );
+    Assert.ok(
+      shot?.style.backgroundImage.startsWith('url("data:'),
+      `${node.url} is a card with a picture on it, not a list row`
+    );
+  }
+
   await shoot("demo-3-field-region");
 
   EventUtils.synthesizeKey("KEY_Escape", {}, win);
