@@ -49,6 +49,8 @@ support-files = [
 
 ["browser_zzhistorygesture.js"]
 
+["browser_zzlanding.js"]
+
 ["browser_zzkeymanifest.js"]
 
 ["browser_zzmergeoffer.js"]

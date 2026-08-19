@@ -81,6 +81,29 @@ export function nodeIdFromKey(key) {
 }
 
 /**
+ * How long `enter` waits for its page to commit before resolving anyway.
+ *
+ * The verb resolves on the landing so that a caller can navigate straight
+ * afterwards without racing a traversal that has not committed yet. That makes
+ * the promise depend on the network, and a page behind a server that never
+ * answers would otherwise leave it pending for the life of the window — so the
+ * wait is bounded and the verb resolves either way.
+ *
+ * Resolving on the bound is not a failure and does not change what is returned:
+ * `enter` answers "was this node entered", and a node whose page is slow was
+ * still entered. The bound only bounds the *waiting*; it never turns a slow
+ * page into a refused command, because a `back` that reported failure while the
+ * page it asked for was visibly loading would be lying about the one thing the
+ * user can see.
+ *
+ * Six seconds because it is long enough that no page on a working connection
+ * reaches it — so the common path is always a real landing — and short enough
+ * that a test whose load genuinely never comes fails on its own assertion
+ * rather than on the harness timeout, where the report names the wrong file.
+ */
+const LANDING_MS = 6000;
+
+/**
  * Whether a location is somewhere the user went, or chrome scaffolding.
  *
  * @param {?nsIURI} uri The new location.
@@ -126,6 +149,15 @@ export class FOSTrailSession {
   #departures = new Set();
   #settles = new Set();
   #restoring = new WeakMap();
+  // Re-entries whose page has been asked for and has not committed yet, one
+  // per browser: `{resolve, timer}`.
+  //
+  // A Map rather than a WeakMap because `detach` has to settle whatever is
+  // still in flight, and a WeakMap cannot be iterated. It holds a browser
+  // strongly, which is only safe because every entry is deleted on the landing
+  // or by its own timer — the bound is what makes the strong reference
+  // temporary rather than a leak.
+  #landings = new Map();
   // Which node each of a browser's session history entries stands for, keyed
   // by index. Session history is Gecko's linear record of the same walk this
   // component records as a tree, and every entry it holds was appended by a
@@ -259,6 +291,13 @@ export class FOSTrailSession {
     gBrowser.tabContainer.removeEventListener("TabAttrModified", this);
     gBrowser.tabContainer.removeEventListener("TabClose", this);
     gBrowser.tabContainer.removeEventListener("TabSelect", this);
+    // Nothing is going to report a landing once the progress listener is off,
+    // so anything still in flight is settled here. A detached session that left
+    // an `enter` pending would hold its caller until the bound, and on window
+    // teardown the timer that would have released it is going away too.
+    for (const browser of [...this.#landings.keys()]) {
+      this.#land(browser);
+    }
     this.#attached = false;
   }
 
@@ -582,7 +621,17 @@ export class FOSTrailSession {
    * @param {number} flags nsIWebProgressListener location-change flags.
    */
   onLocationChange(browser, webProgress, request, location, flags) {
-    if (!webProgress?.isTopLevel || !isCapturable(location)) {
+    if (!webProgress?.isTopLevel) {
+      return;
+    }
+    // Before the capturable guard and before every branch below, because a
+    // re-entry has landed whatever this location turns out to be — including
+    // `about:blank` on the first half of a process switch, and including a URL
+    // this component would never give a node. The one thing that must not
+    // happen is an `enter` left pending because its page was of a kind the tree
+    // does not record.
+    this.#land(browser);
+    if (!isCapturable(location)) {
       return;
     }
 
@@ -830,6 +879,12 @@ export class FOSTrailSession {
         if (nodeId) {
           this.#captureNow(nodeId, tab.linkedBrowser);
         }
+        // A browser being torn down will never change location again, so a
+        // re-entry into it has ended — unsuccessfully, but ended. Closing the
+        // tab a page is being restored into is rare and entirely possible: the
+        // Field enters a card whose trail owns a tab, and the tab can go while
+        // the load is on its way.
+        this.#land(tab.linkedBrowser);
         break;
       }
 
@@ -938,6 +993,64 @@ export class FOSTrailSession {
   // ---- re-entry -----------------------------------------------------------
 
   /**
+   * Arm the wait for a re-entry's page to commit on a browser.
+   *
+   * Called before the load is asked for rather than after, because a location
+   * change can arrive synchronously and a wait armed afterwards would be armed
+   * for a landing that has already happened.
+   *
+   * A second re-entry on the same browser settles the first one instead of
+   * replacing it. Superseding it silently would leave whoever was awaiting the
+   * first pending until the bound, and the honest reading is that their
+   * traversal is no longer in flight: something else is.
+   *
+   * @param {object} browser The browser the page is being restored into.
+   * @returns {Promise<void>} Settles on the landing, or on the bound.
+   */
+  #awaitLanding(browser) {
+    this.#land(browser);
+    return new Promise(resolve => {
+      const timer = this.#window.setTimeout(() => {
+        this.#landings.delete(browser);
+        resolve();
+      }, LANDING_MS);
+      this.#landings.set(browser, { resolve, timer });
+    });
+  }
+
+  /**
+   * End a browser's pending re-entry, if it has one.
+   *
+   * THE LANDING IS A COMMIT, NOT A LOAD. `onSettled` already exists for "the
+   * page finished loading" and this deliberately fires earlier, because the
+   * thing being waited for is narrower: the traversal is no longer pending the
+   * moment the location has changed, and from there a fresh navigation is an
+   * ordinary navigation rather than a race with a restore still on its way.
+   * Waiting for the stop event as well would make every `back` cost a full page
+   * load before the next command could run, for no defect prevented.
+   *
+   * KEYED ON THE BROWSER AND NOT ON THE URL, which is the one judgement here.
+   * Matching the restored URL would be more precise and would hang on a
+   * redirect: a server-side 3xx commits only the *destination*, so a re-entry
+   * to a page that redirects would never see its own URL and would always pay
+   * the bound. The first top-level location change on the browser we asked is
+   * the end of the flight whatever it says, and a redirect landing on the
+   * redirected page is exactly right — the tree records the rest as the
+   * ordinary navigation it is.
+   *
+   * @param {object} browser The browser that changed location.
+   */
+  #land(browser) {
+    const pending = this.#landings.get(browser);
+    if (!pending) {
+      return;
+    }
+    this.#landings.delete(browser);
+    this.#window.clearTimeout(pending.timer);
+    pending.resolve();
+  }
+
+  /**
    * Re-enter a node: restore its page, its scroll offset and its form values.
    *
    * Two ways in, chosen by whether the node is still an entry of the target
@@ -948,8 +1061,22 @@ export class FOSTrailSession {
    * reaching the rest of the tree costs the chain; the branch stays in the tree
    * where the rail can still show it either way.
    *
+   * RESOLVES ON THE LANDING. The verb used to resolve once it had *asked* for a
+   * node, which read as "was entered" and meant "was requested", and the gap
+   * between the two was a race every caller had to know about and handle for
+   * itself: a navigation started on top of a traversal that has not committed
+   * arrives first and is then overwritten by the restore. Six tests hit it in a
+   * single run, each reporting as a timeout somewhere else in the file, which
+   * is how expensive an unstated contract is to debug. Awaiting the commit here
+   * removes it for every caller at once, including the ones that never knew.
+   *
+   * The wait is bounded — see `LANDING_MS` — so the verb cannot be left pending
+   * by a page that never arrives. The bound does not change the answer: `true`
+   * means the node was entered, not that its page has painted.
+   *
    * @param {number} nodeId The node to enter.
-   * @returns {Promise<boolean>} Whether the node was entered.
+   * @returns {Promise<boolean>} Whether the node was entered, resolved once its
+   *   page has committed or the wait has run out.
    */
   async enter(nodeId) {
     const node = this.store.getNode(nodeId);
@@ -1031,9 +1158,11 @@ export class FOSTrailSession {
       // matter: the flag's own branch and the `LOAD_CMD_HISTORY` branch agree
       // on the node, because both read it out of the same map.
       this.#restoring.set(browser, { nodeId, url: node.url });
+      const landed = this.#awaitLanding(browser);
       browser.gotoIndex(index);
       this.store.restore(nodeId);
       this.#changed();
+      await landed;
       return true;
     }
 
@@ -1064,6 +1193,7 @@ export class FOSTrailSession {
     this.#trailByBrowser.set(browser, node.trail_id);
     this.#setCurrent(browser, nodeId);
 
+    const landed = this.#awaitLanding(browser);
     lazy.SessionStore.setTabState(tab, {
       entries: [entry],
       index: 1,
@@ -1072,6 +1202,7 @@ export class FOSTrailSession {
     });
     this.store.restore(nodeId);
     this.#changed();
+    await landed;
     return true;
   }
 
