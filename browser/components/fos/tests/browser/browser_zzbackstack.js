@@ -363,3 +363,80 @@ add_task(async function test_the_pref_gives_the_chain_back() {
     BrowserTestUtils.removeTab(tab);
   }
 });
+
+add_task(async function test_a_branch_the_chain_dropped_is_still_reachable() {
+  // The case the pillar exists for, and the one that decides which of `enter`'s
+  // two ways in it takes. Walking back and navigating away drops every chain
+  // entry above the new one, so the node for the abandoned branch is named by
+  // an index the chain no longer has. The map deliberately keeps that row —
+  // pruning it was written and deleted because nothing could reach it — so the
+  // bound has to be checked at the point of use, or re-entry traverses to an
+  // index past the end of the history instead of replaying the node's blob,
+  // and the branch this browser promises to keep is the one thing it cannot
+  // get back to.
+  const tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, PAGE_A);
+  const trail = session();
+  await goTo(PAGE_B);
+  await goTo(PAGE_C);
+  const dropped = trail.currentNodeId;
+
+  await step("back", PAGE_B);
+  await step("back", PAGE_A);
+  await goTo(PAGE_D);
+
+  const history = gBrowser.selectedBrowser.browsingContext.sessionHistory;
+  Assert.equal(
+    history.count,
+    2,
+    "the chain has truncated, which is what makes the node unreachable by it"
+  );
+
+  const landed = BrowserTestUtils.waitForLocationChange(gBrowser, PAGE_C);
+  Assert.equal(await trail.enter(dropped), true, "the node is entered anyway");
+  await landed;
+  Assert.equal(
+    trail.currentNodeId,
+    dropped,
+    "and the window is standing on the branch the chain threw away"
+  );
+
+  BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function test_forgetting_below_the_cursor_keeps_the_walk() {
+  // Filtering an indexed list moves every index above the first removal, and a
+  // cursor left where it was is not merely stale — it points at some other
+  // page, so the next step goes somewhere the user has never been. Forgetting
+  // is the only thing that removes from the stack, and it removes from the
+  // middle, so this is the shape it takes: walk back, forget something behind
+  // you, and the walk you were on has to be the walk you are still on.
+  const tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, PAGE_A);
+  const trail = session();
+  const first = trail.currentNodeId;
+  await goTo(PAGE_B);
+  const second = trail.currentNodeId;
+  await goTo(PAGE_C);
+  await goTo(PAGE_D);
+
+  await step("back", PAGE_C);
+  await step("back", PAGE_B);
+  Assert.equal(trail.currentNodeId, second, "standing two steps back");
+
+  trail.forget([first]);
+  Assert.ok(!trail.store.getNode(first), "the page behind was forgotten");
+
+  Assert.equal(
+    trail.canWalk("back"),
+    false,
+    "so there is nothing behind this page any more"
+  );
+
+  await step("forward", PAGE_C);
+  Assert.equal(
+    gBrowser.selectedBrowser.currentURI.spec,
+    PAGE_C,
+    "and forward is still the page walked back from, not one past it"
+  );
+
+  BrowserTestUtils.removeTab(tab);
+});
