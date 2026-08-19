@@ -407,15 +407,20 @@ add_task(async function test_the_demo_flow() {
 
   // Every card carries a picture, and the branch point most of all.
   //
-  // This is the one place in the suite where the condition arises, which is
-  // why the assertion is here rather than beside the Field's other thumbnail
-  // tests: branching re-enters the page being branched from, `enter` returns
-  // before the restore commits, and the navigation that follows is therefore
-  // still suppressed by the restore flag. So the branch point is never
-  // departed at all, and its delayed settle capture was discarded as stale the
-  // moment the first branch was taken. It used to render as a grey rectangle
-  // ringed by three branches that all had pictures — dead centre of the
-  // Field's own screenshot, and the one card the eye goes to.
+  // This is the one place in the suite where the condition arose, which is why
+  // the assertion is here rather than beside the Field's other thumbnail
+  // tests. Branching re-enters the page being branched from; `enter` used to
+  // return before the restore had committed, so the navigation that followed
+  // was still suppressed by the restore flag and the branch point was never
+  // departed at all — its delayed settle capture was then discarded as stale
+  // the moment the first branch was taken. It rendered as a grey rectangle
+  // ringed by three branches that all had pictures: dead centre of the Field's
+  // own screenshot, and the one card the eye goes to.
+  //
+  // `enter` now resolves on the landing, so the flag is spent by the time the
+  // branch navigation starts and the departure is an ordinary one. The
+  // assertion stays, and it is worth more than it was: it no longer describes
+  // one path to a picture but insists on the picture however it was taken.
   //
   // `data:` and not `moz-page-thumb:`: the disk store's copy would satisfy a
   // laxer check without the node ever having been photographed.
