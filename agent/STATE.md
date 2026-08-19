@@ -40,200 +40,145 @@ the re-entry resume it forced, the Field's arrangement surviving a restart,
 **forgetting** — the store's first delete of any kind, joined to Clear Recent
 History and Forget About This Site — **forgetting reaching the live session**,
 **private browsing being kept out of the database at all**, **the record
-surviving a profile refresh, and surviving being unreadable**, and, this run,
-**a page the command bar was asked for being recorded as a typed visit** — the
-fork's first audit of what it writes into *Firefox's* data rather than what
-Firefox does to its own — **the page being asked for being shown and remembered
-while it is still in flight**, that lens' second finding and the first one that
-was not in a database at all — and, this run, **`stop`: the way out of the state
-the last one created**, the fifteenth verb and the first added since the phase
-plan ran out.
+surviving a profile refresh, and surviving being unreadable**, **a page the
+command bar was asked for being recorded as a typed visit** — the fork's first
+audit of what it writes into *Firefox's* data rather than what Firefox does to
+its own — **the page being asked for being shown and remembered while it is
+still in flight**, **`stop`: the way out of the state the last one created**,
+the fifteenth verb and the first added since the phase plan ran out — and, this
+run, **back and forward being moves through the trail tree rather than visits
+to it**, which is the first defect found by *counting* a surface rather than by
+using one.
 
 ## In progress
 
 Nothing waits on a person. **Nothing is running — the harness is free.**
 
-Run 52 took item 3 off the list — abandoning a pending request — and the useful
-part is that **the probe's premise was half wrong, and checking it was the
-work.**
+Run 53 took the standing question about `Browser:Reload` and found the question
+was the wrong shape. Reload was described as "the only nav-bar verb with no
+spoken form". **It is one of forty-six**, and the sampling error was the finding.
 
-Run 51's note said Firefox reverts a pending value through
-`UrlbarInput.handleRevert`, which this fork cannot reach because its bar takes
-no focus. True, and not the mechanism that matters. **Firefox's tab progress
-listener nulls `userTypedValue` and repaints the bar at a failed `STATE_STOP`**,
-and says why in its own comment — *"restore the current document's location in
-case the request was stopped before the location changed"*. So the fork had
-inherited a recovery it never wrote, and a change built on "there is no way out
-of this state" would have been built on a false premise.
+`GRAMMAR.md` §5.1 claimed a command with no spoken form "will be caught by
+construction, since the action table is the single source of both". True of the
+verbs; it says nothing about the browser, and nothing enumerates the window. So
+the window was enumerated, in a driven build rather than from the source, since
+`#ifdef` makes the file a bad proxy for what a window has:
 
-What was actually missing was narrower and better:
+| | |
+| --- | --- |
+| `<key>` elements in the window | 101 |
+| distinct commands they reach | 49 |
+| put there by this fork | 3 |
+| inherited from Firefox untouched | 46 |
 
-- **No grammar reached it.** `Browser:Stop` is bound to the toolbar button and
-  to `key_stop`. Both are gestures, so abandoning a load was reachable by hand
-  and not by voice — which `GRAMMAR.md` §5 forbids outright. Not a fork-specific
-  oversight: talonhub/community's browser command set, the most-used hands-free
-  browser vocabulary there is, has `reload it` and no stop-loading command.
-- **The inherited recovery is an event round trip late.** In that interval the
-  bar still names a page nobody is going to and `TabState.collect` still records
-  the request. Mutation-tested rather than argued: dropping `clearPending` fails
-  three assertions synchronously and passes the same field's assertion four
-  seconds later — the exact shape of a second mechanism arriving late, which
-  run 51's own method note says to find before rewriting an assertion.
+**The count found a corrupted tree, not a missing word.** `Browser:Back` is
+bound to four gestures and none of them were known to pillar B. Every press
+appended a copy of the page being arrived at underneath the page being left —
+the tree recorded a journey nobody made, a node deeper per press, and `up`
+walked it. `FOSTrailSession`'s own comment describes this defect exactly; it is
+what `#restoring` prevents. **It had been understood, fixed for the fork's own
+re-entry verb, and left standing for the movement Firefox owns.** The
+transferable part, worth more than the fix: *the surfaces this fork replaced
+were audited, and the ones it inherited untouched were not.*
 
-**`stop` is one verb doing both halves**, because neither is any use alone:
-stopping the load while the browser goes on naming the destination is the same
-wrong answer with the spinner off, and forgetting the request without stopping
-it lets the page land a minute later over whatever the user did instead. The
-second is a caught mutation, and it is why the test spends four seconds waiting
-for a page that must not arrive.
+The signal is `nsIWebProgress.loadType` / `LOAD_CMD_HISTORY`. Not the URL — a
+link back to the page above you is a real visit and stays a new node. Not a hook
+on `Browser:Back`, which is what run 52 did for `Browser:Stop`: a page calling
+`history.back()` produces the same traversal and no command event at all, and
+there is a test that fails if the fix is moved there.
 
-**All three routes to `Browser:Stop` leave the same state.** The nav-bar kept
-its stop button and Escape over the page is still `key_stop`; a verb that took
-the request back while the button did not would ship two stops with different
-outcomes, both of which look like they worked. A listener on the command
-element, which is the same event `mainCommandSet` already handles.
+Which node an entry stands for is a per-browser map keyed by session history
+index, and it is exact because re-entry replaces the whole history with one
+entry, so every entry above the first was appended by a navigation that also
+made a node.
 
-**The fourth group heading was forced, not invented.** The teach list groups by
-pillar and `search` had been filed under "Context" for want of a fourth heading.
-Filing `stop` there too would have been a user-visible heading that is untrue,
-so there is now **"The page"**, holding the two verbs the entry surface owns.
-Stale verb counts across six files ("the twelve words") were corrected to
-fifteen in passing.
-
-Green: **990 FOS browser-chrome checks** (up from 965; the file goes 16 to 40),
-322 node checks, xpcshell clean, 0 failures across the suite. **Five mutations,
-five caught** — `clearPending` dropped from the abandon, the stop dropped from
-it, the `Browser:Stop` hook removed, the declaration left behind, the notice's
-two branches swapped. Lint clean on every changed file.
+Green: **1015 FOS browser-chrome checks** (up from 990; the new file adds 25),
+322 node checks, 0 failures. **Six mutations, six caught**, and **two branches
+deleted rather than covered** — a pruning pass over the map and a defensive
+clear on re-entry, neither of which any mutation could make fail, because an
+index is only readable by traversing to it and the navigation that created that
+entry wrote the map first. Lint clean on every changed file.
 
 `main` is at `phase-3`. `agent/dev` is pushed through this run's commits.
 
 ## Next task
 
-1. **Why this build has no remote tabs.** Unchanged for several runs. Next step
+1. **The manifest and its test — the audit's actual product.** Every command in
+   the window classified, with a written reason, and a test that fails when a
+   key appears in neither the grammar nor a written-down exemption. That is what
+   makes §5.1's "by construction" true of the *window* rather than of the table,
+   and it is the only thing that stops the next inherited-surface defect sitting
+   for as long as this one did. The classification principle already exists in
+   `IDEAS.md`, stated twice — §5 governs *actions*, and an affordance that runs
+   no action needs no word — so the work is applying it, not inventing it.
+
+2. **`Browser:Forward` has no verb at all**, and `back` only nearly covers
+   `Browser:Back`: the verb is time (`#previousNode`), the gesture is the
+   session history chain, and they agree on a linear walk and diverge after a
+   branch. Two movements under one name is what run 52 called worse than the
+   defect it fixed. Decide it; do not add a word for symmetry. Belongs after
+   item 1, which is what says whether it is one gap or several.
+
+3. **Why this build has no remote tabs.** Unchanged for several runs. Next step
    is `UrlbarProviderRemoteTabs.isActive` in a driven browser with
    `services.sync.username` set, not more reading.
 
-2. **The rails still overlay the page**, and **the 17 timed-out urlbar files**,
+4. **The rails still overlay the page**, and **the 17 timed-out urlbar files**,
    and **a region's height is a ratchet** (`FIELD.md` §6) — all unchanged, all
    belonging with the Field's restructure rather than piecemeal.
 
-3. **The lens run 50 opened has nothing left that stands alone.** Of run 51's
-   three probes, `stop` took one; the tab title during a load belongs with the
-   Field's restructure, and `SessionStore` search mode is very likely a genuine
-   non-issue in a build with no search mode. Do not keep the lens open for its
-   own sake — it has returned three findings from three probes, and a fourth
-   chosen to keep it open would be manufactured.
-
-4. **`Browser:Reload` is the asymmetry `stop` created.** Reload is the other
-   half of the same toolbar control and has no spoken form, so it is now the
-   only nav-bar action reachable by hand and not by voice — a `GRAMMAR.md` §5
-   question rather than a lens one. Deliberately not done this run: reload
-   writes no state, so it fails the test that produced the last three findings,
-   and a verb added because its neighbour got one is a verb added for symmetry
-   rather than for a task. Decide it on §5's terms or not at all.
-
 ## Found this run, not yet chased
 
-- **A recovery you inherited reads exactly like a gap you have.** The premise
-  this run started from — "run 51 created a state with no exit" — was false, and
-  reading the tab progress listener rather than trusting the note found the
-  `STATE_STOP` branch that already clears the field. The change survived because
-  what was missing turned out to be different and narrower (no grammar reached
-  it; the clearing is a round trip late), but it would have been perfectly easy
-  to ship a fix for a defect that did not exist and to have a green test prove
-  it. **Companion to run 51's rule rather than a new one:** that rule says find
-  the second mechanism when a mutation is caught only by an assertion on the
-  implementation; this one says look for it *before* writing the code, whenever
-  the finding is "Firefox does X and we do not".
+- **A surface you replaced gets audited; a surface you inherited does not.**
+  The back-button defect had been understood in the abstract for many runs —
+  `onLocationChange`'s own comment describes it, and `#restoring` exists to
+  prevent it — and was fixed only for the path this fork wrote. Nobody looked at
+  the four gestures Firefox binds to the same movement, because they were not
+  new. **Companion to run 52's rule.** That one says check the premise before
+  building when the finding is "Firefox does X and we do not". This one says the
+  more dangerous case is the opposite: *Firefox does X, we inherited it, and we
+  never asked what our own invariants make of it.*
 
-- **A fixture that crashes clears the thing you are measuring.** The
-  initial-page test first used `about:newtab`, and removing
-  `initialPageLoadedFromUserAction` failed only the assertion that the attribute
-  was set — the assertion on the *consequence* kept passing. Not a weak test:
-  `about:newtab`'s content process segfaults on this configuration (the known
-  x11/24.04 family) and a crashed browser clears the field by an unrelated
-  route. `chrome://browser/content/blanktab.html` is a static document with no
-  script, is in `gInitialPages`, and does not crash; with it the mutation fails
-  the consequence too. General rule, worth keeping: **a mutation caught only by
-  an assertion on the implementation, while the assertion on the consequence
-  still passes, usually means a second mechanism is producing the same outcome.
-  Find it before rewriting the assertion.**
+- **Counting a surface is a method, not a chore.** Every finding since run 50
+  came from a lens — "what did the replaced surface *write*". This one came from
+  an enumeration: 101 keys, 49 commands, 3 of them ours. The lens had been
+  applied four times and would not have found this, because back writes nothing
+  the lens was looking at. Worth keeping as a second technique: **count what the
+  window actually has, in a driven build, and compare it against what a design
+  document claims.** Source files are a bad proxy — `#ifdef` and
+  platform-conditional blocks mean the file and the window disagree.
 
-- **A second deliberate surviving mutation, this run.** Moving `#markAsPending`
-  below `loadURI` survives the whole suite. The ordering is right — the
-  `userTypedValue` setter resets the change tracker the listener raises at load
-  start — but with a remote browser the load goes out over IPC, so `STATE_START`
-  cannot land between two statements of one synchronous block and no honest test
-  can see the difference. Recorded in the source beside the call so it is not
-  "simplified" later. Joins run 46's `detach` survivor.
+- **A test that passes before the fix is not evidence.** A case that looked like
+  a real hole — a page with no node (`about:blank`) leaving a stale index
+  answerable — got a test written for it that passed immediately. It could not
+  have failed: `isCapturable` sits above every branch, so a traversal onto an
+  uncaptured page returns before the map is read. Dropped rather than kept.
+  Green is not the signal; **a green test that was never red proves only that
+  you did not check.**
 
-- **`state.entries[state.index - 1]` races SessionStore's cache.** An assertion
-  on which history entry a mid-load `TabState.collect` would restore passed
-  clean twice and then failed under an unrelated mutation, because the cache is
-  updated asynchronously from the content process. Dropped rather than made to
-  wait: it asserted SessionStore's bookkeeping, not this fork's. Do not add it
-  back.
+- **Two mutations survived because the code was dead, and two because the tests
+  were.** Telling those apart was the whole cost. The dead code (a pruning pass,
+  a defensive clear) was deleted; the dead tests named genuinely reachable cases
+  — a back *after* re-entry, which needs an intervening navigation before there
+  is anything to go back to, and a traversal onto a node that forgetting has
+  deleted while its history entry survives — and were written. The tell:
+  **ask whether an input exists that reaches the mutated line at all.** If none
+  does, no test will ever catch it and the line should go.
 
-- **An sjs that delays a response must use `timer.init`, not
-  `initWithCallback`.** `fixtures/slow.sjs` is the fork's first delaying
-  fixture. Written with `initWithCallback` and an early partial `response.write`
-  it did not delay at all — the page arrived immediately, which reads exactly
-  like a test asserting the wrong thing rather than a broken fixture, and cost
-  two runs of the file to tell apart. The working form is
-  `browser_637020_slow.sjs`'s: `processAsync`, headers only, then
-  `timer.init(fn, ms, TYPE_ONE_SHOT)` with the timer held on the scope.
+- **`nsIWebProgress.loadType` is available in the parent and is worth knowing
+  about.** It carries the docshell's load command, so a progress listener can
+  tell a history traversal (`4`) from a normal load (`1`) from a reload (`2`)
+  without an `nsISHistoryListener` and without its per-browsing-context
+  re-attachment problem.
 
-- **`node --test <directory>` does not work on this machine's node.** Every
-  file in `tests/node/` carries a comment saying to run
-  `node --test browser/components/fos/tests/node/`, and node 22 answers
-  `MODULE_NOT_FOUND` for a bare directory. The working form is
-  `node --test "browser/components/fos/tests/node/*.mjs"`. Not fixed, because
-  it is eight files' worth of comment churn for a one-word difference; recorded
-  here so the next run does not spend five minutes rediscovering it.
-
-- **`./mach lint` with no `-l` crashes on this tree**, in mozlint's stylish
-  formatter: `if err.hint and err.hint not in seen_hints` on a hint that is a
-  dict. It is a formatter bug rather than a lint failure, and it hides real
-  findings behind a traceback. `./mach lint -l eslint -f treeherder <paths>` is
-  what to use; `-f summary` still crashes on the other linters' setup.
-
-- **Testing a chrome module under `node --test` needs `ChromeUtils` stubbed
-  before the module body runs**, which means a dynamic `import()` after setting
-  `globalThis.ChromeUtils`, since static imports hoist.
-  `tests/node/test_forgetpreview.mjs` is the first file in this tree to do it.
-  The alternative — splitting the pure half of a small module into its own file
-  for a test's convenience — was rejected as fragmenting a feature.
-
-- **Recovery around the *migration* is unexercised.** Unchanged from run 47. A
-  mutation moving the migration outside the recovered region survives; both
-  corruption fixtures are rejected by `openConnection` before any migration
-  statement runs. The guard stays. Do not delete it because a coverage tool
-  calls it dead.
-
-- **A deliberate surviving mutation, from run 46.** `detach` closes the open
-  visit *before* leaving the `recording` set. Reversing the two lines survives
-  and no honest test catches it: the ordering narrows a race window rather than
-  establishing an invariant.
-
-- **`BrowserTestUtils.openNewBrowserWindow({private: true})` never returns on
-  this machine.** Unchanged; `browser_zzprivate.js` has the helper and the
-  reason.
-
-- **A clearing dialog cannot be opened standalone.** `Services.ww.openWindow`
-  on `sanitize_v2.xhtml` gets a window with no `resizeDialog` — that method
-  comes from the sub-dialog frame — so the shipped `init()` throws partway
-  through and half the dialog is never set up. Go through `Sanitizer.showUI`
-  and `gDialogBox` with
-  `BrowserTestUtils.promiseAlertDialogOpen(null, url, { isSubDialog: true })`,
-  which is what `browser_zzforgetpreview.js` does.
-
-- **`spoken` on a sidebar query row is set and never read.** Unchanged from
-  runs 43 to 47. Noted rather than chased.
+- **`BrowserTestUtils.browserLoaded` does not fire for a history traversal.** A
+  page coming back out of the bfcache fires no load event, so waiting for one
+  times out — which reads as a hung harness rather than a wrong answer, and cost
+  a full run of the file to tell apart. `waitForLocationChange` is the form.
 
 ## Background jobs
 
-**Nothing is running.** `fossuite52` was the last, and it finished — 990
+**Nothing is running.** `fossuite53` was the last, and it finished — 1015
 browser-chrome checks, 0 failures.
 
 `agent/mutate.sh` is new: apply one replacement, **assert it applied**, run a
