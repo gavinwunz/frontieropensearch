@@ -34,12 +34,20 @@
  * every other way a turn can end works unchanged. It exists because holding a
  * key is exactly what tremor, arthritis, carpal tunnel and fatigue make
  * expensive, and `GRAMMAR.md` §5 promises no separate accessibility mode — a
- * promise a hands-free path with one hand-intensive gesture was not keeping. A
- * modifier is the arm rather than a bare tap because a mis-tapped latch would
- * open the microphone for the whole 30-second deadline, and a modifier is
- * reachable one-fingered through the platform's own sticky keys, which is a
- * mechanism these users already have turned on. `IDEAS.md` (run 30) has the
- * sources and the candidate that was not taken.
+ * promise a hands-free path with one hand-intensive gesture was not keeping.
+ * Shift is reachable one-fingered through the platform's own sticky keys, which
+ * is a mechanism these users already have turned on. `IDEAS.md` (run 30) has
+ * the sources.
+ *
+ * **Tapping F4 latches it too**, with no modifier at all, which is what a user
+ * with one reliable finger would have chosen in the first place. It was held
+ * back for three runs on a real objection: a mis-tap would open the microphone
+ * for the whole 30-second deadline. What unblocked it was noticing that the
+ * objection was never about the tap — shift+F4 has the identical exposure — but
+ * about a latched microphone being bounded only by a clock. `FOSVoiceSession`
+ * now bounds it by what it hears as well, so a mis-tap costs six seconds of
+ * silence, and the tap costs nothing to offer on top of that. `IDEAS.md`
+ * (run 40) has the measurement and the sources.
  *
  * **The transcript writes the command bar.** The bar opens on the press if it
  * was closed, so the words land in the field the user would have typed them
@@ -73,7 +81,7 @@ import {
   TRANSCRIBING,
   VoiceSession,
 } from "./FOSVoiceSession.sys.mjs";
-import { audioIsSpeech } from "./FOSVoiceTranscript.sys.mjs";
+import { MIN_RMS, audioIsSpeech } from "./FOSVoiceTranscript.sys.mjs";
 import { ensureStylesheet } from "./FOSChrome.sys.mjs";
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
@@ -98,6 +106,23 @@ export const TASK_NAME = "automatic-speech-recognition";
 export const BACKEND = "onnx-native";
 export const DTYPE = "q8";
 const MAX_NEW_TOKENS = 24;
+
+/**
+ * How the level is sampled while a recording runs.
+ *
+ * 100ms is chosen against what it is measuring rather than as a round number:
+ * the shortest gap that has to *not* register as the end of an utterance is the
+ * pause between two words, and the shortest that has to register as speech is a
+ * single word at speed (~250ms, `MIN_UTTERANCE_MS`). Ten polls a second puts at
+ * least two inside the shorter of those while costing an order of magnitude
+ * less main-thread time than a frame does.
+ *
+ * 2048 samples is ~43ms at 48kHz, which is longer than a glottal pulse and
+ * shorter than a syllable — an RMS over it is a measure of the voice rather
+ * than of where in the waveform the poll happened to land.
+ */
+const LEVEL_POLL_MS = 100;
+const LEVEL_FFT_SIZE = 2048;
 
 /**
  * Where the weights come from the one time they are fetched.
@@ -182,6 +207,18 @@ class MicRecorder {
   #stream = null;
   #recorder = null;
   #chunks = [];
+  #levelContext = null;
+  #levelTimer = 0;
+
+  /**
+   * Called with `true` when the level crosses the speech floor and `false` when
+   * it falls back below, and never twice with the same answer. What that means
+   * for the turn is entirely `VoiceSession`'s to decide — this reports the
+   * room, not a verdict.
+   *
+   * @type {?Function}
+   */
+  onLevel = null;
 
   constructor(window) {
     this.#window = window;
@@ -213,6 +250,68 @@ class MicRecorder {
       }
     });
     this.#recorder.start();
+    this.#watchLevel();
+  }
+
+  /**
+   * Watch the level while the recording runs, for the two bounds a latched turn
+   * has that a held one does not (`FOSVoiceSession`).
+   *
+   * This is the one thing the class comment above says it does not do, so it is
+   * worth being exact about how much of that is given up. The rejected design
+   * was an `AudioWorklet` drained frame by frame, which is per-frame JS on the
+   * audio path for the whole utterance. An `AnalyserNode` polled ten times a
+   * second is a different size of thing: the node keeps its own ring buffer in
+   * C++ whether or not anybody reads it, and the cost here is one 2048-sample
+   * copy and a sum every 100ms — about 0.02ms of main-thread work per poll.
+   * Nothing is decoded, nothing is retained, and the recording still reaches
+   * the model through `MediaRecorder` exactly as before.
+   *
+   * The analyser is deliberately not connected onward to a destination. It is
+   * fed by a live `MediaStreamAudioSourceNode`, which pulls on its own, and
+   * routing a microphone to the speakers is how a browser gets feedback.
+   *
+   * The floor is `FOSVoiceTranscript`'s `MIN_RMS` and not a number of this
+   * file's own, so the bound and the audio gate cannot disagree about what
+   * counts as speech. See `VoiceSession.heard`.
+   */
+  #watchLevel() {
+    let speaking = false;
+    try {
+      this.#levelContext = new this.#window.AudioContext();
+      const source = this.#levelContext.createMediaStreamSource(this.#stream);
+      const analyser = this.#levelContext.createAnalyser();
+      analyser.fftSize = LEVEL_FFT_SIZE;
+      source.connect(analyser);
+      const frame = new Float32Array(analyser.fftSize);
+      this.#levelTimer = this.#window.setInterval(() => {
+        analyser.getFloatTimeDomainData(frame);
+        let sum = 0;
+        for (const sample of frame) {
+          sum += sample * sample;
+        }
+        const loud = Math.sqrt(sum / frame.length) >= MIN_RMS;
+        if (loud !== speaking) {
+          speaking = loud;
+          this.onLevel?.(loud);
+        }
+      }, LEVEL_POLL_MS);
+    } catch (error) {
+      // A turn without a level monitor is the turn that shipped before this
+      // existed: bounded by its deadlines and by the key, and correct, just
+      // less considerate. It is not worth failing a recording over.
+      console.error(error);
+    }
+  }
+
+  #stopWatchingLevel() {
+    if (this.#levelTimer) {
+      this.#window.clearInterval(this.#levelTimer);
+      this.#levelTimer = 0;
+    }
+    const context = this.#levelContext;
+    this.#levelContext = null;
+    context?.close?.().catch?.(console.error);
   }
 
   /**
@@ -267,6 +366,7 @@ class MicRecorder {
   }
 
   #release() {
+    this.#stopWatchingLevel();
     this.#recorder = null;
     for (const track of this.#stream?.getTracks() ?? []) {
       track.stop();
@@ -342,6 +442,7 @@ export class FOSVoiceInput {
   constructor(window) {
     this.#window = window;
     this.#recorder = new MicRecorder(window);
+    this.#watchRecorderLevel();
   }
 
   /**
@@ -414,6 +515,7 @@ export class FOSVoiceInput {
   useBackend({ recorder, createEngine, listFiles } = {}) {
     if (recorder) {
       this.#recorder = recorder;
+      this.#watchRecorderLevel();
     }
     if (createEngine) {
       this.#createEngine = createEngine;
@@ -432,7 +534,7 @@ export class FOSVoiceInput {
         break;
       case "keyup":
         if (event.key === TALK_KEY) {
-          this.#apply(this.#session.release());
+          this.#releaseKey(event);
         }
         break;
       case "deactivate":
@@ -473,6 +575,7 @@ export class FOSVoiceInput {
       // the press that ends a latched turn ends it whether or not the modifier
       // is down, so a user who latched with shift and reached back for a bare
       // key still stops. The session owns that rule — see `VoiceSession.press`.
+      this.#pressedAt = event.timeStamp;
       this.#press({ latch: event.shiftKey });
       return;
     }
@@ -500,6 +603,38 @@ export class FOSVoiceInput {
    * read at the notice, which are the two ends of one turn.
    */
   #latchedTurn = false;
+
+  /** The talk key's own keydown timestamp, for telling a tap from a hold. */
+  #pressedAt = 0;
+
+  /**
+   * The talk key came up.
+   *
+   * The two event timestamps are what the hold is measured from, rather than
+   * two readings of the clock taken inside these handlers. Under load those are
+   * not the same number — a handler can run some way after the event it is
+   * handling — and the difference lands exactly on the boundary this is used to
+   * decide, turning a deliberate hold on a busy machine into a tap.
+   *
+   * A bare tap latches on the way up rather than at the press, so the wording
+   * of any later notice — like the indicator's stop hint, which reads the
+   * session directly — has to be settled here too. `#latchedTurn` is only ever
+   * turned on: the press that *ends* a latched turn has already cleared
+   * `latched` by the time anything reads it, which is the whole reason this
+   * field exists rather than a call through to the session.
+   *
+   * @param {KeyboardEvent} event The talk key's keyup.
+   */
+  #releaseKey(event) {
+    const effect = this.#session.release({
+      heldMs: this.#pressedAt ? event.timeStamp - this.#pressedAt : Infinity,
+    });
+    this.#pressedAt = 0;
+    if (this.#session.latched) {
+      this.#latchedTurn = true;
+    }
+    this.#apply(effect);
+  }
 
   #press({ latch = false } = {}) {
     // The bar is the surface the words appear in, so it opens with the press
@@ -600,6 +735,21 @@ export class FOSVoiceInput {
         new this.#window.InputEvent("input", { bubbles: true })
       );
     }
+  }
+
+  /**
+   * Hand the recorder's level reports to the session.
+   *
+   * Assigned to whatever recorder this front end is currently using rather than
+   * passed to the constructor, so a test double is wired the same way the real
+   * device is and can drive both bounds by calling `onLevel` directly — no
+   * microphone, no audio, and no waiting six seconds to find out what happens
+   * when nobody speaks.
+   */
+  #watchRecorderLevel() {
+    this.#recorder.onLevel = loud => {
+      this.#apply(loud ? this.#session.heard() : this.#session.quiet());
+    };
   }
 
   #armDeadline(ms) {

@@ -41,11 +41,19 @@
  *   deliberately not guessed at before it has been used in a browser — see
  *   `GRAMMAR.md` §8.
  *
- *   *There are two gestures and one turn.* Push-to-talk is the default, and a
- *   latched turn — started by a press and ended by the next one — is that same
- *   turn with a different ending rather than a second mode with a second path.
- *   The whole of the difference is a handful of lines in `press` and one in
- *   `release`, which is the test of whether it really is one path.
+ *   *There are three gestures and one turn.* Push-to-talk is the default; shift
+ *   latches; and a bare tap — a press that comes back up inside `TAP_MS` —
+ *   latches too. All three arm, listen, transcribe and run down exactly one
+ *   path, and the whole of the difference between them is which event ends the
+ *   turn. That is the test of whether it really is one path, and the reason to
+ *   keep applying it: a gesture that needed its own state would be a second
+ *   mode wearing a gesture's clothes.
+ *
+ *   *A microphone nobody is holding is bounded by what it hears.* The turn's
+ *   deadlines are about time; these two are about the room, and they exist only
+ *   for the latched turn, because it is the only one with nobody's finger on a
+ *   key. They are what makes the bare tap offerable — see
+ *   `INITIAL_SILENCE_DEADLINE_MS`.
  *
  *   *No stage may last forever, because nothing else will end it.* This is the
  *   one rule that comes from Gecko rather than from the interface. A chrome
@@ -119,6 +127,62 @@ const DEADLINES = {
 };
 
 /**
+ * The two bounds that come from what the microphone hears rather than from the
+ * clock, and they apply to a latched turn only.
+ *
+ * `LISTENING_DEADLINE_MS` above is a bound on a *turn*. Neither of these is:
+ * they are bounds on an **unattended microphone**, and the distinction is the
+ * whole of why they exist. A held turn has a finger on the key, so the user is
+ * present continuously and the only thing that should end their listen is
+ * letting go. A latched turn has nobody's finger on anything, no prompt and no
+ * platform indicator (see the head of this file), and thirty seconds is a long
+ * time for a device in that state to stay open because somebody brushed a key.
+ *
+ * Speech recognisers have named both of these for decades — Windows'
+ * `SpeechRecognizerTimeouts` calls them `InitialSilenceTimeout` and
+ * `EndSilenceTimeout` — and this is that pair, with their documented example
+ * values as the starting point. `IDEAS.md` (run 40) has the sources.
+ *
+ * `INITIAL_SILENCE` is "the microphone opened and nobody ever said anything".
+ * Six seconds is long enough to cover a user who latched deliberately and then
+ * gathered their thoughts, and short enough that a mis-tap costs six seconds
+ * rather than thirty. It is the bound that makes a bare tap safe enough to
+ * offer at all — see `release`, where the tap is read.
+ *
+ * `END_SILENCE` is "somebody spoke and has now stopped", which is endpointing
+ * rather than safety, and it is the reason a latched turn is worth using: the
+ * turn ends itself when the utterance does, so the second press becomes a way
+ * to stop early rather than the only way to stop. One and a half seconds sits
+ * just above Windows' 1.2s example, because a command bar line is composed
+ * more deliberately than dictation and a pause mid-line must not end the turn.
+ *
+ * Both are re-armed against the elapsed listen rather than added to it, so
+ * neither can push a turn past `LISTENING_DEADLINE_MS` — Whisper's own 30s mel
+ * window, past which audio is discarded by the model regardless. A bound that
+ * extended it would silently throw the user's last words away.
+ */
+export const INITIAL_SILENCE_DEADLINE_MS = 6000;
+export const END_SILENCE_DEADLINE_MS = 1500;
+
+/**
+ * How long a press may last and still be a tap rather than a hold.
+ *
+ * The bare tap is the gesture a user with one reliable finger would actually
+ * choose: no modifier, no chord, no second key. It could not be offered while
+ * the only bound on the turn it started was thirty seconds; with the two above
+ * it can, because the cost of a mis-tap is now a microphone that closes itself
+ * after six seconds of hearing nothing.
+ *
+ * 400ms is under the 500ms both major platforms use for a long press, and over
+ * an ordinary tap of ~100ms. The band between is genuinely ambiguous — a
+ * one-word utterance said at speed runs 250–400ms (`MIN_UTTERANCE_MS`) — but
+ * guessing wrong there stopped being expensive once `END_SILENCE` existed: a
+ * hold mistaken for a tap latches, the user keeps talking, and the turn ends
+ * a second and a half after they stop instead of the moment they let go.
+ */
+export const TAP_MS = 400;
+
+/**
  * One window's push-to-talk turn.
  *
  * The caller drives it with what happened — the key went down, the microphone
@@ -147,6 +211,25 @@ export class VoiceSession {
   #notice = null;
   #restore = "";
   #latched = false;
+  #now;
+  /** When LISTENING began, so the silence bounds cannot outrun Whisper's 30s. */
+  #listeningSince = 0;
+  /** Whether the level has crossed the speech floor at any point this turn. */
+  #heardSpeech = false;
+  /** Whether it has since fallen back below it. */
+  #inSilence = false;
+
+  /**
+   * @param {object} [options]
+   * @param {Function} [options.now] Milliseconds from any monotonic-enough
+   *   source, used for one thing only: keeping the silence bounds inside the
+   *   model's listening window. Injected rather than read directly so that the
+   *   one part of this module which is about duration rather than order stays
+   *   testable under `node --test` without waiting in real time for it.
+   */
+  constructor({ now = () => Date.now() } = {}) {
+    this.#now = now;
+  }
 
   /** @returns {string} One of IDLE, ARMING, LISTENING, TRANSCRIBING. */
   get state() {
@@ -206,13 +289,54 @@ export class VoiceSession {
    */
   #enter(state, rest = {}) {
     this.#state = state;
+    if (state === LISTENING) {
+      this.#listeningSince = this.#now();
+      return this.#effect({ ...rest, deadline: this.#listenDeadline() });
+    }
     return this.#effect({ ...rest, deadline: DEADLINES[state] ?? null });
+  }
+
+  /**
+   * How long the listen may last from *now*, which is one question with three
+   * answers and one subtraction.
+   *
+   * A held turn is bounded only by the model's window: the user's finger is the
+   * decision, and a bound keyed on what the room sounds like would cut off
+   * somebody who paused to think with the key still down.
+   *
+   * A latched turn is bounded by whichever of the three is nearest. The
+   * subtraction is the part worth reading — every silence bound is expressed as
+   * time *remaining* in the model's window rather than as time added to now, so
+   * re-arming on each word cannot walk a turn past the 30 seconds Whisper will
+   * actually transcribe. §9's lesson was that a bound defined in terms of an
+   * ordinary event disappears when the event does; this is the same lesson
+   * about a bound defined in terms of the moment it happens to be armed.
+   *
+   * @returns {number}
+   */
+  #listenDeadline() {
+    if (!this.#latched) {
+      return LISTENING_DEADLINE_MS;
+    }
+    const remaining = Math.max(
+      0,
+      LISTENING_DEADLINE_MS - (this.#now() - this.#listeningSince)
+    );
+    if (!this.#heardSpeech) {
+      return Math.min(INITIAL_SILENCE_DEADLINE_MS, remaining);
+    }
+    if (this.#inSilence) {
+      return Math.min(END_SILENCE_DEADLINE_MS, remaining);
+    }
+    return remaining;
   }
 
   #reset() {
     this.#state = IDLE;
     this.#echo = "";
     this.#latched = false;
+    this.#heardSpeech = false;
+    this.#inSilence = false;
   }
 
   /**
@@ -261,6 +385,8 @@ export class VoiceSession {
     this.#echo = "";
     this.#notice = null;
     this.#latched = !!latch;
+    this.#heardSpeech = false;
+    this.#inSilence = false;
     return this.#enter(ARMING, { capture: "start" });
   }
 
@@ -298,12 +424,93 @@ export class VoiceSession {
    * released immediately, since not holding it is the entire point. What ends a
    * latched turn is the next press, or one of the endings every turn already
    * has — Escape, a lost focus, or the `LISTENING` deadline.
+   *
+   * A key that comes up inside `TAP_MS` did not end a turn, it started one:
+   * this is the bare tap, and it is the same gesture that used to be refused as
+   * "too short to hear". Nothing about the turn changes except which event will
+   * end it — the same claim `press`'s latch makes, and true for the same reason
+   * — so this latches in place rather than starting anything over. The listen
+   * is re-armed because a turn that has just become unattended is bounded by
+   * silence and one that was held is not.
+   *
+   * Reading the tap here rather than at the press is not a shortcut. Whether a
+   * press is a tap is not knowable while it is happening; the alternative is to
+   * ask the user to declare it with a modifier, which is the thing the bare tap
+   * exists to remove.
+   *
+   * `heldMs` is measured by the shell and judged here, which is the same split
+   * as `heard`: the caller reports a fact it is the only one able to observe —
+   * the gap between the real keydown and keyup timestamps, which is not the
+   * same as the gap between the two handlers running — and this decides what
+   * the fact means. It defaults to a hold, so a caller that does not measure
+   * gets the behaviour that existed before the tap did.
+   *
+   * @param {object} [options]
+   * @param {number} [options.heldMs] How long the key was actually down.
    */
-  release() {
+  release({ heldMs = Infinity } = {}) {
     if (this.#latched) {
       return this.#effect();
     }
+    if (this.active && heldMs < TAP_MS) {
+      this.#latched = true;
+      return this.#state === LISTENING
+        ? this.#effect({ deadline: this.#listenDeadline() })
+        : this.#effect();
+    }
     return this.#finish();
+  }
+
+  /**
+   * The level crossed the speech floor.
+   *
+   * Reported by the shell, because it is the only part that can hear anything,
+   * and against `FOSVoiceTranscript`'s own `MIN_RMS` rather than a second
+   * threshold of this module's choosing. Sharing the floor is what guarantees
+   * the bound cannot end a turn the audio gate would have accepted: the gate
+   * averages over the whole recording, pauses included, so any window loud
+   * enough to be speech on its own is louder than the average it will be judged
+   * by.
+   *
+   * A held turn ignores this, and so does a turn already known to be speaking —
+   * the second is not an optimisation but the rule about restarting clocks: a
+   * word arriving every hundred milliseconds must not re-arm anything, or the
+   * bound would only ever measure the gap since the last poll.
+   */
+  heard() {
+    if (this.#state !== LISTENING || !this.#latched) {
+      return this.#effect();
+    }
+    if (this.#heardSpeech && !this.#inSilence) {
+      return this.#effect();
+    }
+    this.#heardSpeech = true;
+    this.#inSilence = false;
+    return this.#effect({ deadline: this.#listenDeadline() });
+  }
+
+  /**
+   * The level fell back below the floor.
+   *
+   * This arms the end-silence bound and nothing else, which is why the gaps
+   * between ordinary words cost nothing: the pause has to outlast
+   * `END_SILENCE_DEADLINE_MS` before it means anything, and the next word
+   * cancels it by re-arming through `heard`. The deadline is the hysteresis, so
+   * the level check itself needs none.
+   *
+   * Silence before anybody has spoken is not endpointing — it is the state the
+   * turn started in, and `INITIAL_SILENCE` already bounds it — so it is ignored
+   * rather than treated as the end of an utterance that never began.
+   */
+  quiet() {
+    if (this.#state !== LISTENING || !this.#latched) {
+      return this.#effect();
+    }
+    if (!this.#heardSpeech || this.#inSilence) {
+      return this.#effect();
+    }
+    this.#inSilence = true;
+    return this.#effect({ deadline: this.#listenDeadline() });
   }
 
   /**
@@ -468,10 +675,13 @@ export class VoiceSession {
    * — if the user is still speaking it is a long utterance, and if the key-up
    * was lost it is a room the user has stopped talking in — so it is
    * transcribed rather than discarded, and the two cases need no telling apart:
-   * a long utterance transcribes, and a room does not clear the audio gate.
-   * This is the only bound a latched turn has, since a latched turn has no key
-   * coming up to end it, which is why it ends the recording directly rather
-   * than through `release`.
+   * a long utterance transcribes, and a room does not clear the audio gate. It
+   * ends the recording directly rather than through `release`, because a
+   * latched turn ignores `release` and would otherwise be unbounded.
+   *
+   * A latched turn reaches here by three different clocks — the model's window,
+   * `INITIAL_SILENCE` and `END_SILENCE` — and only the first of those needs
+   * telling apart from the others. See the branch below.
    *
    * An arm or a transcribe that runs out is the failure that stage reports
    * anyway. The device never opened, or the engine never answered; either way
@@ -480,6 +690,25 @@ export class VoiceSession {
    */
   expired() {
     if (this.#state === LISTENING) {
+      // Which of the three listen bounds just ran out is one question: was
+      // anything ever said? If nothing was, this is a microphone that opened
+      // for a key nobody meant to press, there is no audio worth the decode,
+      // and the turn ends the way every other turn that produced no speech
+      // ends. Inventing a notice for it would make a mis-tap a thing the user
+      // has to learn about; `NOTICE_NOTHING_HEARD` is already exactly true.
+      //
+      // If something was said, every remaining case — the utterance ended, the
+      // model's window ran out, a held key was lost — means the same thing as a
+      // key coming up, and goes the same way.
+      if (this.#latched && !this.#heardSpeech) {
+        this.#reset();
+        this.#notice = NOTICE_NOTHING_HEARD;
+        return this.#effect({
+          input: this.#restore,
+          notice: NOTICE_NOTHING_HEARD,
+          capture: "stop",
+        });
+      }
       return this.#finish();
     }
     if (this.#state === ARMING || this.#state === TRANSCRIBING) {

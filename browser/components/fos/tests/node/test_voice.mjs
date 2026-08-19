@@ -31,17 +31,37 @@ import {
 import {
   ARMING,
   ARMING_DEADLINE_MS,
+  END_SILENCE_DEADLINE_MS,
   IDLE,
+  INITIAL_SILENCE_DEADLINE_MS,
   LISTENING,
   LISTENING_DEADLINE_MS,
   NOTICE_NOTHING_HEARD,
   NOTICE_TOO_QUIET,
   NOTICE_TOO_SHORT,
   NOTICE_UNAVAILABLE,
+  TAP_MS,
   TRANSCRIBING,
   TRANSCRIBING_DEADLINE_MS,
   VoiceSession,
 } from "../../FOSVoiceSession.sys.mjs";
+
+/**
+ * A clock a test can move by hand.
+ *
+ * The session reads one only to keep the silence bounds inside the model's
+ * listening window, and that subtraction is the thing most worth testing about
+ * them — so it has to be possible to be 29 seconds into a turn without having
+ * waited 29 seconds.
+ *
+ * @param {number} [start]
+ */
+function clock(start = 0) {
+  const c = { at: start };
+  c.now = () => c.at;
+  c.tick = ms => (c.at += ms);
+  return c;
+}
 
 /**
  * A recording of `ms` milliseconds whose samples alternate about zero at
@@ -312,10 +332,13 @@ test("a latched turn stopped before the microphone opened complains about nothin
 test("the listening deadline bounds a latched turn, which has no key to end it", () => {
   // The load-bearing one. A latched turn ignores `release`, so a deadline that
   // ended a listen by way of `release` would bound every turn in the design
-  // except the only one with nobody's finger on the key.
+  // except the only one with nobody's finger on the key. It reaches the model's
+  // own window only once somebody is speaking; until then the shorter
+  // initial-silence bound is what holds, which is the next test down.
   const session = new VoiceSession();
   session.press({ text: "", latch: true });
-  assert.equal(session.armed().deadline, LISTENING_DEADLINE_MS);
+  session.armed();
+  assert.equal(session.heard().deadline, LISTENING_DEADLINE_MS);
 
   const out = session.expired();
   assert.equal(out.capture, "stop", "the microphone closed");
@@ -324,14 +347,186 @@ test("the listening deadline bounds a latched turn, which has no key to end it",
   assert.equal(session.state, IDLE, "the turn ends");
 });
 
-test("a tap that never reaches the microphone is refused as too short", () => {
+test("a hold released before the microphone opened is refused as too short", () => {
   const session = new VoiceSession();
   session.press({ text: "memex" });
-  const effect = session.release();
+  const effect = session.release({ heldMs: TAP_MS * 3 });
   assert.equal(effect.notice, NOTICE_TOO_SHORT);
   assert.equal(effect.input, "memex", "and the bar goes back to what it held");
   assert.equal(effect.run, null);
   assert.equal(session.state, IDLE);
+});
+
+/*
+ * The bare tap, and the two bounds that made it offerable.
+ *
+ * The tap was held back for three runs because a mis-tap would open the
+ * microphone for the full listening deadline. What these check is the answer to
+ * that: the exposure was never a property of the tap — shift+F4 had exactly the
+ * same one — but of a latched microphone bounded only by a clock.
+ */
+
+test("a key that comes back up inside the tap window latches instead of ending", () => {
+  const session = new VoiceSession();
+  session.press({ text: "half typed" });
+  assert.equal(session.latched, false, "a press is a hold until proven a tap");
+  session.armed();
+
+  const up = session.release({ heldMs: TAP_MS - 1 });
+  assert.equal(session.latched, true, "the tap latched it");
+  assert.equal(up.capture, null, "the device stays open");
+  assert.equal(session.state, LISTENING, "on the same turn, in the same stage");
+
+  // And from here it is a latched turn like any other, ended by the next press.
+  const ended = session.press({ text: "half typed" });
+  assert.equal(ended.capture, "stop");
+  assert.equal(session.final(" Enter cap.").run, "enter cap");
+});
+
+test("a hold is still a hold, and an unmeasured release is one too", () => {
+  for (const heldMs of [TAP_MS, TAP_MS + 1, undefined]) {
+    const session = new VoiceSession();
+    session.press({ text: "" });
+    session.armed();
+    const up =
+      heldMs === undefined ? session.release() : session.release({ heldMs });
+    assert.equal(session.latched, false, `heldMs=${heldMs} did not latch`);
+    assert.equal(up.capture, "stop", `heldMs=${heldMs} ended the turn`);
+    assert.equal(session.state, TRANSCRIBING);
+  }
+});
+
+test("a tap latched mid-arming picks up the silence bound when it starts listening", () => {
+  // The microphone had not opened yet, so there was no listen to re-arm. The
+  // bound has to arrive with the listen rather than with the gesture.
+  const session = new VoiceSession();
+  session.press({ text: "" });
+  assert.equal(session.state, ARMING);
+  session.release({ heldMs: 20 });
+  assert.equal(session.armed().deadline, INITIAL_SILENCE_DEADLINE_MS);
+});
+
+test("a latched microphone that hears nothing closes itself, and transcribes nothing", () => {
+  // The whole of the answer to the mis-tap objection. Six seconds rather than
+  // thirty, no decode, and the notice a turn that produced no speech already
+  // has — a mis-tap is not a thing the user should have to learn a word for.
+  const session = new VoiceSession();
+  session.press({ text: "memex" });
+  assert.equal(session.armed().deadline, LISTENING_DEADLINE_MS, "held: no bound");
+  session.release({ heldMs: 10 });
+
+  const out = session.expired();
+  assert.equal(out.notice, NOTICE_NOTHING_HEARD);
+  assert.equal(out.capture, "stop", "the device closed");
+  assert.equal(out.input, "memex", "and the bar went back");
+  assert.equal(out.run, null, "nothing ran");
+  assert.equal(session.state, IDLE, "without going through the model");
+});
+
+test("a latched turn ends itself a beat after the speaking stops", () => {
+  const c = clock();
+  const session = new VoiceSession({ now: c.now });
+  session.press({ text: "", latch: true });
+  assert.equal(session.armed().deadline, INITIAL_SILENCE_DEADLINE_MS);
+
+  c.tick(900);
+  assert.equal(
+    session.heard().deadline,
+    LISTENING_DEADLINE_MS - 900,
+    "speech lifts the initial-silence bound"
+  );
+
+  c.tick(1200);
+  assert.equal(
+    session.quiet().deadline,
+    END_SILENCE_DEADLINE_MS,
+    "and stopping arms the end-silence one"
+  );
+
+  const out = session.expired();
+  assert.equal(out.capture, "stop");
+  assert.equal(session.state, TRANSCRIBING, "this audio is real, so it is used");
+  assert.equal(session.final(" Enter cap.").run, "enter cap");
+});
+
+test("the gap between two words is not the end of an utterance", () => {
+  // The end-silence deadline is the hysteresis, which is why the level check
+  // needs none: a pause only means anything if it outlasts the bound.
+  const c = clock();
+  const session = new VoiceSession({ now: c.now });
+  session.press({ text: "", latch: true });
+  session.armed();
+  c.tick(500);
+  session.heard();
+
+  c.tick(300);
+  assert.equal(session.quiet().deadline, END_SILENCE_DEADLINE_MS);
+  c.tick(200);
+  assert.equal(
+    session.heard().deadline,
+    LISTENING_DEADLINE_MS - 1000,
+    "the next word puts the model's window back"
+  );
+  assert.equal(session.state, LISTENING, "and the turn never ended");
+});
+
+test("a level report that says what is already true does not restart a clock", () => {
+  // A word arriving every hundred milliseconds must not re-arm anything, or the
+  // bound would only ever measure the gap since the last poll.
+  const session = new VoiceSession({ now: clock().now });
+  session.press({ text: "", latch: true });
+  session.armed();
+  session.heard();
+  assert.equal(session.heard().deadline, null, "still speaking");
+  session.quiet();
+  assert.equal(session.quiet().deadline, null, "still quiet");
+});
+
+test("the silence bounds cannot push a turn past the model's own window", () => {
+  // Whisper transcribes a fixed 30-second window and discards the rest, so a
+  // bound expressed as time added to now — rather than as time remaining —
+  // would quietly throw the user's last words away.
+  const c = clock();
+  const session = new VoiceSession({ now: c.now });
+  session.press({ text: "", latch: true });
+  session.armed();
+
+  c.tick(LISTENING_DEADLINE_MS - 1000);
+  assert.equal(session.heard().deadline, 1000, "a second of window is left");
+  assert.equal(
+    session.quiet().deadline,
+    1000,
+    "and end-silence is clamped to it rather than adding to it"
+  );
+
+  c.tick(2000);
+  assert.equal(session.heard().deadline, 0, "past the window, nothing is left");
+});
+
+test("a held turn is bounded by the key and never by the room", () => {
+  // A finger on the key is a user who is present. Ending their listen because
+  // they paused to think would be the bound doing harm rather than good.
+  const c = clock();
+  const session = new VoiceSession({ now: c.now });
+  session.press({ text: "kept" });
+  assert.equal(session.armed().deadline, LISTENING_DEADLINE_MS);
+
+  assert.equal(session.heard().deadline, null, "the level is not listened to");
+  assert.equal(session.quiet().deadline, null);
+  c.tick(LISTENING_DEADLINE_MS);
+  assert.equal(session.state, LISTENING, "the turn is still going");
+  assert.equal(session.release({ heldMs: 9000 }).capture, "stop", "until let go");
+});
+
+test("a level report outside a listen is ignored, like every other stale event", () => {
+  const session = new VoiceSession();
+  assert.equal(session.heard().deadline, null, "idle");
+  session.press({ text: "", latch: true });
+  assert.equal(session.heard().deadline, null, "arming");
+  session.armed();
+  session.press({ text: "" });
+  assert.equal(session.state, TRANSCRIBING);
+  assert.equal(session.quiet().deadline, null, "transcribing");
 });
 
 test("silence does not execute, and puts the bar back", () => {
