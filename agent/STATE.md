@@ -35,128 +35,133 @@ demo flow runs as one automated sequence. Read `BUILT.md` when the question is
 Shipped since the phase plan ran out, in order: the cross-trail merge offer, the
 embedding tier and its measurement, the model-download verb and the consent rule
 behind it, the voice path with both gestures and its silence bounds, `done` and
-the re-entry resume it forced, the Field's arrangement surviving a restart, and
-— this run — "This page made you ask", the sidebar's second page-scoped
-section.
+the re-entry resume it forced, the Field's arrangement surviving a restart,
+"This page made you ask" as the sidebar's second page-scoped section, and — this
+run — **forgetting**: the store's first delete of any kind, joined to Clear
+Recent History and Forget About This Site.
 
 ## In progress
 
 Nothing waits on a person. **Nothing is running — the harness is free.**
 
-Run 43 built item 1 off the last run's list: `query.source_node_id` had been
-written on every query since `001-initial.sql` and read by nothing. The sidebar
-now shows "This page made you ask" beside the crossings — the two directions of
-one edge, both keyed by URL. `run43.sh` is the focused job (`browser_commandbar`,
-`browser_contextengine`, `browser_contextsidebar`, which is what reproduces a
-shared-window failure in two minutes rather than twenty); `run43full.sh` is the
-whole FOS suite. Green: **304 node checks, xpcshell clean, 850 browser-chrome
-checks, 0 failures** — up from 841.
+Run 44 did not take an item off the last run's list. It took a new lens, as the
+list itself asked for, and the lens found a defect rather than an idea: **the
+Context Engine had no delete of any kind, and `nsIClearDataService` had never
+heard of it.** Clear Recent History and Forget About This Site cleared Places
+and left the richer record — every query, the page each was typed from, every
+dwell time — intact beside it. Two documents and a shipped menu item all said
+otherwise, so this was a false claim rather than a missing feature, and that is
+what made it beat everything on the list.
 
-**Eleven mutations, all eleven caught**, across the store's SQL, the view model
-and the wiring. Unlike run 42 the run did find a bug, and found it by running
-rather than by mutating: see the exclusion below.
+Built: `forgetHost` / `forgetRange` / `forgetAll` on the store, and
+`FOSForget.sys.mjs` registering it as a `CLEAR_HISTORY` cleaner. The four rules
+a delete follows are in `context-engine/SCHEMA.md` §Forgetting — reparent past a
+forgotten node rather than delete its subtree, a query goes with the page it
+landed on, a surviving query's `source_node_id` is nulled, and an emptied
+context is deleted with its merge family weighed whole.
 
-Run 42's lint debt is cleared — seven errors, one of them load-bearing.
+Green: **304 node checks, 188 xpcshell subtests (up from 172), 857
+browser-chrome checks, 0 failures** — up from 850. **Thirteen mutations, all
+thirteen caught**: eleven against the store's delete graph and two against the
+wiring only a real browser reaches.
 
-Older gated jobs, unchanged and not needed this run: `run36`/`run37` (embedding
-measurement and the tier on it), `run39` (the merge offer), `run29`/`run30` (the
-speech latency measurement and the voice path in a real browser). All of them
-need `agent/jobs/local-hub.py` serving weights from
-`/data/ml-models/onnx-models` with `MOZ_MODELS_HUB` pointed at it, because
-mochitest kills the process on a non-local weight fetch. Static embedding
-weights are at `.../mozilla/static-embeddings/` (~86MB for both dimensions; a
-shipped build needs only d256's 30MB).
+`agent/run44full.sh` is the whole FOS suite. Older gated jobs, unchanged and not
+needed this run: `run36`/`run37` (embedding measurement and the tier on it),
+`run39` (the merge offer), `run29`/`run30` (the speech latency measurement and
+the voice path in a real browser), `run43` (the three-file alphabetical prefix
+that reproduces a shared-window failure in two minutes). All the model ones need
+`agent/jobs/local-hub.py` serving weights from `/data/ml-models/onnx-models`
+with `MOZ_MODELS_HUB` pointed at it, because mochitest kills the process on a
+non-local weight fetch.
 
 **One thing is deliberately unverified and should stay flagged**: the positive
 half of `test_the_level_monitor_runs_against_a_real_capture` cannot run on this
 machine, because there is no audio output device for Web Audio to start a graph
-against. The test asserts the degradation here and says so in its output. The
-real level path — an analyser actually reading a microphone — has never been
-observed working, only reasoned about; the first machine with audio hardware
-should run that file and check the positive branch is taken.
+against. The real level path — an analyser actually reading a microphone — has
+never been observed working, only reasoned about; the first machine with audio
+hardware should run that file and check the positive branch is taken.
+
+**A second thing is now unverified in the same way**: forgetting has never been
+watched happening in a live session. What the store does is covered at both
+levels; what the *window* does while a page it is showing is forgotten is
+reasoned about below and has not been observed. That is the next task.
 
 `main` is at `phase-3`. `agent/dev` is pushed through this run's commits.
 
 ## Next task
 
-The phase plan is complete. *Going looking* has now beaten working down this
-list three runs running — 41 found `done`, 42 found the Field's restart, 43
-found the exclusion bug by running what it had just built. The schema audit that
-fed 42 and 43 is spent, so the next run needs a different lens again.
+*Going looking* has now beaten the standing list four runs running, and this run
+says something about why: the last three lenses all pointed inward at the
+component, and the one that paid pointed at the seam between the component and
+Firefox. Prefer a lens of that shape next.
 
-1. **Sustained resize of the crowded overview.** Recorded in `IDEAS.md` run 32
-   and *not* solved: the burst is fixed (53ms → 1.19ms) but one rebuild is
-   18.27ms p50, longer than a frame, so continuous resizing of the worst case
-   the design permits still costs ~21ms a frame over the control. The fix is to
-   extend the reposition fast path to cover what `render` rebuilds. Bounded
-   value — it is the deliberate worst case, and dragging a window edge with the
-   overview up is rare.
+1. **Forgetting has to reach the live session.** This run's own leftover and the
+   clear first choice. The store is cleared; the Field's cards and the rail's
+   tree are in-memory and are not, so a page forgotten while it is on screen
+   stays on screen until restart, and further activity on it writes rows
+   pointing at a node that is gone. **Do not "fix" this by emptying the engine's
+   id map** — `#nodeIds` missing an entry is what makes reconciliation *create* a
+   node, so clearing it would write back everything just forgotten, on the next
+   settle. The real answer prunes the session tree and the Field alongside the
+   store, and it needs a decision first: what happens to the tab you are looking
+   at when you forget the site it is on. Closing it is a data-loss surprise;
+   leaving it loaded but unrecorded is probably right and should be stated
+   rather than fallen into.
 
-2. **Why this build has no remote tabs.** Three upstream urlbar files fail on it
-   and the fork is not what breaks them. The next step is
+2. **Re-run this run's lens against the other integration points.** Every Gecko
+   surface the fork has never implemented is a claim it is silently making.
+   Named and unchecked: session restore, profile migration,
+   `about:preferences`' data panel, and sanitize-on-shutdown — which is the
+   nastiest of the four, because a user who sets "clear history when I close the
+   browser" has asked for exactly this and would get it for Places only.
+
+3. **Sustained resize of the crowded overview.** Recorded in `IDEAS.md` run 32
+   and not solved: the burst is fixed (53ms → 1.19ms) but one rebuild is 18.27ms
+   p50, longer than a frame. Extend the reposition fast path to cover what
+   `render` rebuilds. Bounded value — it is the deliberate worst case.
+
+4. **Why this build has no remote tabs.** Three upstream urlbar files fail on it
+   and the fork is not what breaks them. Next step is
    `UrlbarProviderRemoteTabs.isActive` in a driven browser with
    `services.sync.username` set, not more reading.
 
-3. **The rails still overlay the page.** Run 32 took them off the *toolbar*,
-   which was never a deliberate trade; covering the page still is, and STATE has
-   always said it belongs with the Field's restructure rather than piecemeal.
-   `--fos-chrome-block-start` makes taking layout space a smaller step than it
-   was, which is worth knowing when that restructure comes.
-
-4. **The 17 timed-out urlbar files, if they are ever worth it**, and **a
-   region's height is a ratchet** (`FIELD.md` §6, open rather than a defect —
-   and now load-bearing in a second place, since a restored position grows a
-   region to fit).
-
-The schema audit's leftovers are both closed as of this run: `source_node_id`
-now has a reader, and `visit.started_at` is documented in `SCHEMA.md` as a
-record rather than a gap, which is what stops the next audit re-finding it.
-
-The size problem is half fixed: STATE was 110KB and is now ~58KB, with the Done
-log moved verbatim to `agent/BUILT.md`. `IDEAS.md` and `JOURNAL.md` are still
-read in full every run and are the remaining cost.
+5. **The rails still overlay the page**, and **the 17 timed-out urlbar files**,
+   and **a region's height is a ratchet** (`FIELD.md` §6) — all unchanged, all
+   belonging with the Field's restructure rather than piecemeal.
 
 ## Found this run, not yet chased
 
-- **An exclusion rule copied from a neighbouring section needs its own
-  argument.** This run's one real bug. The provoked section left out any
-  question the active context already listed, by analogy with the crossings
-  dropping the current trail — and with one enquiry pinned that is every
-  question there is, so the section was empty in exactly the sustained work it
-  exists for. The test that distinguishes the two cases: **could the excluded
-  row ever have been false?** "This page is on the trail you are looking at" is
-  true of every page by construction and carries nothing. "This question came
-  from this page" is a fact the enquiry's own list does not state. Worth
-  applying wherever one surface borrows a filter from another.
+- **A mutation that does not apply reads exactly like a mutation that
+  survived.** Two of this run's thirteen came back "SURVIVED" and both were
+  string replacements that had silently matched nothing, because Prettier had
+  reflowed the target across lines after it was written. A survivor is supposed
+  to be the interesting result, so a silent no-op is the worst possible failure
+  mode for this technique — it manufactures a coverage gap that is not there and
+  costs a chase. **Assert the replacement applied before running the suite.**
+  Cheap, and it turned two false gaps into two caught mutations immediately.
 
-- **Reproduce a shared-window failure on the alphabetical prefix, not the whole
-  suite.** `browser_contextsidebar.js` passed alone and failed in the suite.
-  Every file in `tests/browser/` shares one window and they run alphabetically,
-  so the three files up to and including the failing one reproduced it exactly —
-  a two-minute cycle instead of twenty. Then diagnosed by dumping
-  `activeContextId` and the context's query ids rather than re-running. Both
-  halves are worth reaching for by default; `agent/run43.sh` is that prefix.
+- **Thinking about a mutation found a coverage gap before the mutation ran.**
+  Listing what to break included "reparent to the direct parent rather than
+  climbing", and writing that down was enough to notice the fixture had only one
+  forgotten node in the chain, so the climb was never exercised. The test was
+  added first and the mutation then caught it. Worth doing deliberately: the
+  list of mutations you would like to run is a coverage audit that costs nothing
+  to write.
 
-- **Write a column before its reader exists only when the datum is
-  unrecoverable.** This run shipped a feature with months of backfill because
-  `source_node_id` had been recorded all along, and no amount of later work
-  could have reconstructed which page a past search was typed from. That is the
-  whole argument for an unread column, and `visit.started_at` fails it —
-  `dwell_ms` is derived as it goes and nothing is lost — which is why one became
-  work and the other a note.
+- **The fork's own boundary discipline is what hid this run's defect.**
+  `ARCHITECTURE.md` §7 keeps the list of files touched outside
+  `browser/components/fos/` short, and treats the shortness as a virtue — which
+  it is, for build times. But it also means the fork habitually asks "what does
+  my component do" and never "what does Firefox already do *to* my component's
+  data". Every integration point Gecko exposes and the fork has not implemented
+  is a claim it is silently making. That is item 2 on the next-task list and it
+  is a repeatable audit, not a one-off.
 
-- **A written-and-never-read column is not automatically a defect.**
-  `field_placement` was one: the design promised the behaviour in two places and
-  it was false. `source_node_id` was not: nothing promised it and everything
-  about it was correct. The two want opposite handling — a defect is found by
-  checking claims against behaviour and is urgent; a latent feature is found by
-  asking what a column would be *for*.
-
-- **`spoken` on a sidebar query row is set and never read.** The view model
-  carries `input_mode === "voice"` on every question row and no renderer looks
-  at it; the rail does use its equivalent. Same shape as the column audit, one
-  layer up, and noted rather than chased — it is a view-model field, so nothing
-  is accumulating and nothing is unrecoverable.
+- **`spoken` on a sidebar query row is set and never read.** Unchanged from run
+  43. The view model carries `input_mode === "voice"` on every question row and
+  no renderer looks at it; the rail does use its equivalent. Noted rather than
+  chased — it is a view-model field, so nothing is accumulating and nothing is
+  unrecoverable.
 
 ## Background jobs
 
@@ -184,6 +189,25 @@ is the file list without the three excluded ones.
 None.
 
 ## Known staged state, not a defect
+
+**Forgetting clears the store and not the live session.** The Field's cards and
+the rail's tree are in-memory objects built during the session, so a page
+forgotten while it is on screen stays on screen until the browser restarts, and
+further activity on it writes rows referencing a node that is gone. Nothing is
+resurrected — `#nodeIds` still holds the mapping, so reconciliation sees the
+node as already written and does not re-add it — which is exactly why emptying
+that map is the wrong repair. Staged rather than defective only because the
+durable record is what the privacy claim is about and it is correct; the visible
+half is item 1 on the next-task list.
+
+**Reparenting past a forgotten node leaves an inference.** After forgetting the
+middle of A → B → C the trail reads A → C, a navigation that never happened. The
+edge does not say what was removed or that anything was, and nothing is
+recoverable from it, but the branch keeps its shape. This is the accepted cost of
+not deleting the subtree, which would mean forgetting one page forgets
+everything found from it. A caller who needs the shape gone should forget the
+range rather than the host, and `SCHEMA.md` §Forgetting says so.
+
 
 **The two question sections can show the same list, and that is a small-N
 artefact.** "This page made you ask" and "Questions asked" index one set of
