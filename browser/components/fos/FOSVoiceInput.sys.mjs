@@ -125,6 +125,22 @@ const LEVEL_POLL_MS = 100;
 const LEVEL_FFT_SIZE = 2048;
 
 /**
+ * How long to let the audio graph start before giving up on it.
+ *
+ * An `AudioContext` reaches `running` asynchronously, so its state at
+ * construction says nothing — reading it there would report "no monitor" on a
+ * perfectly healthy machine. What it cannot do is take half a second, so a
+ * graph still not running by then is one that never will: a machine with no
+ * audio output device reports `destination.maxChannelCount === 0` and stays
+ * suspended forever, which is exactly the state of the box this is built on.
+ *
+ * Well inside the six-second initial-silence bound, so the turn is put back on
+ * the model's window long before that bound could act on a silence nothing was
+ * measuring.
+ */
+const LEVEL_START_GRACE_MS = 500;
+
+/**
  * Where the weights come from the one time they are fetched.
  *
  * Hugging Face rather than Mozilla's mirror, because this fork does not present
@@ -209,6 +225,17 @@ class MicRecorder {
   #chunks = [];
   #levelContext = null;
   #levelTimer = 0;
+  #monitoring = false;
+
+  /**
+   * Whether the level monitor is actually delivering, which the turn has to ask
+   * before it trusts silence to mean anything.
+   *
+   * @returns {boolean}
+   */
+  get monitoring() {
+    return this.#monitoring;
+  }
 
   /**
    * Called with `true` when the level crosses the speech floor and `false` when
@@ -250,7 +277,7 @@ class MicRecorder {
       }
     });
     this.#recorder.start();
-    this.#watchLevel();
+    this.#monitoring = this.#watchLevel();
   }
 
   /**
@@ -274,17 +301,49 @@ class MicRecorder {
    * The floor is `FOSVoiceTranscript`'s `MIN_RMS` and not a number of this
    * file's own, so the bound and the audio gate cannot disagree about what
    * counts as speech. See `VoiceSession.heard`.
+   *
+   * **A graph that is not running must never be mistaken for a quiet room**,
+   * and this is the one failure here with teeth. A suspended `AudioContext`
+   * reads a flat zero forever, which is exactly what silence reads, so a turn
+   * that trusted it would end six seconds into somebody's sentence and tell
+   * them nothing was heard — worse than not having the bound at all.
+   *
+   * Whether the graph is running therefore cannot be answered at construction,
+   * and not only because the state is reached asynchronously. A machine with no
+   * audio output device — `destination.maxChannelCount === 0` — never leaves
+   * `suspended` at all, and needing an *output* device to measure an *input*
+   * one is a Web Audio fact rather than a choice. So the poll decides: it waits
+   * `LEVEL_START_GRACE_MS` for the graph to start, and if it has not, reports
+   * speech once and stops looking. That single report is what lifts the silence
+   * bounds and puts the turn back on the model's own window — the design that
+   * shipped before those bounds existed, which is the right place for a turn
+   * with no level information to land.
+   *
+   * @returns {boolean} Whether a monitor exists to report anything at all.
    */
   #watchLevel() {
     let speaking = false;
+    let ran = false;
+    let waited = 0;
     try {
-      this.#levelContext = new this.#window.AudioContext();
-      const source = this.#levelContext.createMediaStreamSource(this.#stream);
-      const analyser = this.#levelContext.createAnalyser();
+      const context = new this.#window.AudioContext();
+      this.#levelContext = context;
+      const source = context.createMediaStreamSource(this.#stream);
+      const analyser = context.createAnalyser();
       analyser.fftSize = LEVEL_FFT_SIZE;
       source.connect(analyser);
       const frame = new Float32Array(analyser.fftSize);
       this.#levelTimer = this.#window.setInterval(() => {
+        if (context.state !== "running") {
+          waited += LEVEL_POLL_MS;
+          if (!ran && waited < LEVEL_START_GRACE_MS) {
+            return;
+          }
+          this.#stopWatchingLevel();
+          this.onLevel?.(true);
+          return;
+        }
+        ran = true;
         analyser.getFloatTimeDomainData(frame);
         let sum = 0;
         for (const sample of frame) {
@@ -296,11 +355,13 @@ class MicRecorder {
           this.onLevel?.(loud);
         }
       }, LEVEL_POLL_MS);
+      return true;
     } catch (error) {
       // A turn without a level monitor is the turn that shipped before this
       // existed: bounded by its deadlines and by the key, and correct, just
       // less considerate. It is not worth failing a recording over.
       console.error(error);
+      return false;
     }
   }
 
@@ -797,7 +858,12 @@ export class FOSVoiceInput {
       this.#recorder.abort();
       return;
     }
-    this.#apply(this.#session.armed());
+    // Whether the turn may trust silence to mean anything is settled here, once,
+    // rather than inferred later from reports that never arrived — a monitor
+    // that is not running is silent in exactly the way a quiet room is.
+    this.#apply(
+      this.#session.armed({ monitored: !!this.#recorder.monitoring })
+    );
   }
 
   /** Stop recording, decide whether it was speech, and transcribe it. */

@@ -218,6 +218,8 @@ export class VoiceSession {
   #heardSpeech = false;
   /** Whether it has since fallen back below it. */
   #inSilence = false;
+  /** Whether anything is reporting the level at all. */
+  #monitored = false;
 
   /**
    * @param {object} [options]
@@ -315,7 +317,7 @@ export class VoiceSession {
    * @returns {number}
    */
   #listenDeadline() {
-    if (!this.#latched) {
+    if (!this.#latched || !this.#monitored) {
       return LISTENING_DEADLINE_MS;
     }
     const remaining = Math.max(
@@ -337,6 +339,7 @@ export class VoiceSession {
     this.#latched = false;
     this.#heardSpeech = false;
     this.#inSilence = false;
+    this.#monitored = false;
   }
 
   /**
@@ -390,11 +393,26 @@ export class VoiceSession {
     return this.#enter(ARMING, { capture: "start" });
   }
 
-  /** The microphone is open and the model is loaded. */
-  armed() {
+  /**
+   * The microphone is open and the model is loaded.
+   *
+   * `monitored` is the caller saying whether anything is able to report what
+   * the room sounds like. It is not a detail: a level monitor that is not
+   * running reads a flat zero, which is indistinguishable from silence, so a
+   * turn that assumed one was there would end six seconds into somebody's
+   * sentence and tell them nothing was heard. Without it the silence bounds are
+   * not armed at all and the turn is bounded by the model's window and the key,
+   * exactly as it was before those bounds existed — the failure degrades to the
+   * previous design rather than to a worse one.
+   *
+   * @param {object} [options]
+   * @param {boolean} [options.monitored] Whether `heard` and `quiet` will come.
+   */
+  armed({ monitored = false } = {}) {
     if (this.#state !== ARMING) {
       return this.#effect();
     }
+    this.#monitored = !!monitored;
     return this.#enter(LISTENING);
   }
 
@@ -478,7 +496,7 @@ export class VoiceSession {
    * bound would only ever measure the gap since the last poll.
    */
   heard() {
-    if (this.#state !== LISTENING || !this.#latched) {
+    if (this.#state !== LISTENING || !this.#latched || !this.#monitored) {
       return this.#effect();
     }
     if (this.#heardSpeech && !this.#inSilence) {
@@ -503,7 +521,7 @@ export class VoiceSession {
    * rather than treated as the end of an utterance that never began.
    */
   quiet() {
-    if (this.#state !== LISTENING || !this.#latched) {
+    if (this.#state !== LISTENING || !this.#latched || !this.#monitored) {
       return this.#effect();
     }
     if (!this.#heardSpeech || this.#inSilence) {
@@ -700,7 +718,7 @@ export class VoiceSession {
       // If something was said, every remaining case — the utterance ended, the
       // model's window ran out, a held key was lost — means the same thing as a
       // key coming up, and goes the same way.
-      if (this.#latched && !this.#heardSpeech) {
+      if (this.#latched && this.#monitored && !this.#heardSpeech) {
         this.#reset();
         this.#notice = NOTICE_NOTHING_HEARD;
         return this.#effect({

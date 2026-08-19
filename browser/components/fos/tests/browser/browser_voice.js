@@ -36,6 +36,9 @@ const { FOSCommandBar } = ChromeUtils.importESModule(
 const { IDLE, LISTENING, TAP_MS } = ChromeUtils.importESModule(
   "resource:///modules/FOSVoiceSession.sys.mjs"
 );
+const { MIN_RMS } = ChromeUtils.importESModule(
+  "resource:///modules/FOSVoiceTranscript.sys.mjs"
+);
 const { markWord } = ChromeUtils.importESModule(
   "resource:///modules/FOSMarks.sys.mjs"
 );
@@ -118,6 +121,13 @@ function backend({
   // What the room sounds like, which the front end wires to `onLevel` when it
   // adopts this recorder. Driving it by hand is the only way to test the two
   // bounds a latched turn has without making a noise at a real microphone.
+  //
+  // `monitoring` is what the real recorder reports about whether its own level
+  // monitor is delivering, and the turn refuses to trust silence without it.
+  // The double says yes because these tests are about what the turn does with
+  // the reports; the test below covers a recorder that says no.
+  recorder.monitoring = true;
+  counts.recorder = recorder;
   counts.level = loud => recorder.onLevel?.(loud);
 
   const engine = {
@@ -400,6 +410,131 @@ add_task(async function test_a_latched_microphone_nobody_spoke_into_closes() {
   Assert.ok(bar().isOpen, "in the bar the user already had open");
   bar().close();
 });
+
+add_task(async function test_the_level_monitor_runs_against_a_real_capture() {
+  // Everything else in this file replaces the microphone, so nothing else
+  // touches the code that listens to one. This covers the mechanism that code
+  // depends on, against a real captured stream, and the one part of it that
+  // could plausibly not work: the analyser is read without being connected
+  // onward to anything, because routing a microphone to the speakers is how a
+  // browser gets feedback, and a node in a graph reaching no destination is
+  // exactly the shape that might never be pulled.
+  //
+  // **This build machine cannot run the positive half.** It has no audio output
+  // device — no `/dev/snd`, and `destination.maxChannelCount` is 0 — so the
+  // graph never leaves `suspended` and reads a flat zero forever. Needing an
+  // *output* device in order to measure an *input* one is a Web Audio fact
+  // rather than a fault in the code, and it is exactly the condition
+  // `MicRecorder` degrades for. On a machine like this one the test asserts the
+  // degradation instead, and says out loud that it did.
+  //
+  // (Autoplay was the first suspect and is not the cause: `IsAllowedToPlay`
+  // returns early here because `media.autoplay.default` is 0, and the context
+  // stays suspended with user activation and an active capture both in place.)
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["media.navigator.streams.fake", true],
+      ["media.navigator.permission.disabled", true],
+    ],
+  });
+
+  const stream = await win.navigator.mediaDevices.getUserMedia({
+    audio: { channelCount: 1 },
+  });
+
+  const context = new win.AudioContext();
+  const source = context.createMediaStreamSource(stream);
+  const analyser = context.createAnalyser();
+  analyser.fftSize = 2048;
+  source.connect(analyser);
+
+  const frame = new Float32Array(analyser.fftSize);
+  const rms = () => {
+    analyser.getFloatTimeDomainData(frame);
+    let sum = 0;
+    for (const sample of frame) {
+      sum += sample * sample;
+    }
+    return Math.sqrt(sum / frame.length);
+  };
+
+  if (context.destination.maxChannelCount > 0) {
+    await TestUtils.waitForCondition(
+      () => context.state === "running",
+      "the graph starts"
+    );
+    await TestUtils.waitForCondition(
+      () => rms() >= MIN_RMS,
+      "the analyser is pulled with nothing connected after it"
+    );
+  } else {
+    info(
+      "NO AUDIO OUTPUT DEVICE on this machine, so the positive half of this " +
+        "test did not run. What follows is the fallback it degrades to."
+    );
+    // Half a second is the grace `MicRecorder` allows the graph to start, so a
+    // context still suspended here is one the monitor would give up on.
+    await new Promise(resolve => win.setTimeout(resolve, 600));
+    Assert.equal(
+      context.state,
+      "suspended",
+      "the graph never started, which is what the monitor has to survive"
+    );
+    Assert.equal(rms(), 0, "and reads exactly what a silent room reads");
+  }
+
+  for (const track of stream.getTracks()) {
+    track.stop();
+  }
+  await context.close();
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(
+  async function test_a_turn_whose_monitor_is_dead_does_not_hear_silence() {
+    // The failure the check above exists to prevent, from the turn's side. A
+    // monitor that is not delivering reads exactly like a quiet room, so a turn
+    // that assumed one was there would cut somebody off six seconds into a
+    // sentence. Without one the turn falls back to the key and the model's
+    // window — the design that shipped before the bounds existed.
+    const mic = backend({ transcript: " what" });
+    mic.recorder.monitoring = false;
+    const ran = [];
+    bar().actions.register("what", command => {
+      ran.push(command.action);
+      return true;
+    });
+
+    talkKey("keydown");
+    talkKey("keyup");
+    await TestUtils.waitForCondition(
+      () => voice().state === LISTENING,
+      "the tapped turn reaches listening"
+    );
+
+    // Long enough that a turn which had armed the initial-silence bound would be
+    // over by now, and this one is not.
+    await new Promise(resolve => win.setTimeout(resolve, 7000));
+    Assert.equal(
+      voice().state,
+      LISTENING,
+      "still listening after seven seconds"
+    );
+    Assert.ok(
+      mic.open,
+      "the microphone was not closed on a silence never heard"
+    );
+
+    // And it still ends the ordinary way.
+    talkKey("keydown");
+    await TestUtils.waitForCondition(
+      () => voice().state === IDLE,
+      "the second press ends it"
+    );
+    Assert.deepEqual(ran, ["what"], "and the line ran");
+    talkKey("keyup");
+  }
+);
 
 add_task(async function test_a_latched_turn_says_how_to_stop() {
   // A held turn's answer to "how do I stop this" is the finger already on the

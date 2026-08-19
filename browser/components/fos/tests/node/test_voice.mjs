@@ -337,7 +337,7 @@ test("the listening deadline bounds a latched turn, which has no key to end it",
   // initial-silence bound is what holds, which is the next test down.
   const session = new VoiceSession();
   session.press({ text: "", latch: true });
-  session.armed();
+  session.armed({ monitored: true });
   assert.equal(session.heard().deadline, LISTENING_DEADLINE_MS);
 
   const out = session.expired();
@@ -403,7 +403,10 @@ test("a tap latched mid-arming picks up the silence bound when it starts listeni
   session.press({ text: "" });
   assert.equal(session.state, ARMING);
   session.release({ heldMs: 20 });
-  assert.equal(session.armed().deadline, INITIAL_SILENCE_DEADLINE_MS);
+  assert.equal(
+    session.armed({ monitored: true }).deadline,
+    INITIAL_SILENCE_DEADLINE_MS
+  );
 });
 
 test("a latched microphone that hears nothing closes itself, and transcribes nothing", () => {
@@ -413,7 +416,7 @@ test("a latched microphone that hears nothing closes itself, and transcribes not
   const session = new VoiceSession();
   session.press({ text: "memex" });
   assert.equal(
-    session.armed().deadline,
+    session.armed({ monitored: true }).deadline,
     LISTENING_DEADLINE_MS,
     "held: no bound"
   );
@@ -431,7 +434,10 @@ test("a latched turn ends itself a beat after the speaking stops", () => {
   const c = clock();
   const session = new VoiceSession({ now: c.now });
   session.press({ text: "", latch: true });
-  assert.equal(session.armed().deadline, INITIAL_SILENCE_DEADLINE_MS);
+  assert.equal(
+    session.armed({ monitored: true }).deadline,
+    INITIAL_SILENCE_DEADLINE_MS
+  );
 
   c.tick(900);
   assert.equal(
@@ -463,7 +469,7 @@ test("the gap between two words is not the end of an utterance", () => {
   const c = clock();
   const session = new VoiceSession({ now: c.now });
   session.press({ text: "", latch: true });
-  session.armed();
+  session.armed({ monitored: true });
   c.tick(500);
   session.heard();
 
@@ -483,7 +489,7 @@ test("a level report that says what is already true does not restart a clock", (
   // bound would only ever measure the gap since the last poll.
   const session = new VoiceSession({ now: clock().now });
   session.press({ text: "", latch: true });
-  session.armed();
+  session.armed({ monitored: true });
   session.heard();
   assert.equal(session.heard().deadline, null, "still speaking");
   session.quiet();
@@ -497,7 +503,7 @@ test("the silence bounds cannot push a turn past the model's own window", () => 
   const c = clock();
   const session = new VoiceSession({ now: c.now });
   session.press({ text: "", latch: true });
-  session.armed();
+  session.armed({ monitored: true });
 
   c.tick(LISTENING_DEADLINE_MS - 1000);
   assert.equal(session.heard().deadline, 1000, "a second of window is left");
@@ -517,7 +523,10 @@ test("a held turn is bounded by the key and never by the room", () => {
   const c = clock();
   const session = new VoiceSession({ now: c.now });
   session.press({ text: "kept" });
-  assert.equal(session.armed().deadline, LISTENING_DEADLINE_MS);
+  assert.equal(
+    session.armed({ monitored: true }).deadline,
+    LISTENING_DEADLINE_MS
+  );
 
   assert.equal(session.heard().deadline, null, "the level is not listened to");
   assert.equal(session.quiet().deadline, null);
@@ -530,12 +539,60 @@ test("a held turn is bounded by the key and never by the room", () => {
   );
 });
 
+test("a turn with nothing reporting the level does not trust silence", () => {
+  // The failure with teeth, and the reason `armed` takes this at all. A
+  // suspended AudioContext reads a flat zero forever, which is exactly what a
+  // quiet room reads, so a turn that assumed a monitor was there would end six
+  // seconds into somebody's sentence and tell them nothing was heard. Worse
+  // than not having the bound. Without a monitor the turn is bounded by the
+  // model's window and the key, which is the design that shipped before the
+  // bounds existed — it degrades to the previous behaviour, not past it.
+  const session = new VoiceSession({ now: clock().now });
+  session.press({ text: "memex", latch: true });
+  assert.equal(
+    session.armed().deadline,
+    LISTENING_DEADLINE_MS,
+    "no monitor, so no silence bound"
+  );
+
+  assert.equal(session.heard().deadline, null, "and no reports are expected");
+  assert.equal(session.quiet().deadline, null);
+
+  // Most of all: running out does not become "nothing heard". There is audio,
+  // nobody was listening to the level, and it goes to the model like any other.
+  const out = session.expired();
+  assert.equal(out.notice, null, "no complaint about a silence never measured");
+  assert.equal(session.state, TRANSCRIBING, "the audio is transcribed");
+});
+
+test("a monitor that stops mid-turn puts the turn back on the model's window", () => {
+  // The shell reports speech and stops looking when its context stops running,
+  // which is the one report that has to still be honoured — it is what lifts a
+  // bound that would otherwise fire on a signal nobody is producing.
+  const c = clock();
+  const session = new VoiceSession({ now: c.now });
+  session.press({ text: "", latch: true });
+  assert.equal(
+    session.armed({ monitored: true }).deadline,
+    INITIAL_SILENCE_DEADLINE_MS
+  );
+
+  c.tick(200);
+  assert.equal(
+    session.heard().deadline,
+    LISTENING_DEADLINE_MS - 200,
+    "the turn goes back on the model's window"
+  );
+  assert.equal(session.expired().capture, "stop");
+  assert.equal(session.state, TRANSCRIBING, "and is transcribed, not refused");
+});
+
 test("a level report outside a listen is ignored, like every other stale event", () => {
   const session = new VoiceSession();
   assert.equal(session.heard().deadline, null, "idle");
   session.press({ text: "", latch: true });
   assert.equal(session.heard().deadline, null, "arming");
-  session.armed();
+  session.armed({ monitored: true });
   session.press({ text: "" });
   assert.equal(session.state, TRANSCRIBING);
   assert.equal(session.quiet().deadline, null, "transcribing");
