@@ -31,7 +31,9 @@ import { ACTIONS, actionSpec } from "./FOSGrammar.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+  SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
 });
 
 /**
@@ -104,6 +106,29 @@ export function resolveInput(text, { isPrivate = false } = {}) {
     postData: info.postData,
     display: searched ? info.keywordAsSent : info.preferredURI.displaySpec,
   };
+}
+
+/**
+ * The engine `resolveInput`'s keyword fallback would have used.
+ *
+ * Fixup does not report which engine answered — it returns the submission URL
+ * and nothing else — so this reads the same two properties `URIFixup.keywordToURI`
+ * reads, in the same order, guarded the same way. It is a name for Places to
+ * record against the visit, not a second decision about which engine to use:
+ * if this ever disagreed with fixup, the visit would be filed under the wrong
+ * engine rather than sent to it.
+ *
+ * @param {boolean} isPrivate Whether the window is private.
+ * @returns {?string} The engine's name, or null if search is not up.
+ */
+function keywordEngineName(isPrivate) {
+  if (!lazy.SearchService.hasSuccessfullyInitialized) {
+    return null;
+  }
+  const engine = isPrivate
+    ? lazy.SearchService.defaultPrivateEngine
+    : lazy.SearchService.defaultEngine;
+  return engine?.name ?? null;
 }
 
 /**
@@ -238,14 +263,16 @@ export class FOSActionDispatcher {
    * @returns {?object} The resolution, so callers can report what happened.
    */
   openQuery(text) {
-    const resolved = resolveInput(text, {
-      isPrivate: lazy.PrivateBrowsingUtils.isWindowPrivate(this.#window),
-    });
+    const isPrivate = lazy.PrivateBrowsingUtils.isWindowPrivate(this.#window);
+    const resolved = resolveInput(text, { isPrivate });
     if (!resolved) {
       return null;
     }
 
-    this.#load(resolved.uri, resolved.postData);
+    this.#load(resolved.uri, resolved.postData, {
+      searchEngine:
+        resolved.kind === KIND_SEARCH ? keywordEngineName(isPrivate) : null,
+    });
 
     for (const listener of this.#queryListeners) {
       try {
@@ -293,14 +320,72 @@ export class FOSActionDispatcher {
    * typed, and for the same reason: the load has no web-content initiator, so
    * there is no other principal that honestly describes who asked for it.
    *
+   * The same argument settles how Places records the visit. Every load reaching
+   * here was asked for by the chrome — a line typed or spoken, or a row picked
+   * off a list — and none of them was a link on a page. That is the distinction
+   * `TRANSITION_TYPED` exists to draw, and `markPageAsTyped` is how a surface
+   * declares it; a surface that does not call it gets `TRANSITION_LINK`, which
+   * would be a false statement about how the user got there. Firefox declares
+   * it from the address bar, the history menu and the history sidebar, and this
+   * dispatcher is the one surface that replaced all three.
+   *
+   * It is also not merely a label. The frecency SQL scores a typed visit a tier
+   * above a link visit, and `FOSPlacesFloor` ranks the command bar's last tier
+   * by exactly that score — so getting this wrong would have the fork demote
+   * the pages its user asked for by name and then read the demotion back into
+   * its own suggestions.
+   *
    * @param {nsIURI} uri
    * @param {?nsIInputStream} postData
+   * @param {object} [options]
+   * @param {?string} [options.searchEngine] The engine whose result page this
+   *   is, when the line resolved to a search rather than to a URL.
    */
-  #load(uri, postData) {
+  #load(uri, postData, { searchEngine = null } = {}) {
     this.#loads++;
+    this.#markAsTyped(uri);
     this.#window.gBrowser.selectedBrowser.loadURI(uri, {
       triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
       postData,
+      // Read back off the browser element by `History.cpp` when the visit is
+      // written, and the reason a result page can be marked typed without
+      // being over-ranked: the frecency SQL withholds the typed weight from a
+      // visit whose source is a search. Passing nothing clears any attribute
+      // an earlier search left on this browser, which is what makes the next
+      // ordinary load ordinary again.
+      globalHistoryOptions: searchEngine
+        ? { triggeringSearchEngine: searchEngine }
+        : undefined,
     });
+  }
+
+  /**
+   * Tell Places the coming visit was asked for by name.
+   *
+   * A hint rather than a write: it records the URL in an in-memory recent-typed
+   * set that the visit, if it happens, reads on its way to the database. So a
+   * load that never lands costs nothing but an entry that expires.
+   *
+   * That is also why a private window has to be excluded rather than left to
+   * the docshell. The docshell already declines to record a private visit, but
+   * the hint is not private state — it is one global set keyed by URL spec,
+   * with a fifteen-minute life. Marking from a private window and then opening
+   * the same page in an ordinary one inside the window would file that
+   * ordinary visit as typed on the strength of the private one, which is the
+   * profile database learning something from private browsing.
+   *
+   * @param {nsIURI} uri
+   */
+  #markAsTyped(uri) {
+    if (lazy.PrivateBrowsingUtils.isWindowPrivate(this.#window)) {
+      return;
+    }
+    try {
+      lazy.PlacesUtils.history.markPageAsTyped(uri);
+    } catch (e) {
+      // History disabled, or a scheme Places refuses. Neither is a reason to
+      // hold up the navigation.
+      console.error(e);
+    }
   }
 }

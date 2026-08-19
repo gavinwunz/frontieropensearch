@@ -48,6 +48,8 @@ support-files = [
 
 ["browser_zzscreenshots.js"]
 
+["browser_zztransition.js"]
+
 ["browser_zzvoicelatency.js"]
 
 ["browser_zzvoiceturn.js"]
