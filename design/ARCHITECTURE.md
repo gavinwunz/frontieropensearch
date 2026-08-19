@@ -176,6 +176,7 @@ inner loop of minutes rather than hours:
 | `browser/components/about/AboutRedirector.cpp` | `about:rights` is a local page, not a redirect to Mozilla's terms |
 | `toolkit/components/cleardata/ClearDataService.sys.mjs` | the Context Engine is registered as a `CLEAR_HISTORY` cleaner |
 | `toolkit/modules/Sqlite.sys.mjs` | a memory database can be wrapped, so private browsing has a store |
+| `browser/components/migration/FirefoxProfileMigrator.sys.mjs` | a profile refresh carries the Context Engine's database forward |
 
 The last row is two lines: `wrapStorageConnection` read a name off a
 `databaseFile` that a memory database does not have, so the documented way to
@@ -223,8 +224,45 @@ where `Sqlite.sys.mjs` closes connections — which is the part that could have
 been wrong and was not. `browser_zzzshutdown.js` runs it rather than trusting
 the reading.
 
-Named and still not checked: session restore, profile migration, and
-`about:preferences`' data panel.
+**Profile refresh was the third, and it loses everything at once.**
+`FirefoxProfileMigrator` is what "Refresh" runs, and it is deliberately lossy:
+it copies an explicit list of files — history, favicons, cookies, passwords,
+form data, the dictionary, bookmark backups, the session — and leaves the rest,
+because the point of a refresh is to drop whatever configuration might be
+causing the trouble. The Context Engine's database was not on that list. So a
+refresh returned a browser with its history and bookmarks intact and its rail,
+its Field and its sidebar empty, having silently discarded every query typed,
+every trail walked, every dwell time and every named context.
+
+The database is now on the list, under `HISTORY` beside `places.sqlite`,
+because it is the same *kind* of thing: a record of browsing rather than a
+setting, and one with no second copy anywhere on the machine. Its rollback
+journal is copied with it for the same reason `places` copies its `-wal` — a
+source profile that crashed has a hot journal, and a database copied without it
+is a recoverable crash turned into an unreadable file. The filename is imported
+from `FOSContextStore` rather than spelled out, because a missing file here is
+indistinguishable from a profile that never ran the engine, so a rename that
+broke this would stay invisible until somebody refreshed.
+
+That change forced a second one. A refresh is the route a user takes when the
+browser is misbehaving, so carrying a file forward is only safe if the browser
+can recover from that file being bad — otherwise refresh, the repair action,
+stops repairing. `FOSContextStore.open` now moves a database it cannot read
+aside and starts an empty one; it *keeps* the unreadable file, because nothing
+in it exists anywhere else, and `FOSForget`'s `deleteAll` sweeps what is kept so
+that keeping it stays compatible with the promise the previous paragraph but
+one exists to make. `SCHEMA.md` §Recovery has the rules.
+
+**Session restore and `about:preferences`' data panel need no code**, and both
+answers were already in the tree. Session restore's two purge paths were settled
+in run 45 — `onPurgeDomainData` and `onPurgeSessionHistory` remove closed tabs
+and leave open ones alone, which is the rule `SCHEMA.md` §Forgetting adopts
+verbatim — and what the panel offers for this data is Clear Data, which is
+`CLEAR_HISTORY` and therefore the cleaner above, and "Never remember history",
+which sets `browser.privatebrowsing.autostart` and so makes every window
+private and every store a memory store by §Private browsing's existing rule.
+The panel's other half, Manage Data, is site data in the quota sense — cookies
+and cache, per origin — and this store is neither.
 
 Forgetting is also where the fork's own data crosses back over that boundary in
 the other direction. The store is per profile and a session is per window, so

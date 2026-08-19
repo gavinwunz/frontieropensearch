@@ -161,6 +161,50 @@ so nothing further is written for what is still on screen. Navigating onward
 records again, because forgetting is a delete and not a blocklist; a user who
 wants a session that records nothing has a private window.
 
+## Recovery
+
+The store recovers from exactly one failure: a database file whose bytes are
+not a readable database. It moves that file aside and starts an empty one in
+its place.
+
+Recovering at all is a decision, and it is forced by there being no surface
+that would tell anyone otherwise. If `open` simply threw, the window would come
+up — `browser-init.js` deliberately does not await the engine, so a store that
+cannot open is a browser that records nothing rather than a browser that does
+not start — and it would go on recording nothing at every launch until somebody
+found a file in the profile directory and deleted it by hand. Nothing in the
+interface says that. So the file is moved out of the way.
+
+**Only that failure.** A full disk, a read-only profile, a shutdown race and a
+typo in a migration all arrive at the same two calls, and none of them is a
+reason to conclude the record is worthless. The test is narrow on purpose —
+`NS_ERROR_FILE_CORRUPTED`, or mozStorage's `NOTADB`/`CORRUPT` — because the
+cost of a false positive is a good record replaced by an empty one, silently.
+
+**The unreadable file is kept, not deleted**, under a unique `.corrupt` name
+beside where it was. The tree contains both precedents and the difference
+between them is whether the data exists anywhere else:
+`PlacesSemanticHistoryDatabase` deletes its corrupt files because it is an
+index over Places and can be recomputed; `FormHistory` keeps its own because
+what you typed into a form is written down once. This store is further into the
+second class than either — Places can be rebuilt by browsing, but a question
+you typed, the trail you found a page on and the name you gave an afternoon's
+work have no second copy on the machine.
+
+**And what is kept can still be cleared.** A file the user cannot see and did
+not ask for is exactly the shape of the defect §Forgetting exists to remove, so
+`deleteAll` sweeps these up: "clear everything" reaches them. Only `deleteAll`
+does. A moved-aside database cannot be queried, so there is no way to tell
+whether it holds anything from the host or the range a narrower clear names,
+and deleting it for one of those would throw away far more than was asked for.
+
+The rollback journal moves with the database when there is one, and usually
+there is not: a failing `Sqlite.openConnection` attempts hot-journal recovery
+and deletes the journal before reporting the file unreadable. The property that
+must hold either way is that no journal is left beside the *replacement* — a
+journal is matched to its database by filename, so one left behind would be
+adopted by the empty database created next and rolled back into it.
+
 ## Private browsing
 
 The sentence above was the argument for not building a per-site "never record

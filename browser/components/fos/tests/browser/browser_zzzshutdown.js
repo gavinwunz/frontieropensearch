@@ -26,6 +26,9 @@
 const { FOSContextEngine } = ChromeUtils.importESModule(
   "resource:///modules/FOSContextEngine.sys.mjs"
 );
+const { DATABASE_FILENAME, movedAsideDatabases } = ChromeUtils.importESModule(
+  "resource:///modules/FOSContextStore.sys.mjs"
+);
 
 add_task(async function test_clear_on_shutdown_reaches_the_context_engine() {
   const store = await FOSContextEngine.store();
@@ -80,6 +83,48 @@ add_task(async function test_clear_on_shutdown_reaches_the_context_engine() {
     alive.getResultByName("ok"),
     1,
     "and the store is still open afterwards, as it is during a real shutdown"
+  );
+
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function test_clearing_also_takes_a_database_moved_aside() {
+  // `FOSContextStore.open` keeps a database it cannot read instead of
+  // deleting it, because nothing in it exists anywhere else. That is only
+  // defensible while clearing still reaches it, and this is the assertion
+  // that says so through the real path rather than by calling the sweep: a
+  // file the user cannot see, that "clear everything" leaves behind, is
+  // precisely the defect `FOSForget` was written to remove.
+  //
+  // It runs here rather than in `browser_zzforget.js` because only a clear of
+  // *everything* sweeps, and this is the one file in the directory allowed to
+  // empty the profile.
+  const planted = PathUtils.join(
+    PathUtils.profileDir,
+    DATABASE_FILENAME + ".corrupt"
+  );
+  await IOUtils.writeUTF8(planted, "whatever was left of an unreadable store");
+  Assert.ok(
+    (await movedAsideDatabases()).includes(planted),
+    "the sweep can see it before the clear"
+  );
+
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["privacy.sanitize.sanitizeOnShutdown", true],
+      ["privacy.clearOnShutdown_v2.browsingHistoryAndDownloads", true],
+      ["privacy.clearOnShutdown_v2.cache", false],
+      ["privacy.clearOnShutdown_v2.cookiesAndStorage", false],
+      ["privacy.clearOnShutdown_v2.formdata", false],
+      ["privacy.clearOnShutdown_v2.siteSettings", false],
+    ],
+  });
+
+  await Sanitizer.runSanitizeOnShutdown();
+
+  Assert.ok(
+    !(await IOUtils.exists(planted)),
+    "clearing history removed it, so nothing outlives the clear"
   );
 
   await SpecialPowers.popPrefEnv();

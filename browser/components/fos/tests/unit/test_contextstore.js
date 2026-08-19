@@ -13,6 +13,9 @@
  * wrong. Every check here is one the pure tests cannot make.
  */
 
+const { Sqlite } = ChromeUtils.importESModule(
+  "resource://gre/modules/Sqlite.sys.mjs"
+);
 const {
   FOSContextStore,
   SCHEMA_VERSION,
@@ -1713,26 +1716,95 @@ add_task(async function test_a_healthy_database_is_never_moved_aside() {
 });
 
 add_task(async function test_a_failure_that_is_not_corruption_still_throws() {
-  // A directory where the database should be. `openConnection` fails, and it
-  // fails for a reason that has nothing to do with the bytes in a file — so
-  // recovering would mean deleting a directory the user may care about and
-  // reporting success. Every non-corruption failure has this shape: a full
-  // disk, a read-only profile, a migration with a typo. The store must report
-  // them rather than paper over them by throwing the record away.
+  // A perfectly readable database that a migration cannot be applied to: the
+  // file opens, the header is fine, and `001-initial.sql` then fails because
+  // something is already called `trail`. That is the shape of every failure
+  // this store must *not* recover from — a full disk, a read-only profile, a
+  // typo in a migration — and it is the expensive one to get wrong, because
+  // "recovering" means moving a user's whole record aside and reporting
+  // success.
+  //
+  // The fixture is deliberately a normal file rather than, say, a directory
+  // in the database's place. A directory makes `open` throw whichever way the
+  // guard is written, because moving it aside fails too — so the test passes
+  // for the wrong reason and a mutation that makes `isUnopenable` always true
+  // survives it. Here, recovery would succeed if it were attempted, so the
+  // assertions below can only hold if the guard is what stopped it.
   const path = PathUtils.join(
     PathUtils.profileDir,
-    "context-engine-directory.sqlite"
+    "context-engine-unmigratable.sqlite"
   );
-  await IOUtils.makeDirectory(path, { ignoreExisting: true });
+  await IOUtils.remove(path, { ignoreAbsent: true });
+  const planted = await Sqlite.openConnection({ path });
+  await planted.execute("CREATE TABLE trail (nonsense TEXT)");
+  await planted.close();
 
   await Assert.rejects(
     FOSContextStore.open({ path }),
     /./,
     "a failure that is not corruption is reported, not recovered from"
   );
-  Assert.ok(
-    await IOUtils.exists(path),
-    "and nothing of the user's was moved or removed"
+
+  Assert.deepEqual(
+    await movedAside(path),
+    [],
+    "the database was left exactly where it was"
+  );
+  const survivor = await Sqlite.openConnection({ path });
+  const rows = await survivor.execute("SELECT nonsense FROM trail");
+  await survivor.close();
+  Assert.equal(rows.length, 0, "and it is still the database that was there");
+});
+
+add_task(async function test_a_real_database_with_damaged_pages_is_recovered() {
+  // A second shape of corruption, and the one that actually happens to
+  // people: not a file that was never a database, but a real one whose later
+  // pages were scribbled over — a bad sector, a half-finished copy, a
+  // filesystem that lost a writeback. Page 1 is left intact here, so the
+  // header and the schema are still readable and only the data pages are
+  // gone.
+  //
+  // This was written believing it would exercise the *migration* half of the
+  // recovery, and a mutation says it does not: moving the migration outside
+  // the recovered region leaves this test passing, because `openConnection`
+  // rejects this file before any migration statement runs. So the migration
+  // half is defensive and currently unexercised, and that is recorded rather
+  // than dressed up — see STATE. It stays because `FormHistory` and
+  // `PlacesSemanticHistoryDatabase` both guard their schema step separately
+  // for the same reason, and removing a guard because no fixture was found
+  // for it is not the same as showing it is unreachable.
+  const path = PathUtils.join(
+    PathUtils.profileDir,
+    "context-engine-damaged-pages.sqlite"
+  );
+  await IOUtils.remove(path, { ignoreAbsent: true });
+  let store = await FOSContextStore.open({ path });
+  const trailId = await store.addTrail({ name: "before the damage" });
+  for (let i = 0; i < 200; i++) {
+    await store.addNode({ trailId, url: `https://damaged.invalid/${i}` });
+  }
+  await store.close();
+
+  const bytes = await IOUtils.read(path);
+  Assert.greater(bytes.length, 4096, "there are pages beyond the first");
+  bytes.fill(0x41, 4096);
+  await IOUtils.write(path, bytes);
+
+  store = await FOSContextStore.open({ path });
+  const [row] = await store.connection.execute(
+    "SELECT COUNT(*) AS n FROM trail_node"
+  );
+  Assert.equal(
+    row.getResultByName("n"),
+    0,
+    "opening succeeds, on a fresh and empty database"
+  );
+  await store.close();
+
+  Assert.equal(
+    (await movedAside(path)).length,
+    1,
+    "and the damaged file was kept rather than thrown away"
   );
 });
 
