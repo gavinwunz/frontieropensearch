@@ -189,7 +189,12 @@ add_task(async function take_the_screenshots() {
 
   const rootId = session().currentNodeId;
   for (const url of [XANADU, NLS]) {
+    const back = BrowserTestUtils.waitForLocationChange(
+      win.gBrowser,
+      session().store.getNode(rootId).url
+    );
     await session().enter(rootId);
+    await back;
     await read(url);
   }
   await engine().settled;

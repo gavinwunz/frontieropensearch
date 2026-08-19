@@ -242,9 +242,14 @@ add_task(async function test_accepting_a_live_page_re_enters_it() {
   const row = rows.find(each => each.url === PAGE_A);
   Assert.ok(row, "the page is on offer");
 
+  // Not `browserLoaded`, and the assertion above says why: the page is
+  // re-entered rather than reloaded, and a node still in this tab's chain is
+  // reached by traversing to it — which fires no load event when the page
+  // comes back out of the bfcache.
+  const landed = BrowserTestUtils.waitForLocationChange(gBrowser, PAGE_A);
   const entered = engine().activate(row);
   Assert.ok(entered, "a page still on a trail is re-entered, not reloaded");
-  await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser, false, PAGE_A);
+  await landed;
   Assert.equal(
     gBrowser.selectedBrowser.currentURI.spec,
     PAGE_A,

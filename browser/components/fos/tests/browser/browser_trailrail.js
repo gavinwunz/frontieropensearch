@@ -78,6 +78,30 @@ registerCleanupFunction(() => {
   FOSCommandBar.forWindow(window).marks.clear();
 });
 
+/**
+ * Re-enter a node and wait until its page is actually in front of the user.
+ *
+ * `enter` resolves once it has *asked* for the node; the load it asks for
+ * lands later, and for a node still in this tab's session history that load is
+ * a traversal, which fires no load event when the page comes out of the
+ * bfcache. Starting a fresh navigation on top of a pending traversal is a race
+ * the harness reports as an unrelated timeout somewhere further down the file,
+ * so every re-entry here waits for the landing before anything else moves.
+ *
+ * @param {object} trail The window's `FOSTrailSession`.
+ * @param {number} nodeId The node to re-enter.
+ * @returns {Promise<boolean>} What `enter` returned.
+ */
+async function enterAndLand(trail, nodeId) {
+  const landed = BrowserTestUtils.waitForLocationChange(
+    gBrowser,
+    trail.store.getNode(nodeId).url
+  );
+  const entered = await trail.enter(nodeId);
+  await landed;
+  return entered;
+}
+
 add_task(async function test_the_history_gesture_opens_the_trail() {
   // Pillar B replaces linear history rather than sitting beside it, so the key
   // that opened the history sidebar has to name this command. A second gesture
@@ -160,7 +184,7 @@ add_task(async function test_going_back_never_destroys_the_forward_branch() {
   await goTo(PAGE_B);
   const firstBranch = trail.currentNodeId;
 
-  await trail.enter(rootId);
+  await enterAndLand(trail, rootId);
   Assert.equal(trail.currentNodeId, rootId, "re-entered the earlier node");
 
   await goTo(PAGE_C);
@@ -222,12 +246,7 @@ add_task(async function test_re_entry_restores_the_page_and_its_scroll() {
     "including the scroll offset, which is the part that makes going back free"
   );
 
-  // Not `browserLoaded`: the root is still an entry of this tab's chain, so
-  // re-entry traverses to it rather than replaying a stored blob, and a page
-  // out of the bfcache fires no load event.
-  const landed = BrowserTestUtils.waitForLocationChange(gBrowser, PAGE_A);
-  await trail.enter(rootId);
-  await landed;
+  await enterAndLand(trail, rootId);
 
   Assert.equal(
     tab.linkedBrowser.currentURI.spec,
@@ -773,7 +792,7 @@ add_task(async function test_walking_back_into_a_finished_trail_resumes_it() {
   // `enter` is what the context sidebar and the bar's rows call when a page is
   // picked off a list, and an archived trail's nodes are still in this
   // session's tree — so this is the ordinary way back in, not a contrivance.
-  await trail.enter(rootId);
+  await enterAndLand(trail, rootId);
 
   Assert.equal(
     trail.store.isArchived(finished),
@@ -817,7 +836,7 @@ add_task(async function test_a_resumed_trail_comes_back_to_the_field() {
     false
   );
 
-  await trail.enter(rootId);
+  await enterAndLand(trail, rootId);
   field.sync();
 
   Assert.ok(

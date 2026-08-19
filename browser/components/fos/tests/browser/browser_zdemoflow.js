@@ -329,7 +329,16 @@ add_task(async function test_the_demo_flow() {
   // claim stated at the only scale where it is interesting — two branches
   // could be a back button with one forward entry; three cannot.
   for (const url of [BRANCH_ONE, BRANCH_TWO, BRANCH_THREE]) {
+    // Waited onto the page, not merely asked for. `enter` resolves once it has
+    // asked, and for a node still in this tab's chain the load it asks for is
+    // a traversal — so starting the branch navigation immediately after would
+    // race a load that is still on its way.
+    const back = BrowserTestUtils.waitForLocationChange(
+      win.gBrowser,
+      session().store.getNode(searchNodeId).url
+    );
     await session().enter(searchNodeId);
+    await back;
     Assert.equal(
       session().currentNodeId,
       searchNodeId,
