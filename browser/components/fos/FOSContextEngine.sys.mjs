@@ -376,13 +376,15 @@ export class FOSContextEngine {
    * record it says it no longer has — and worse, one that goes on writing
    * visits and scroll offsets against a row that is gone.
    *
-   * The order matters and is the reverse of what looks natural. The session is
-   * pruned *first* and the id map is cleaned to match it, never the other way
-   * round: a node missing from `#nodeIds` is precisely what makes
-   * `#reconcile` decide the node has never been written and add it, so
-   * emptying the map while the tree still held the nodes would write every
-   * forgotten page straight back on the next settle. The map is a record of
-   * what is on disk; the tree is what the map is about.
+   * The invariant is that the tree and the id map move **together**, and it is
+   * the map alone that is the trap: a node missing from `#nodeIds` is precisely
+   * what makes `#reconcile` decide it has never been written and add it, so
+   * clearing the map while the in-memory tree still held the nodes would write
+   * every forgotten page straight back on the next settle. Their order within
+   * this method is not what saves it — reconciliation is only reached through
+   * the `#changed` that `session.forget` fires at its end, by which point both
+   * have happened. The map is a record of what is on disk; the tree is what the
+   * map is about, and neither is meaningful without the other.
    *
    * @param {ForgetSummary} summary As `FOSForget` broadcasts it.
    */

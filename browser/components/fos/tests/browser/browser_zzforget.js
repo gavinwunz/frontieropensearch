@@ -167,8 +167,9 @@ add_task(async function test_clearing_a_time_range_reaches_the_store() {
 const LIVE_HOST = "test2.example.com";
 const LIVE_PAGE = `https://${LIVE_HOST}/`;
 const LIVE_SUBDOMAIN = `https://sub1.${LIVE_HOST}/`;
-/** A page on a host nothing here forgets, to be the survivor. */
-const KEPT_PAGE = "https://example.org/";
+/** Pages on a host nothing here forgets, to be the survivors. */
+const KEPT_FIRST = "https://example.org/?before";
+const KEPT_PAGE = "https://example.org/?after";
 
 /**
  * Navigate a browser and wait for the load to commit.
@@ -216,6 +217,7 @@ add_task(async function test_forgetting_reaches_the_live_window() {
   // sitting on the doomed host, which is the case with the actual question in
   // it — what happens to the page you are looking at.
   const walker = await BrowserTestUtils.openNewForegroundTab(gBrowser);
+  await goTo(walker.linkedBrowser, KEPT_FIRST);
   await goTo(walker.linkedBrowser, LIVE_PAGE);
   await goTo(walker.linkedBrowser, LIVE_SUBDOMAIN);
   await goTo(walker.linkedBrowser, KEPT_PAGE);
@@ -234,6 +236,9 @@ add_task(async function test_forgetting_reaches_the_live_window() {
   const kept = session.store
     .nodes(walkerTrail)
     .find(node => node.url === KEPT_PAGE);
+  const keptFirst = session.store
+    .nodes(walkerTrail)
+    .find(node => node.url === KEPT_FIRST);
   Assert.equal(doomedNodes.length, 3, "the fixture is in the live tree");
   Assert.ok(field.model.cardForNode(sitterNode), "and on the Field");
   Assert.equal(
@@ -258,9 +263,9 @@ add_task(async function test_forgetting_reaches_the_live_window() {
   }
   Assert.equal(
     session.store.getNode(kept.id)?.parent_id,
-    null,
-    "a page found *from* a forgotten one stays, climbing to the nearest " +
-      "survivor — here there is none, so it becomes a root"
+    keptFirst.id,
+    "a page found *from* a forgotten one stays, climbing past two forgotten " +
+      "pages to the nearest survivor rather than being deleted with them"
   );
   Assert.ok(
     field.model.cardForNode(kept.id),
@@ -271,6 +276,17 @@ add_task(async function test_forgetting_reaches_the_live_window() {
     session.store.getTrail(sitterTrail),
     null,
     "a trail with nothing left on it goes with its last page"
+  );
+  Assert.ok(
+    !field.model.regions().some(region => region.id === sitterTrail),
+    "and its region comes off the Field, rather than staying as an empty " +
+      "tile for a trail that no longer exists"
+  );
+  Assert.equal(
+    session.activeTrailId,
+    null,
+    "and stops being the active trail: the rail draws whatever this names, " +
+      "and a deleted trail is not something it can draw"
   );
 
   // The decision this run had to make, stated as an assertion.
@@ -305,9 +321,12 @@ add_task(async function test_forgetting_reaches_the_live_window() {
   // `enter` restores asynchronously — a test that closed these tabs without
   // waiting would have `setTabState` land on a browser that had gone.
   await Promise.all(back.ran.map(outcome => outcome.result));
-  Assert.ok(
-    !doomedNodes.includes(session.currentNodeId),
-    "going back does not land on a page that has been forgotten"
+  Assert.equal(
+    session.currentNodeId,
+    keptFirst.id,
+    "going back skips the forgotten pages and lands on the surviving page " +
+      "before them, rather than refusing to move because the page it meant " +
+      "to return to has gone"
   );
 
   BrowserTestUtils.removeTab(sitter);
