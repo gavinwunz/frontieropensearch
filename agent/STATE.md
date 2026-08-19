@@ -81,7 +81,11 @@ promoted against 25.6/24.3/22.5/20.2ms baseline. Overlapping distributions; a
 One run a side looked like a 10ms win. `IDEAS.md` run 49 has the table so it
 stays rejected.
 
-Green: 322 node checks, 0 failures. Full FOS suite running as `fossuite49`.
+Green: **904 FOS browser-chrome checks** (up from 901), 248 xpcshell subtests,
+**322 node checks**, 0 failures across the whole suite. **Three mutations, all
+three caught** — the counter's increment removed, the fast path forced to
+refuse, and that same mutation re-run to validate the instrument rather than
+the code. Lint clean on every changed file.
 
 `main` is at `phase-3`. `agent/dev` is pushed through this run's commits.
 
@@ -153,7 +157,7 @@ Green: 322 node checks, 0 failures. Full FOS suite running as `fossuite49`.
 
 ## Background jobs
 
-**Nothing is running.** `fossuite48` was the last, and it finished — 901
+**Nothing is running.** `fossuite49b` was the last, and it finished — 904
 browser-chrome checks, 0 failures.
 
 `agent/mutate.sh` is new: apply one replacement, **assert it applied**, run a
