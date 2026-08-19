@@ -2442,3 +2442,77 @@ mark is worth asking about.
 Sources: [Designing Calm Technology, Weiser & Seely Brown](https://people.csail.mit.edu/rudolph/Teaching/weiser.pdf),
 [Calm technology](https://en.wikipedia.org/wiki/Calm_technology),
 [Disruption and Recovery of Computing Tasks, Iqbal & Horvitz, CHI 2007](https://www.microsoft.com/en-us/research/wp-content/uploads/2016/11/CHI_2007_Iqbal_Horvitz-1.pdf)
+
+---
+
+## Run 36 — the embedding pass, measured before it was built
+
+Searched: `model2vec potion-retrieval-32M static embeddings quality short
+queries benchmark`; `search session task boundary detection query embeddings
+same-task clustering precision study`.
+
+The published claim for the model the tree already prefers:
+`potion-retrieval-32M` is the best-performing static retrieval model, reaching
+**81.7–86.7% of `all-MiniLM-L6-v2`** on retrieval while being orders of
+magnitude faster. That is a number about retrieval benchmarks, whose queries are
+sentences. This fork's input is four lower-case words, which is shorter than
+anything in that evaluation, so the claim does not transfer and the measurement
+had to be ours. `browser_zzembedquality.js` is it, and `agent/jobs/run36.sh`
+runs it: eight enquiries, 32 queries written the way they are typed and 24
+capitalised page titles, two of the eight pairs deliberately adjacent
+(memex/spatial hypertext, sqlite/onnx) so the score is not carried by easy
+separations.
+
+**The control is the point.** The Context Engine already stores
+`normaliseIntent` for every query, so the thing a 30MB download has to beat is
+Jaccard overlap on those tokens. It is not a straw man — it is what shipped.
+
+| arm | query→query p@1 | query→title p@1 | best merge threshold | precision / recall |
+| --- | --- | --- | --- | --- |
+| lexical (Jaccard) | 0.625\* | 0.750\* | 0.111 | 0.941 / **0.333** |
+| static/d256 | **0.844** | 0.906 | 0.201 | 0.778 / 0.583 |
+| static/d512 | **0.844** | **0.938** | 0.169 | 0.756 / 0.646 |
+
+\* **The asterisk is the finding.** For **11 of 32** queries the lexical arm
+returns the same similarity — zero — for every candidate in the corpus, and for
+8 of 32 against titles. Those rows are credited to it above because sort order
+had to break the tie, so its true p@1 is somewhere at or below 0.66 and 0.75 is
+generous. A third of the input this fork's users type has *no lexical signal at
+all* against their own history, which is a sharper statement of the gap than
+"queries are lower case": the shallow path is not weak on those queries, it is
+silent on them. The static arm answers all 32.
+
+**Verdict: adopt, at d256.** The two dimensions are indistinguishable on this
+corpus — identical query→query p@1, one query's difference on titles, both
+inside the noise of 32 rows — and the fetch is 30MB against 60MB. The download
+is something this fork asks a user for, so where the evidence is a tie the
+smaller one wins. Re-run `run36.sh` if that is ever doubted.
+
+**Cost is not a consideration, which is the other reason to adopt.** Load is
+~0.4–0.7s once, and an embedding is **1.27ms** for one query and 3.1ms for all
+32 — because the model is a lookup table and an embedding is a sum of rows.
+There is no encoder, so there is no budget conversation of the kind the ASR
+path needed.
+
+**What the numbers refuse.** The best separating threshold for "same enquiry"
+is 0.169 at precision 0.756 — so roughly **one in four pairs above the
+threshold are from different enquiries**, and pushing precision up costs recall
+immediately. That kills silent cross-trail context merging, which is what I
+would have built: a rule that quietly folds two research topics together and is
+wrong a quarter of the time is worse than no rule, because the user cannot see
+what it did. It does not kill *offering* the merge, and that is the shape it
+should take — consistent with the line this project already holds, that
+provenance is a statement and inference is a suggestion. The threshold is now a
+measured number rather than a guess, which is what makes the offer buildable.
+
+**Where it is weak, recorded so it is not rediscovered.** Error-message queries
+were the worst enquiry in both arms — `rust` scored 2/4 nearest neighbours
+in-task, because "why does my closure move the value" and "lifetime annotation
+error struct" share their vocabulary with nothing except the thing they are
+about. A bag-of-tokens model has no word order to fall back on. The best arm
+was query→title at 0.938, which is the direction the command bar actually
+needs.
+
+Sources: [potion-retrieval-32M](https://huggingface.co/minishlab/potion-retrieval-32M),
+[Model2Vec results](https://github.com/MinishLab/model2vec/blob/main/results/README.md),
+[Identifying Task-based Sessions in Search Engine Query Logs, Lucchese et al., WSDM 2011](https://dl.acm.org/doi/pdf/10.1145/1935826.1935875)

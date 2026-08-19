@@ -28,6 +28,8 @@ support-files = [
 
 ["browser_zdemoflow.js"]
 
+["browser_zzembedquality.js"]
+
 ["browser_zzfieldperf.js"]
 
 ["browser_zzscreenshots.js"]
