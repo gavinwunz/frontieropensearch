@@ -23,7 +23,7 @@ one.
 
 ## Done
 
-**Moved to `agent/BUILT.md`** — 45 entries, newest first, verbatim. It had become
+**Moved to `agent/BUILT.md`** — 47 entries, newest first, verbatim. It had become
 a log inside a file that says at the top it is not one, and every run paid to
 read it before picking up a task.
 
@@ -39,93 +39,111 @@ the re-entry resume it forced, the Field's arrangement surviving a restart,
 "This page made you ask" as the sidebar's second page-scoped section,
 **forgetting** — the store's first delete of any kind, joined to Clear Recent
 History and Forget About This Site — **forgetting reaching the live session**,
-and, this run, **private browsing being kept out of the database at all.**
+**private browsing being kept out of the database at all**, and, this run, **the
+record surviving a profile refresh, and surviving being unreadable.**
 
 ## In progress
 
 Nothing waits on a person. **Nothing is running — the harness is free.**
 
-Run 46 did not take item 1 off the last run's list so much as find what that
-item was pointing at. The list said to re-run run 44's lens against session
-restore, profile migration, the preferences data panel and sanitize-on-shutdown.
-The same lens asked one notch earlier — what does Firefox decide about a *window*
-before this component ever sees it — found **private browsing**, and it was
-worse than anything on the list: a private window got the profile's store like
-any other, so every URL, every line typed at the command bar, every dwell time
-and every derived context label from a private session was written to a file.
-Run 44's defect was a record the user could not delete; this one was a record
-that should never have existed. The only mention of private browsing anywhere in
-the component was in `FOSActions`, suppressing *Places* keyword logging — the
-fork was careful about upstream's recording and not about its own.
+Run 47 took item 1 off the list and finished it: the three integration points
+run 44 named and had not checked. Two needed no code. The third was the worst
+defect the lens has turned up.
 
-Private windows now record to a memory database and never to a file: same store,
-same migrations, same queries, so the rail, the Field and the sidebar work as
-they do everywhere else. Recording nothing was the other option and was
-rejected; the reasoning and the sources are in `IDEAS.md` run 46, and the rules
-are in `SCHEMA.md` §Private browsing.
+**`FirefoxProfileMigrator` is what "Refresh" runs**, and it copies an explicit
+list of files — history, favicons, cookies, passwords, form data, the
+dictionary, bookmark backups, the session. The Context Engine's database was
+not on it. So the action a user takes *because the browser is already
+misbehaving* returned a browser with its history and bookmarks intact and its
+rail, Field and sidebar empty, having silently discarded every query typed,
+every trail walked, every dwell time and every named context. Run 44's defect
+was a record the user could not delete; run 46's was a record that should never
+have existed; this one is the repair action destroying the record.
 
-Three things fell out of the work rather than being planned, and all three came
-from running the thing rather than reading it:
+The database is now on the list under `types.HISTORY` beside `places.sqlite`,
+with its rollback journal, and the filename is imported from `FOSContextStore`
+so a rename cannot silently undo it. That forced a second change and then a
+third, and the chain is the interesting part:
 
-- `Sqlite.sys.mjs` cannot wrap a memory connection — two lines, now the second
-  edit outside `browser/`.
-- Closing the wrapper does not close the database, so a private session's pages
-  would have outlived it in the process. A mutation found that one.
-- **`last-pb-context-exited` is a trigger, not an event.** It can arrive when a
-  new private window is already open, and dropping the store there takes the
-  rail out from under a live window. Guarded; the test waits on the store being
-  gone rather than on the topic firing.
+- Refresh is the repair route, so carrying a file forward is only safe if a bad
+  file is survivable — otherwise refresh faithfully copies the corruption.
+  `FOSContextStore.open` now moves a database it cannot read aside and starts an
+  empty one, narrowly (`NS_ERROR_FILE_CORRUPTED`/`NOTADB`/`CORRUPT` only).
+- It **keeps** the unreadable file, because nothing in it exists anywhere else.
+  `FormHistory` keeps its corrupt files, `PlacesSemanticHistoryDatabase` deletes
+  its own, and the difference is whether the data can be recomputed.
+- Keeping it collided head-on with run 44's promise, because a `.corrupt` file
+  is a record of browsing the user cannot see and cannot clear. So
+  `FOSForget.deleteAll` sweeps them — and only `deleteAll`, since a moved-aside
+  database cannot be queried and a narrower clear cannot know what is in it.
 
-Also closed, and it needed no code: **sanitize-on-shutdown already reaches the
-store**, because shutdown sanitization clears `CLEAR_HISTORY` and runs at
-`profile-change-teardown`, before the phase where connections close.
-`browser_zzzshutdown.js` executes it rather than trusting the paragraph, and
-must stay last in the manifest because it empties the profile database.
+**Session restore and the preferences data panel need no code**, and the tree
+said so faster than the web did. Session restore was settled in run 45. The
+panel's Clear Data is `CLEAR_HISTORY`; its "Never remember history" is
+`browser.privatebrowsing.autostart`, which run 46's rule already covers. Manage
+Data is site data in the quota sense and this store is neither. **Run 44's list
+is now closed.**
 
-Green: **877 browser-chrome checks, 0 failures** — up from 859 — plus the node
-and xpcshell files unchanged in count except the store's, which gained the
-memory-store tasks. **Ten mutations, nine caught.** The survivor is deliberate
-and named below.
+Permanent private browsing got a test rather than a paragraph, and the test
+corrected `SCHEMA.md`: **there is no last private window**, so
+`last-pb-context-exited` never fires and the memory store lives until the
+process does.
+
+Green: **220 xpcshell subtests in the store file** (up from 202), a new
+`test_fx_context_engine.js` in the migration suite (9 subtests), and the FOS
+browser suite re-run whole. **Nine mutations, eight caught**; the survivor is
+named below.
 
 `main` is at `phase-3`. `agent/dev` is pushed through this run's commits.
 
 ## Next task
 
-1. **Session restore, profile migration, and the preferences data panel** — the
-   three integration points still unchecked from run 44's list. Now much cheaper
-   than they were: `browser_zzzshutdown.js` shows the shape a test of one of
-   these takes, and two of the four turned out to need no code at all, so the
-   expected outcome is a short answer per point rather than a build. Profile
-   migration is the likeliest to need work — an import writes into Places and
-   the Context Engine will not know it happened.
+1. **Show what a delete will take before it takes it.** `IDEAS.md` run 45,
+   unchanged, and now the clear top of the list — the integration-point thread
+   that has occupied runs 44 to 47 is finished. The blast radius is not
+   guessable the way a flat history's is, the counts are already computed by
+   `#forget`, and the dialog already exists. Do **not** build an undo window
+   instead — rejected with reasons in `IDEAS.md`.
 
-2. **Show what a delete will take before it takes it.** `IDEAS.md` run 45,
-   unchanged. The blast radius is not guessable the way a flat history's is, the
-   counts are already computed by `#forget`, and the dialog already exists. Do
-   **not** build an undo window instead — rejected with reasons in `IDEAS.md`.
-
-3. **Sustained resize of the crowded overview.** `IDEAS.md` run 32, unchanged:
+2. **Sustained resize of the crowded overview.** `IDEAS.md` run 32, unchanged:
    the burst is fixed but one rebuild is 18.27ms p50, longer than a frame.
    Extend the reposition fast path to cover what `render` rebuilds.
 
-4. **Why this build has no remote tabs.** Unchanged. Next step is
+3. **Why this build has no remote tabs.** Unchanged. Next step is
    `UrlbarProviderRemoteTabs.isActive` in a driven browser with
    `services.sync.username` set, not more reading.
 
-5. **The rails still overlay the page**, and **the 17 timed-out urlbar files**,
+4. **The rails still overlay the page**, and **the 17 timed-out urlbar files**,
    and **a region's height is a ratchet** (`FIELD.md` §6) — all unchanged, all
    belonging with the Field's restructure rather than piecemeal.
 
+5. **A new lens, if none of the above appeals.** Runs 44, 46 and 47 each found a
+   defect by asking what Firefox does *to* this component's data, and that
+   particular question is now exhausted. The next one is not obvious and is
+   worth ten minutes before it is worth code. One candidate: what does this
+   component do to *Firefox's* data — the fork writes to Places through
+   `FOSActions`, and nothing has ever audited that direction.
+
 ## Found this run, not yet chased
 
-- **A deliberate surviving mutation.** `detach` now closes the open visit
-  *before* leaving the `recording` set, so a write enqueued while a window is
-  being torn down is one `settledEverywhere` can still wait for. Reversing the
-  two lines survives the suite and no honest test catches it: the ordering
-  narrows a race window rather than establishing an invariant, and a test for it
-  would have to race a forget against a window close. Kept because it is
-  strictly better and free; recorded here rather than papered over with a flaky
-  test.
+- **Recovery around the *migration* is unexercised.** `open` wraps both the
+  connection and the migration so that damage surfacing on the first statement
+  to read a bad page is recovered from too. A mutation moving the migration
+  outside the recovered region **survives**: both corruption fixtures are
+  rejected by `openConnection` before any migration statement runs, and no
+  fixture has been found that fails only at migrate. The guard stays —
+  `FormHistory` and `PlacesSemanticHistoryDatabase` both wrap their schema step
+  separately, and "no fixture found" is not "shown unreachable" — but it is
+  recorded as uncovered rather than counted as covered. Do not delete it
+  because a coverage tool calls it dead.
+
+- **A deliberate surviving mutation, from run 46.** `detach` closes the open
+  visit *before* leaving the `recording` set, so a write enqueued while a window
+  is being torn down is one `settledEverywhere` can still wait for. Reversing
+  the two lines survives and no honest test catches it: the ordering narrows a
+  race window rather than establishing an invariant, and a test for it would
+  have to race a forget against a window close. Kept because it is strictly
+  better and free.
 
 - **`BrowserTestUtils.openNewBrowserWindow({private: true})` never returns on
   this machine.** It waits for the private window's first tab to load and that
@@ -143,6 +161,9 @@ and named below.
   is accumulating and nothing is unrecoverable.
 
 ## Background jobs
+
+**Nothing is running.** `fossuite47` was the last, and it finished.
+
 
 `run23` then `run25` — the live chain. Started with
 `./agent/bg.sh <name> <cmd>`; check with `./agent/bg-status.sh`. Read these
@@ -343,6 +364,33 @@ stall browsing. So the database is a very good record and not a guaranteed one;
 do not build anything that assumes a row must exist.
 
 ## Gotchas worth not rediscovering
+
+**A negative test needs a fixture on which the wrong behaviour would visibly
+succeed.** The guard deciding what counts as a corrupt database was first tested
+with a *directory* in the database's place — and a directory makes `open` throw
+whichever way the guard is written, because moving it aside fails too. The
+mutation "always treat it as corrupt" survived, and the test had been passing
+for the failure of something else entirely. The replacement is a healthy
+database a migration cannot be applied to, where recovery *would* succeed if
+attempted. Ask of every "and it correctly refuses to X" test: if X happened,
+would this fixture let it complete?
+
+**A failing `Sqlite.openConnection` deletes the hot journal on its way out.** It
+attempts rollback-journal recovery before reporting the file unreadable, so by
+the time a caller gets control there is usually no journal left to preserve.
+Found by asserting the opposite and watching it fail. The consequence for
+anything moving a database aside: the property to assert is that no journal is
+left beside the *replacement*, not that the journal was carried off with the
+original.
+
+**`IOUtils.createUniqueFile` uniquifies before the last extension.**
+`x.sqlite.corrupt` becomes `x.sqlite-1.corrupt`, not `x.sqlite.corrupt-1`. So
+any sweep over files it created must match on prefix *and* suffix rather than
+reconstruct the expected name. The shipped predicate does; the first version of
+the test helper did not, and silently missed every second recovery — the
+production code was right for a reason the test then demonstrated by getting it
+wrong.
+
 
 **A notification named for an ending is not proof that the thing has ended.**
 `last-pb-context-exited` fires after the last private window closes, and if the

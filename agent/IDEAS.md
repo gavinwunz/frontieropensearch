@@ -3694,3 +3694,129 @@ registered under that flag. The ordering also holds: the clear runs at
 `profile-change-teardown`, and `Sqlite.sys.mjs` closes connections at
 `profile-before-change`, which is later, so the delete cannot race the database
 closing. `browser_zzzshutdown.js` runs it rather than trusting the paragraph.
+
+## Run 47 — the repair action that destroys the record
+
+### Where the lens pointed this time
+
+Runs 44 and 46 both asked "what does Firefox already do *to* this component's
+data", and both found a defect. The standing list said to finish the question
+against the three integration points still unchecked: session restore, profile
+migration, and `about:preferences`' data panel. Two of the three needed no
+code. The third was the worst one found so far.
+
+- **Found:** `FirefoxProfileMigrator` is what "Refresh" runs, and it copies an
+  explicit list of files.
+- **Verdict:** **defect**, fixed. The Context Engine's database was not on it.
+
+The list is `places.sqlite`, `favicons.sqlite`, cookies, passwords, form data,
+the personal dictionary, bookmark backups, the session, sync state, times and
+telemetry. Everything else is dropped *on purpose* — the point of a refresh is
+to lose whatever configuration might be causing the trouble. So a refresh
+returned a browser with its history and bookmarks intact and its rail, Field and
+sidebar empty, having discarded every query typed, every trail walked, every
+dwell time and every named context, silently.
+
+What makes this worse than run 44's defect rather than merely equal to it: a
+refresh is what a user does when the browser is *already* misbehaving. The
+action taken to repair the browser is the action that destroys the thing the
+browser exists to keep. And unlike a clear, nobody who runs a refresh has asked
+to lose anything — Mozilla's own support page describes it as restoring
+defaults "while saving your essential information".
+
+### Is this store "essential information" or configuration?
+
+- **Found:** the migrator's list is not arbitrary; it has a shape.
+- **Verdict:** **adopt** `types.HISTORY`, beside `places.sqlite`.
+
+Everything on the list is irreplaceable user content or identity. Everything
+off it is derived, cached, or a setting: `permissions.sqlite`,
+`content-prefs.sqlite`, `protections.sqlite`, extensions, themes, toolbars. The
+test is not "is it important" but "can it be reconstructed" — and Places can be
+rebuilt by browsing, while a question you typed and the name you gave an
+afternoon's work cannot be reconstructed from anything.
+
+The rollback journal goes too. `places` copies its `-wal` for the same reason
+and the reason is not tidiness: a source profile that crashed has a hot journal,
+a journal is matched to its database by *filename*, and a database copied
+without it is a recoverable crash turned into an unreadable file.
+
+### The change that the change forced
+
+- **Found:** carrying a file forward through the repair action is only safe if
+  the browser can recover from that file being bad.
+- **Verdict:** **adopt** move-aside-and-replace. Otherwise refresh, the repair
+  action, stops repairing — it would now faithfully copy the corruption.
+
+`FOSContextStore.open` had no recovery at all, and the tree has two precedents
+that disagree with each other in an instructive way.
+`PlacesSemanticHistoryDatabase` **deletes** its corrupt files;`FormHistory`
+**keeps** its own under `.corrupt`. Neither is wrong — the difference is
+whether the data exists anywhere else. A semantic index can be recomputed from
+Places. What you typed into a form cannot. This store is further into the
+second class than either, so the file is kept.
+
+**And the keeping immediately collided with run 44.** A `.corrupt` file is a
+record of browsing that the user cannot see, did not ask for, and that "clear
+everything" does not reach — which is, exactly and unarguably, the defect
+`FOSForget` was written to remove. Two ways out: delete the file (lose the only
+copy) or make the sweep reach it. The second, and only from `deleteAll`: a
+moved-aside database cannot be queried, so a clear of one host or one range has
+no way to know whether it holds anything relevant, and guessing would throw away
+far more than was asked for.
+
+Worth keeping as a general property: **this fork's earlier decisions now
+constrain its later ones in a way a flat history's would not.** "Everything here
+can be deleted" was a promise made in run 44 about rows in a database; it turned
+out to be a promise about files in a directory too.
+
+### The two that needed no code, and why the tree said so faster than the web
+
+- **Found:** session restore and the preferences data panel.
+- **Verdict:** no work needed, both.
+
+Session restore was settled in run 45 — `onPurgeDomainData` and
+`onPurgeSessionHistory` remove closed tabs and leave open ones alone, and
+`SCHEMA.md` §Forgetting already adopts that rule verbatim. The data panel offers
+two things for this data: Clear Data, which is `CLEAR_HISTORY` and therefore the
+cleaner registered in run 44; and "Never remember history", which sets
+`browser.privatebrowsing.autostart` and so makes every window private under run
+46's rule. Its third control, Manage Data, is site data in the quota sense —
+cookies and cache per origin — and this store is neither.
+
+Permanent private browsing got a test rather than a paragraph, and the test
+found the one thing reading would have got wrong: **there is no last private
+window**, so `last-pb-context-exited` never fires and the memory store lives
+until the process does. Nothing reaches a file either way, but §Private
+browsing described a per-session lifetime that does not exist in this mode.
+
+### Method notes
+
+**A mutation caught a test that was passing for the wrong reason.** The guard
+that decides what counts as corruption was tested with a *directory* in the
+database's place — and a directory makes `open` throw whichever way the guard is
+written, because moving it aside fails too. Making `isUnopenable` always return
+true survived. The replacement fixture is a healthy database that a migration
+cannot be applied to, where recovery *would* succeed if it were attempted, so
+the assertion can only hold if the guard is what stopped it. Generalise: **a
+negative test needs a fixture on which the wrong behaviour would visibly
+succeed**, or it is testing the failure of something else.
+
+**And a mutation refused a claim the test's own comment made.** A second fixture
+— a real database with its data pages scribbled over — was written believing it
+exercised the recovery wrapped around the *migration*. Moving the migration
+outside the recovered region left it passing: `openConnection` rejects that file
+before any migration statement runs. The guard stays, because `FormHistory` and
+`PlacesSemanticHistoryDatabase` both wrap their schema step separately, and
+"no fixture found" is not "shown unreachable" — but it is recorded as
+unexercised rather than counted as covered.
+
+**Running it beat reading it, twice more.** `Sqlite.openConnection` attempts
+hot-journal recovery and *deletes* the journal before reporting a file
+unreadable, so the journal-preservation half of `moveAside` almost never fires —
+discovered by asserting it and watching the assertion fail.  And
+`IOUtils.createUniqueFile` uniquifies by inserting before the last extension
+(`x.sqlite.corrupt` → `x.sqlite-1.corrupt`), which the shipped sweep survives
+because it matches on prefix and suffix — while the *test helper*, which
+reconstructed the name, silently missed every second recovery. The production
+predicate was right for a reason the test then demonstrated by getting it wrong.

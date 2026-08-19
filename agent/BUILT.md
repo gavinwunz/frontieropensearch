@@ -10,6 +10,30 @@ this, and what was decided when it was built" — the reasoning in full is in
 `design/` and `context-engine/`. Nothing here is waiting on anybody; what is,
 is in `STATE.md`.
 
+- **A profile refresh carries the Context Engine forward, and a database it
+  cannot read no longer strands the browser.** `FirefoxProfileMigrator` — what
+  "Refresh" runs — copies an explicit list of files and this fork's database was
+  not on it, so the action a user takes when the browser is *already*
+  misbehaving silently destroyed every query, trail, dwell time and named
+  context while faithfully preserving history, bookmarks, passwords and the open
+  session. It is now on the list under `types.HISTORY` beside `places.sqlite`,
+  with its rollback journal, and the filename is imported from `FOSContextStore`
+  rather than spelled out so a rename cannot silently undo it. That forced the
+  second half: a refresh is the repair route, so carrying a file forward is only
+  safe if a bad file is survivable. `FOSContextStore.open` now moves a database
+  it cannot read aside and starts an empty one — narrowly, on
+  `NS_ERROR_FILE_CORRUPTED`/`NOTADB`/`CORRUPT` only, because the cost of a false
+  positive is a good record replaced by an empty one — and *keeps* the file,
+  since nothing in it exists anywhere else. `FormHistory` keeps its corrupt
+  files and `PlacesSemanticHistoryDatabase` deletes its own, and the difference
+  is whether the data can be recomputed; this store cannot be. Keeping it
+  collided head-on with run 44's promise that everything here can be deleted, so
+  `FOSForget.deleteAll` sweeps what was kept — and only `deleteAll`, because a
+  moved-aside database cannot be queried and a narrower clear has no way to know
+  what is in it. Session restore and the preferences data panel were checked in
+  the same pass and need no code, which closes run 44's list. `SCHEMA.md`
+  §Recovery and §Permanent private browsing, `design/ARCHITECTURE.md` §7.
+
 - **Private browsing stays out of the database.** A private window wired its
   context engine to the profile's store like any other window, so every URL,
   every line typed at the command bar, every dwell time and every derived
