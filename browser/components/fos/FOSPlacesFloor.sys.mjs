@@ -28,6 +28,12 @@
  *
  * The connection is Places' own read-only one, so this reads history without
  * being able to alter it.
+ *
+ * Which is true of this file and was not true of the fork. What the ranking
+ * read here is worth depends on what the fork *wrote* — a visit's frecency
+ * turns on whether Places was told the chrome asked for the page — and that
+ * declaration is made in `FOSActions.sys.mjs`, three modules away, where
+ * nothing about this tier is in view. See `ARCHITECTURE.md` §7.
  */
 
 const lazy = {};

@@ -287,6 +287,48 @@ store's does not. `SCHEMA.md` §Saying what will go, before it goes has the
 argument, including why the preview is the delete rolled back rather than a
 second set of counting queries.
 
+**The reverse question — what the fork writes into *Firefox's* data — had never
+been asked, and it had one answer.** Every question above starts from Firefox
+and looks at this store; this one starts from the dispatcher and looks at
+`places.sqlite`. Places does not record a visit the same way for every caller:
+`nsINavHistoryService.markPageAsTyped` is how a piece of chrome declares that
+*it*, and not a link on a page, asked for the URL, and the method's own comment
+states the default — "if this is not called visits will be marked as
+TRANSITION_LINK". Firefox declares it from the address bar
+(`UrlbarUtils.addToUrlbarHistory`), the history menu, the history sidebar and
+the places organiser. `FOSActionDispatcher` is the one surface that replaced all
+four, and it declared nothing, so every page a user of this fork asked for by
+name was recorded as though a page had linked to it.
+
+It is not a mislabelled row. `SQLFunctions.cpp` scores a typed visit at
+veryHigh/high and a link visit one tier down at high/medium, and `FOSPlacesFloor`
+— the command bar's fifth tier — deliberately takes Places' own ordering rather
+than inventing one. So the two halves of this fork were working against each
+other: the dispatcher demoted the pages the user had named, and the floor read
+the demotion back in as though it were Places' opinion. The floor's comment says
+it "reads history without being able to alter it", and that stays true of the
+floor; the alteration was upstream of it, in the module that asks for the loads.
+
+The search half is the same fact from the other side, and is why the fix is two
+things rather than one. Firefox marks a result page typed like anything else and
+keeps the typed weight off it by the visit's *source*: the frecency SQL excludes
+`v.source IN (1, 3)`, and source 3 is set in `History.cpp` from the
+`triggeringSearchEngine` attribute that `Tabbrowser._updateTriggerMetadataForLoad`
+puts on the browser element. Marking typed without passing the engine would not
+have been half a fix — it would have ranked every result page above the pages
+found from it. The dispatcher passes `globalHistoryOptions` for a search and
+nothing for a URL, and the nothing matters too: it is what clears the attribute
+a previous search left behind.
+
+The private-window guard on the mark is not redundant with the docshell's
+refusal to record private visits. The typed hint is not private state — it is
+one in-memory set keyed by URL spec with a fifteen-minute life — so a private
+window marking a page and an ordinary window opening the same page a minute
+later would have written a typed visit into the profile on the strength of
+private browsing. That is the same class of defect as the second one in this
+section, arriving by a route that has nothing to do with this fork's store, and
+`browser_zztransition.js` is where all of it is asserted.
+
 Upstream Firefox guidance in `AGENTS.md` and `docs/` still applies to everything
 below that line.
 

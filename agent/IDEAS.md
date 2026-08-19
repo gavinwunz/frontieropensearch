@@ -4046,3 +4046,120 @@ needs its own counter before it is allowed to become a task.
 **Sources:** none — this run's evidence is
 `browser/components/fos/tests/browser/browser_zzfieldperf.js` and five runs of
 it.
+
+---
+
+## Run 50 — what the fork writes into Firefox's data
+
+Run 47 left this as the last unasked question in a lens that had already paid
+three times. Runs 44, 46 and 47 each found a defect by asking what Firefox does
+*to* this component's data — `nsIClearDataService`, private browsing, profile
+refresh — and that question was exhausted. The reverse had never been asked
+once: the fork writes to Places through `FOSActions`, and nothing had audited
+that direction.
+
+It had one answer, and it was in the tree the whole time.
+
+### The finding
+
+`nsINavHistoryService.markPageAsTyped` is how a piece of chrome tells Places
+that it, and not a link on a page, asked for a URL. The method's own comment in
+`PlacesUIUtils.sys.mjs` states the default in one line: *"If this is not called
+visits will be marked as TRANSITION_LINK."* Firefox calls it from four places —
+the address bar via `UrlbarUtils.addToUrlbarHistory`, the history menu, the
+history sidebar, the places organiser. This fork replaced all four with one
+dispatcher and called it from none of them.
+
+So every page a user of this browser has ever asked for by name has been
+recorded as a link visit. Verified rather than reasoned: `browser_zztransition.js`
+read `moz_historyvisits.visit_type` after a line run through the command bar and
+got 1 where 2 was due.
+
+### Why it is not a mislabelled row
+
+`SQLFunctions.cpp` weights a visit by what kind it is: typed, not a redirect,
+not search-sourced gets veryHigh/high; an ordinary link visit gets high/medium,
+one tier down, on **every visit**. `FOSPlacesFloor` — the command bar's fifth
+tier — ranks by exactly that column and deliberately takes Places' ordering
+rather than inventing one, on the grounds that re-sorting would be "this
+component inventing an opinion about a score it did not build".
+
+Which was right, and left the two halves of the fork working against each
+other. The dispatcher demoted the pages the user named; the floor read the
+demotion back as though it were Places' own opinion. Neither module could see
+it: the floor's comment correctly says it cannot alter history, because the
+alteration is three modules upstream, in the code that asks for the loads.
+
+### Adopt — with the search half, or not at all
+
+Firefox marks a *result page* typed too, and keeps the typed boost off it by the
+visit's source: the frecency SQL excludes `v.source IN (1, 3)`, and source 3 is
+set in `History.cpp` from a `triggeringSearchEngine` attribute that
+`Tabbrowser._updateTriggerMetadataForLoad` puts on the browser element from
+`globalHistoryOptions`.
+
+That makes marking-typed-alone worse than doing nothing for searches: it would
+lift every result page above the pages found from it, which is the exact
+inversion the tiers exist to prevent. The two go in together. `#load` passes the
+engine for a search and `undefined` for a URL — and the `undefined` is
+load-bearing, because the attribute lives on the browser element rather than on
+the load, so a plain URL after a search would otherwise be filed under the last
+engine used. Asserted, because it is invisible: a test sets the attribute by
+hand and checks the next URL clears it.
+
+The engine name is read from `SearchService` with the same guard and the same
+private/non-private branch `URIFixup.keywordToURI` uses, because fixup does not
+report which engine answered — it returns a submission URL and nothing else. A
+disagreement here would file a visit under the wrong engine rather than send it
+to one, which is why the read is a copy of fixup's and not a second decision.
+
+### The private guard, which is not the redundant one it looks like
+
+The docshell already declines to record a private visit, so a first reading says
+the guard is dead code. It is not. The typed mark is not a database write and
+not private state — `nsNavHistory::MarkPageAsTyped` inserts into one global
+in-memory map keyed by URL spec, with a `RECENT_EVENT_THRESHOLD` of fifteen
+minutes. Mark from a private window, open the same page in an ordinary one
+inside that window, and the ordinary visit is written to the profile as typed on
+the strength of the private one.
+
+Nothing in this fork's private-browsing story would have caught it, because the
+private window itself writes no row. Mutation-tested: removing the guard makes
+`test_a_private_window_does_not_mark_the_profile` fail with `2 == 1`, a typed
+visit in the profile database that private browsing put there.
+
+### The transferable part
+
+**A component that only reads a shared store still has a stake in what its own
+process writes there.** `FOSPlacesFloor` was written with real care about not
+having opinions on a score it did not build, and that care is what hid this:
+the tier's quality depends on a declaration made in a module that has never
+heard of the tier. The lens generalises past Places — for any store the fork
+reads through Firefox's API, ask what the fork's own writes to that store look
+like, and whether any of them are missing rather than wrong. Missing writes have
+no diff and no stack trace; they are only visible against what the equivalent
+Firefox surface does.
+
+### Not chased, same lens, next probes
+
+- **`moz_inputhistory`.** The urlbar writes it (`addToInputHistory`) so Places
+  can learn which typed string leads to which URL; the command bar writes it
+  and reads it never. **Reject as a defect, record as deliberate:** that is the
+  adaptive signal the five-tier design explicitly replaced with provenance, and
+  the floor's rule is Places' ordering unmodified. Do not reconsider without a
+  reason that is not "Firefox does it".
+- **`browser.userTypedValue`.** Set by the urlbar before a load, persisted by
+  SessionStore, and used to restore a tab whose load never finished. The fork
+  never sets it, so a tab caught mid-load of a typed URL restores to what it was
+  before rather than to what was asked for. Real but small, and it tangles with
+  trail re-entry restoring through `setTabState`, which is a different owner.
+  Worth its own look, not this run's.
+
+**Sources:** `toolkit/components/places/SQLFunctions.cpp` (frecency weights),
+`History.cpp` (`UpdateVisitSource`, the `triggeringSearchEngine` read),
+`nsNavHistory.cpp` (`MarkPageAsTyped`, `RECENT_EVENT_THRESHOLD`),
+`browser/components/places/PlacesUIUtils.sys.mjs` (the comment that names the
+default), `browser/components/urlbar/UrlbarParentController.sys.mjs`
+(`#prepareAddressbarLoad`), `browser/components/tabbrowser/Tabbrowser.sys.mjs`
+(`_updateTriggerMetadataForLoad`, and that `browser.loadURI` is the wrapper
+rather than the custom element's own method). All in-tree.
