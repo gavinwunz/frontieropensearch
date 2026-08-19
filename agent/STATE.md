@@ -23,26 +23,41 @@ one.
 
 ## Done
 
-- **The embedding pass is measured, and the answer changed what to build.**
-  `browser_zzembedquality.js` and `agent/jobs/run36.sh` score
+- **The embedding pass is measured, wired, and driven.** `run36.sh` scores
   `potion-retrieval-32M` against the control this fork already ships — Jaccard
-  overlap on the `normaliseIntent` tokens the store keeps for every query — on
-  32 queries written the way they are typed and 24 capitalised titles across
-  eight enquiries. Static wins everywhere: query→query p@1 0.625→0.844,
-  query→title 0.750→0.938. **The finding is underneath the table**: for 11 of
-  32 queries the lexical arm scores every candidate identically at zero, so its
-  p@1 is inflated by tie-breaking and the real gap is not weakness but
-  *silence* on a third of the input. Adopted at **d256** — indistinguishable
-  from d512 on this corpus, 30MB against 60MB, and a download is something this
-  fork asks a user for. Cost is a non-issue and has a design consequence: an
-  embedding is 1.27ms because the model is a lookup table, so candidates are
-  embedded on demand and **the schema does not move**. What the numbers refuse
-  is the half worth keeping: the best "same enquiry" threshold is 0.169 at
-  precision 0.756, so silent cross-trail merging is out and *offering* it is
-  in. The first consumer's pure half landed with it — `FOSSuggest`'s sixth
-  tier, `T_RELATED` ("Close to what you typed"), the only tier exempt from
-  `pageMatches` and the only one this module sorts, with `RELATED_FLOOR` at the
-  measured 0.169. 232 node tests.
+  overlap on the `normaliseIntent` tokens the store keeps — on 32 queries
+  written the way they are typed and 24 capitalised titles across eight
+  enquiries. Static wins everywhere: query→title p@1 0.750→0.938. **The finding
+  is underneath the table**: for 11 of 32 queries the lexical arm scores every
+  candidate identically at zero, so a third of what a user types produces no
+  ordering at all and whatever the store returned first wins. Adopted at
+  **d256** — indistinguishable from d512 on this corpus, 30MB against 60MB.
+  Cost is a non-issue and has a design consequence: an embedding is 1.27ms
+  because the model is a lookup table, so candidates are embedded on demand and
+  **the schema does not move**. Silent cross-trail merging is refused by the
+  same numbers (best precision 0.756) and *offering* it is what survives.
+
+  Shipped on top of it: `FOSSuggest`'s sixth tier `T_RELATED` ("Close to what
+  you typed"), the only tier exempt from `pageMatches` and the only one sorted
+  here, and `FOSEmbeddings.sys.mjs`, which owns the engine, caches by text and
+  persists nothing. **Verified in a real browser** (`run37.sh`): a page whose
+  title shares no word at all with the query is offered, and a page from
+  another enquiry browsed in the same window is not. 242 node tests, 670
+  browser-chrome checks.
+
+  Two things driving it found that reading could not. **The floor was measured
+  over the wrong pairs** — 0.169 came from query→query, and the tier only ever
+  compares query→title, whose threshold is 0.173; the constant now names its
+  comparison and the measurement takes an explicit second set. **The tier
+  cannot reach the Places floor**, because those rows arrive already filtered
+  by `frecencyMatches(text)`, so there is nothing lexically-rejected left in
+  them to recover; that is a vector store's job and it is not this feature.
+
+  **`browser.fos.suggest.semanticTier` is off by default, and it is consent
+  rather than a flag.** `createEngine` fetches the weights if it lacks them, so
+  without the pref the first keystroke would have sent a 30MB request to
+  Mozilla's model hub that nobody asked for — in a fork that disables update
+  and telemetry precisely to avoid that.
 
 - **Three defects a picture found, and the pointer the research said was
   missing.** Run 32's task was the oldest item on the list — two run-23 changes
@@ -526,42 +541,32 @@ pointed at it, because mochitest kills the process on a non-local connection.
 The phase plan is complete, so nothing pulls the next run in a particular
 direction. Ordered by value.
 
-1. **Wire the embedding pass to the command bar.** The measurement is done and
-   the verdict is adopt — run 36, `IDEAS.md`, numbers below — and the pure half
-   is in: `FOSSuggest`'s sixth tier `T_RELATED`, "Close to what you typed",
-   with `RELATED_FLOOR = 0.169` carrying the measurement. What is left is the
-   impure half, and it is one module:
+1. **The surfaced model download.** The related tier works and nobody can turn
+   it on: `browser.fos.suggest.semanticTier` is off by default and only a
+   pref edit flips it. What is missing is the step that makes the download the
+   user's decision — a command in the bar that says what it fetches, how big it
+   is and where from, sets the pref, and reports progress. The voice path
+   settled the pattern (run 25's option 2, run 30's ordering: a download
+   outranks every other notice a turn can raise) and this is the same shape
+   with a lower stake, because a suggestion tier that is absent is a shorter
+   list rather than a broken promise. Until it exists the tier is dead weight
+   on an ordinary profile.
 
-   - `FOSEmbeddings.sys.mjs` — create the static engine once (`backend:
-     "static-embeddings"`, `modelId: "mozilla/static-embeddings"`, revision
-     `v1.0.0`, subfolder `models/minishlab/potion-retrieval-32M`, dtype `fp16`,
-     **dimensions 256**, `compression: true`), keep it, terminate at window
-     teardown. Load is ~0.5s and belongs where the voice path puts it: before
-     the first use, not inside it.
-   - `FOSContextEngine.suggest` fills `related` — embed the typed text and the
-     candidates the strict predicate rejected, cosine, hand them over with a
-     `similarity`. **No schema change is needed and none should be made**: an
-     embedding is 1.27ms, so candidates are embedded on demand and there is no
-     vector column to keep fresh.
-   - The weights are a surfaced one-time fetch, ~30MB, exactly as the voice
-     path settled it — never a tier that quietly fails. `run36.sh` and
-     `fetch-static-embeddings.sh` are the offline harness.
+2. **Offering a cross-trail context merge.** The measurement refuses to do it
+   silently — best precision 0.756, so one in four merges above the threshold
+   would be wrong — and `context_member.source` is what keeps an accepted offer
+   tellable apart from provenance. This is the second consumer of the same
+   engine and needs no new infrastructure.
 
-   After that, and only after: **offering** a cross-trail context merge. The
-   measurement refuses to do it silently — the best threshold is precision
-   0.756, so one in four merges above it would be wrong — and
-   `context_member.source` is what keeps an accepted offer tellable apart from
-   provenance.
-
-2. **The two narrow defects.** The active card can have no thumbnail, and
+3. **The two narrow defects.** The active card can have no thumbnail, and
    closing the rail while the Field is open leaves Escape with nowhere to go.
    Both small, both real, both cheap.
 
-3. **The bare tap for a voice turn.** `GRAMMAR.md` §9 carries it. Deliberately
+4. **The bare tap for a voice turn.** `GRAMMAR.md` §9 carries it. Deliberately
    unbuilt: a mis-tap opens the microphone for the whole thirty-second
    deadline, and how often that happens is a question about use.
 
-4. **Sustained resize of the crowded overview.** Recorded in `IDEAS.md` run 32
+5. **Sustained resize of the crowded overview.** Recorded in `IDEAS.md` run 32
    and *not* solved: the burst is fixed (53ms → 1.19ms) but one rebuild is
    18.27ms p50, longer than a frame, so continuous resizing of the worst case
    the design permits still costs ~21ms a frame over the control. The fix is to
@@ -569,18 +574,18 @@ direction. Ordered by value.
    value — it is the deliberate worst case, and dragging a window edge with the
    overview up is rare.
 
-5. **Why this build has no remote tabs.** Three upstream urlbar files fail on it
+6. **Why this build has no remote tabs.** Three upstream urlbar files fail on it
    and the fork is not what breaks them. The next step is
    `UrlbarProviderRemoteTabs.isActive` in a driven browser with
    `services.sync.username` set, not more reading.
 
-6. **The rails still overlay the page.** Run 32 took them off the *toolbar*,
+7. **The rails still overlay the page.** Run 32 took them off the *toolbar*,
    which was never a deliberate trade; covering the page still is, and STATE has
    always said it belongs with the Field's restructure rather than piecemeal.
    `--fos-chrome-block-start` makes taking layout space a smaller step than it
    was, which is worth knowing when that restructure comes.
 
-7. **The 17 timed-out urlbar files, if they are ever worth it**, and **a
+8. **The 17 timed-out urlbar files, if they are ever worth it**, and **a
    region's height is a ratchet** (`FIELD.md` §6, open rather than a defect).
 
 ## Found this run, not yet chased

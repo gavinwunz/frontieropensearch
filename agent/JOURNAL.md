@@ -947,6 +947,55 @@ orderings there is no upstream claim about it to defend. `RELATED_FLOOR` is
 one that matters: a page sharing no word with the query is offered, and a row
 arriving with no similarity at all is dropped rather than promoted.
 
-Left for the next run: `FOSEmbeddings.sys.mjs`, the engine lifecycle and the
-surfaced one-time download, which is the voice path's settled pattern and the
-only thing between this tier and a user seeing it.
+The engine half followed immediately, as run 37 below.
+
+
+## Run 37 — 2026-08-19 — the tier, wired, and the threshold it was standing on
+
+**Phase:** post-plan. **Task:** the impure half of run 36's verdict. **Tests:**
+242 node tests, 670 browser-chrome checks, xpcshell green, and the gated
+`run37.sh` green against real weights.
+
+`FOSEmbeddings.sys.mjs` owns the static engine, caches vectors by text, and
+persists nothing — the 1.27ms measurement is what makes "embed the candidates
+again" cheaper than any store that would avoid it, so pillar C's schema does
+not move for this feature. `FOSContextEngine.#related` fills the tier from the
+context, the trail and its crossings. `browser_zzrelated.js` drives it with a
+real model in a real window.
+
+**Driving it found two things reading could not.**
+
+*The floor was measured over the wrong pairs.* `RELATED_FLOOR` was 0.169, taken
+from run 36's query→query distribution, and the tier only ever compares a query
+to a **title** — a different distribution from the same model, at 0.173. The
+tier refused a page at 0.159 that it exists to offer, and the refusal was
+correct; the constant was not. The two numbers are close enough that the error
+was invisible in the value and only visible in the pairs, which is the actual
+lesson: a threshold is measured only if you can say what it was measured over.
+`pairs()` now takes an explicit second set so the two sweeps cannot be confused,
+and the constant's comment names its comparison.
+
+*The tier cannot reach the Places floor, and had been documented as though it
+could.* Those rows arrive from `frecencyMatches(text)` — a lexical query — so a
+page sharing no word with what was typed was never in the array to be
+recovered. Reaching it means embedding all of Places, which at 1.27ms a page is
+a vector store with persistence and staleness rules: Firefox's own semantic
+history search, and a different feature. The scope is now stated in the code
+rather than implied by it.
+
+**And one thing that was nearly shipped.** `createEngine` fetches the weights
+if it does not have them, so as first written the tier would have sent a ~30MB
+request to Mozilla's model hub on the first keystroke into the command bar, in
+a fork that disables update and telemetry precisely so it never contacts
+Mozilla unasked. `browser.fos.suggest.semanticTier` is off by default and is
+consent rather than a feature flag. The consequence is that the tier is dead
+weight until the surfaced download exists, and that is now the top of the list.
+
+**The fixture had to be measured too**, which was the run's small surprise: the
+similarity between two texts with no words in common is not something a person
+can estimate by reading them. Eight candidates were scored to pick one, and the
+spread — 0.36 for flights against a Lisbon guide, 0.091 for "what did vannevar
+bush propose" against a page about the memex — says where this model is weak.
+Proper nouns and abstractions; a static table has no row connecting a name to
+what the name is known for. Common-noun topical language is where it is strong,
+which for this fork is the right way round.
