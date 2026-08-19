@@ -412,7 +412,11 @@ test("a latched microphone that hears nothing closes itself, and transcribes not
   // has — a mis-tap is not a thing the user should have to learn a word for.
   const session = new VoiceSession();
   session.press({ text: "memex" });
-  assert.equal(session.armed().deadline, LISTENING_DEADLINE_MS, "held: no bound");
+  assert.equal(
+    session.armed().deadline,
+    LISTENING_DEADLINE_MS,
+    "held: no bound"
+  );
   session.release({ heldMs: 10 });
 
   const out = session.expired();
@@ -445,7 +449,11 @@ test("a latched turn ends itself a beat after the speaking stops", () => {
 
   const out = session.expired();
   assert.equal(out.capture, "stop");
-  assert.equal(session.state, TRANSCRIBING, "this audio is real, so it is used");
+  assert.equal(
+    session.state,
+    TRANSCRIBING,
+    "this audio is real, so it is used"
+  );
   assert.equal(session.final(" Enter cap.").run, "enter cap");
 });
 
@@ -515,7 +523,11 @@ test("a held turn is bounded by the key and never by the room", () => {
   assert.equal(session.quiet().deadline, null);
   c.tick(LISTENING_DEADLINE_MS);
   assert.equal(session.state, LISTENING, "the turn is still going");
-  assert.equal(session.release({ heldMs: 9000 }).capture, "stop", "until let go");
+  assert.equal(
+    session.release({ heldMs: 9000 }).capture,
+    "stop",
+    "until let go"
+  );
 });
 
 test("a level report outside a listen is ignored, like every other stale event", () => {

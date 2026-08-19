@@ -363,6 +363,10 @@ short to be a word gets — to the user it is the same mistake.
 
 ### There are two gestures and one turn
 
+> Superseded in part by §9: there are three. The bare tap this section rules out
+> is built, because the objection to it turned out to be an objection to *any*
+> latched microphone bounded only by a clock. Everything else below still holds.
+
 Push-to-talk is the default, and it is the wrong *only* gesture. Sustained
 pressure is precisely what tremor, arthritis, carpal tunnel and fatigue make
 expensive, and the dictation tools written for those users converge on
@@ -374,10 +378,12 @@ their way in.
 The answer is a second gesture and not a second mode, and the difference is
 testable rather than rhetorical: a latched turn arms, listens, transcribes and
 executes down the same path, and the whole of the difference is one flag in
-`FOSVoiceSession` plus which event ends it. Shift is the arm because a bare tap
-would make a mis-press open the microphone for the whole thirty seconds, and a
-modifier is reachable one-fingered through the platform's own sticky keys, which
-is a mechanism these users already have turned on.
+`FOSVoiceSession` plus which event ends it. Shift is the arm because it is
+reachable one-fingered through the platform's own sticky keys, which is a
+mechanism these users already have turned on. (This section originally gave a
+second reason — that a bare tap would open the microphone for the whole thirty
+seconds — and that reason was wrong about which thing it was an objection to.
+See §9.)
 
 Two rules fall out of the microphone being open with nobody holding anything.
 **Any press ends a latched turn**, not only a press carrying the modifier:
@@ -604,12 +610,52 @@ event", adding a mode that suppresses the ordinary event silently removes the
 bound.** Nothing about the deadline changed — what changed was that it stopped
 being defined in terms of a gesture.
 
-### Still open: whether the latch should need a modifier at all
+### Settled: the latch needs no modifier, because the microphone listens to the room
 
-Shift is the safe half of run 30's pair. The other candidate is the bare tap —
-today's "too short to hear" — which needs no modifier and so needs no second key
-press at all, and which is what a user with one reliable finger would rather
-have. It was not taken because a mis-tap would open the microphone for the whole
-thirty-second deadline, and that is a question about how often a mis-tap happens
-in use rather than a question this document can settle. It stays open until the
-latch has been used by somebody.
+This section stood open for three runs asking whether the bare tap — run 30's
+candidate (2), today's "too short to hear" — could be offered. It needs no
+modifier and so no second key press at all, which is what a user with one
+reliable finger would rather have. It was refused because a mis-tap would open
+the microphone for the whole thirty-second deadline, and how often a mis-tap
+happens is a question about use rather than about design.
+
+**The question was the wrong one.** Shift+F4 has exactly the same exposure: a
+mis-pressed latch is a mis-tap with a modifier on it. So the thirty seconds was
+never a property of the tap, it was a property of a latched microphone bounded
+only by a clock — and that is a design question after all, with an answer speech
+recognisers have shipped since the 1990s. Bound the microphone by what it hears.
+
+A latched turn now carries two bounds a held turn does not, named after the
+platform APIs they come from:
+
+- **Initial silence, six seconds.** The microphone opened and nobody ever spoke.
+  Nothing is transcribed — there is no audio worth the decode — and the turn ends
+  with the notice every turn that produced no speech already has. This is the
+  whole of the answer to the mis-tap: it costs six seconds, not thirty.
+- **End silence, one and a half seconds.** Somebody spoke and has stopped. This
+  is endpointing rather than safety, and it is the half that makes the gesture
+  worth having: the turn ends itself when the utterance does, so the second press
+  becomes a way to stop *early* rather than the only way to stop at all.
+
+A **held** turn gets neither, and the reason is the same one that decides
+everything else here: a finger on the key is a user who is present, and cutting
+their listen short because they paused to think would be the bound doing harm.
+The predicate is not "which gesture started this" but "is anybody holding
+anything" — §8's lesson about bounds defined in terms of gestures, applied
+before it could be broken rather than after.
+
+Two consequences worth keeping:
+
+**The threshold and the measurement live in different places.** The shell
+measures how long the key was down and how loud the room is, because it is the
+only part that can observe either; `FOSVoiceSession` decides what those facts
+mean. That is the same split as the transcript, and it is what keeps the whole
+gesture testable with no window and no microphone.
+
+**The hold is measured from the events, not from the handlers.** Two clock reads
+inside a keydown and a keyup handler are not the interval between the key going
+down and coming up — under load a handler runs some way after its event — and
+the difference lands exactly on the 400ms boundary being decided, turning a
+deliberate hold on a busy machine into a tap.
+
+`IDEAS.md` (run 40) has the sources and what driving it found.

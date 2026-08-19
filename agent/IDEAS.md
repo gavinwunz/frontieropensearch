@@ -2864,3 +2864,110 @@ sweep could not: 0.267 is a false positive at a floor of 0.244, from a pair the
 corpus never contained. Precision 1.0 over 112 negatives remains what was
 measured; it is not what should be expected of arbitrary enquiries, and the
 margin between them is thinner than the sweep implies.
+
+## Run 40 — the bare tap, and an objection that was never about the tap
+
+Item 1 on the standing list, open since run 30 and explicitly deferred twice
+since. The research went looking for how often a mis-tap happens in use, which
+is what `GRAMMAR.md` §9 said the answer depended on, and came back with
+something better: the question had been asked about the wrong object.
+
+### `SpeechRecognizerTimeouts`, Windows — **adopt, both halves**
+
+Windows' speech API has carried three timeouts since the UWP days, and two of
+them are exactly the missing bounds: `InitialSilenceTimeout` ("detects silence
+before any recognition results have been generated and assumes speech input is
+not forthcoming") and `EndSilenceTimeout` ("detects silence after recognition
+results have been generated and assumes speech input has ended"). The docs'
+worked example sets them to 6s and 1.2s. Azure, Deepgram and the Web Speech
+API's `no-speech` error are the same idea under other names — this is settled
+practice, not an experiment, and the fork had neither.
+
+Adopted at 6000ms and 1500ms. End silence is nudged up from Microsoft's 1.2s
+because a command bar line is composed more deliberately than dictation and a
+mid-line pause must not end the turn.
+
+Sources:
+[Set speech recognition timeouts](https://learn.microsoft.com/en-us/windows/apps/design/input/set-speech-recognition-timeouts),
+[SpeechRecognizerTimeouts.EndSilenceTimeout](https://learn.microsoft.com/en-us/uwp/api/windows.media.speechrecognition.speechrecognizertimeouts.endsilencetimeout),
+[Deepgram, end-of-speech detection](https://developers.deepgram.com/docs/understanding-end-of-speech-detection)
+
+### The objection was mis-scoped, and that is the run's finding
+
+§9 refused the bare tap because "a mis-tap would open the microphone for the
+whole thirty-second deadline". That sentence is true and it is not about the
+tap. **Shift+F4 has the identical exposure** — a mis-pressed latch is a mis-tap
+with a modifier on it — so the thirty seconds was a property of *a latched
+microphone bounded only by a clock*, which every latched turn already was.
+
+The consequence is that the thing blocking the feature was not a question about
+use at all. It was a missing bound, and a missing bound is a design question
+with a well-known answer. Three runs of "it stays open until the latch has been
+used by somebody" bought nothing, because no amount of use would have changed
+what the right fix was.
+
+**Generalises:** when a feature is blocked on a risk, check whether the shipped
+alternative carries the same risk. If it does, the risk is not an argument
+against the feature — it is an unbuilt safeguard, and the feature is only
+waiting on it by accident.
+
+### End silence is a feature, not a safeguard — **the reason to build it now**
+
+Initial silence makes the tap *safe*. End silence is what makes it *good*: a
+latched turn ends itself when the utterance does, so the second press stops
+being the only way out and becomes a way to stop early. That turns the tap into
+a genuinely one-gesture turn — tap, speak, done — which is the thing a user with
+one reliable finger was being denied. A bare tap shipped with only the safety
+half would have been a gesture that still needed a second press, which is what
+the shift latch already was.
+
+### Rejected: an `AudioWorklet`, again, and for the same reason
+
+Knowing whether anybody is speaking needs a live signal, and the recorder was
+deliberately built without one (§9: `MediaRecorder`, decoded once, so the chrome
+process does nothing per-frame while the user is talking). The worklet is still
+the wrong tool. An `AnalyserNode` polled at 10Hz keeps its ring buffer in C++
+whether or not anybody reads it, so the cost is one 2048-sample copy and a sum
+every 100ms rather than JS on the audio path for the whole utterance. 2048
+samples is ~43ms at 48kHz — longer than a glottal pulse, shorter than a syllable
+— so the RMS measures the voice rather than where in the waveform the poll
+landed.
+
+The floor is `FOSVoiceTranscript`'s own exported `MIN_RMS` rather than a second
+number. That is not tidiness: the gate averages over the whole recording,
+pauses included, so any *window* loud enough to be speech on its own is louder
+than the average it will later be judged by — which is what guarantees the live
+bound cannot end a turn the gate would have accepted.
+
+### Driving it: three things the tests could not say until they ran
+
+**Every hold in the browser suite was a tap.** The helpers synthesise both
+halves of the gesture faster than any hand can, so the first turn latched by
+accident and left a microphone open — and the *next* test's press then closed
+that turn instead of starting its own. Six failures, one cause, and the cascade
+is what made it look like the module was broken rather than the fixture. A
+threshold expressed in real time changes the meaning of every existing test that
+never had to think about time.
+
+**Measure the gesture from the events, not from the handlers.** Two `Date.now()`
+reads inside a keydown and a keyup handler measure handler-to-handler, not
+key-down-to-key-up, and under load those differ by exactly the sort of margin
+that sits on a 400ms boundary. `event.timeStamp` on both halves is the interval
+that was actually performed. The first draft read a clock inside the session and
+would have turned a deliberate hold on a busy machine into a tap.
+
+**Getting the threshold wrong stopped being expensive, and only because of the
+other half.** 400ms sits inside the band where a one-word utterance lives
+(`MIN_UTTERANCE_MS` is 250ms), so the tap/hold call is genuinely ambiguous
+there. With end silence in place a hold misread as a tap simply latches, the
+user keeps talking, and the turn ends 1.5s after they stop. Two bounds that
+looked like separate features turned out to be what makes each other safe to
+tune.
+
+### Still open
+
+Nothing about the gesture. The one number with no measurement behind it is the
+6000ms initial-silence bound: it is Microsoft's example value, not this fork's,
+and the thing that would set it is how long a deliberate latch-then-think pause
+actually runs. That is a real question about use, unlike the one this section
+closed, and it costs a user six seconds rather than thirty to get wrong.
