@@ -417,6 +417,8 @@ add_task(async function measure_a_crowded_overview() {
     const width = win.outerWidth;
     const height = win.outerHeight;
     const resizing = [];
+    const passesBefore = field.resizePasses;
+    const rebuildsBefore = field.resizeRebuilds;
     last = win.performance.now();
     for (let i = 0; i < 30; i++) {
       await nextFrame(win);
@@ -427,6 +429,23 @@ add_task(async function measure_a_crowded_overview() {
     }
     win.resizeTo(width, height);
     stats("crowded-overview-resizing-frame", resizing);
+    // Which of the two things a pass can do was this loop actually doing?
+    // A frame time cannot say, and the two have nothing in common as
+    // problems: a rebuild is this module's to fix, and everything else is
+    // the engine laying out and painting 489 boxes that are genuinely
+    // changing size.
+    info(
+      `PERF crowded-overview-resizing-passes: ` +
+        `${field.resizePasses - passesBefore} passes, ` +
+        `${field.resizeRebuilds - rebuildsBefore} of them rebuilds`
+    );
+    Assert.equal(
+      field.resizeRebuilds - rebuildsBefore,
+      0,
+      "a sustained resize of the crowded overview never rebuilds the stage"
+    );
+    const passesAfterResize = field.resizePasses;
+    const rebuildsAfterResize = field.resizeRebuilds;
 
     // The control, and the reason the number above means anything. Resizing a
     // chrome window is not free on its own — the whole toolbox relays out — so
@@ -445,6 +464,14 @@ add_task(async function measure_a_crowded_overview() {
     }
     win.resizeTo(width, height);
     stats("closed-field-resizing-frame", control);
+    // A closed Field still runs a pass per frame, and `render` returns at once
+    // on a hidden root — so a fallback counted here is a no-op, not a rebuild.
+    // Reported so the number is not read as one.
+    info(
+      `PERF closed-field-resizing-passes: ` +
+        `${field.resizePasses - passesAfterResize} passes, ` +
+        `${field.resizeRebuilds - rebuildsAfterResize} fell back`
+    );
 
     // The same question without the window manager in it. A real resize drags
     // the whole toolbox through layout and the numbers above carry that noise;
@@ -457,6 +484,7 @@ add_task(async function measure_a_crowded_overview() {
     await nextFrame(win);
     const BURST = 10;
     const bursts = [];
+    const rebuildsAtBurst = field.resizeRebuilds;
     for (let i = 0; i < 10; i++) {
       await nextFrame(win);
       const t0 = win.performance.now();
@@ -466,6 +494,57 @@ add_task(async function measure_a_crowded_overview() {
       bursts.push(win.performance.now() - t0 + flush(win));
     }
     stats(`resize-burst-of-${BURST}`, bursts);
+    info(
+      `PERF resize-burst rebuilds: ${field.resizeRebuilds - rebuildsAtBurst}`
+    );
+
+    // The burst above says what coalescing is worth and deliberately nothing
+    // else, and two things about how it is written stop it standing in for
+    // one real pass. It never times the pass: the events register a frame
+    // callback, and `performance.now()` is read again before that frame has
+    // run. And its writes are no-ops — the window never changed size, so the
+    // reposition writes every declaration the value already on the element,
+    // which invalidates nothing and costs no layout.
+    //
+    // So this measures one pass with both faults taken out. The stage is
+    // given a genuinely different size, so every declaration written differs
+    // from the one on the element; and the pass is bracketed by two frame
+    // callbacks registered either side of it, which run in the same frame in
+    // registration order, so what separates them is the pass and nothing
+    // else.
+    const stage = field.stage;
+    const stageWidth = stage.clientWidth;
+    const passScript = [];
+    const passLayout = [];
+    const rebuildsAtPasses = field.resizeRebuilds;
+    for (let i = 0; i < 10; i++) {
+      await nextFrame(win);
+      stage.style.width = `${stageWidth - (i % 5) * 40}px`;
+      let t0 = 0;
+      win.requestAnimationFrame(() => {
+        t0 = win.performance.now();
+      });
+      win.dispatchEvent(new win.Event("resize"));
+      await new Promise(resolve =>
+        win.requestAnimationFrame(() => {
+          passScript.push(win.performance.now() - t0);
+          resolve();
+        })
+      );
+      passLayout.push(flush(win));
+    }
+    stage.style.removeProperty("width");
+    stats("resize-pass-script", passScript);
+    stats("resize-pass-layout", passLayout);
+    // Scoped to this loop alone. The two numbers above are a claim about the
+    // fast path, and they are only that if the fast path is what ran.
+    const passRebuilds = field.resizeRebuilds - rebuildsAtPasses;
+    info(`PERF resize-pass rebuilds: ${passRebuilds}`);
+    Assert.equal(
+      passRebuilds,
+      0,
+      "a real change of size is repositioned, not rebuilt"
+    );
   } finally {
     field.close();
     await BrowserTestUtils.closeWindow(win);

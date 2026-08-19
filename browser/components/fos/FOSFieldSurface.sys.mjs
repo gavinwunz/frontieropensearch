@@ -126,6 +126,7 @@ export class FOSFieldSurface {
   #unsubscribe = null;
   #resizeFrame = 0;
   #resizePasses = 0;
+  #resizeRebuilds = 0;
 
   /** Whether anything has arrived since the Field was last looked at. */
   #unseen = false;
@@ -219,6 +220,21 @@ export class FOSFieldSurface {
    */
   get resizePasses() {
     return this.#resizePasses;
+  }
+
+  /**
+   * How many of those passes could not use the fast path and rebuilt the stage
+   * instead. Tests read this; nothing else does.
+   *
+   * `resizePasses` deliberately does not distinguish the two, because the
+   * coalescing claim is about neither. This one exists for the other question,
+   * which a frame-time measurement cannot answer on its own: a sustained
+   * resize that is slow because it rebuilds and a sustained resize that is
+   * slow for reasons outside this module look identical from the outside, and
+   * they have nothing in common as problems.
+   */
+  get resizeRebuilds() {
+    return this.#resizeRebuilds;
   }
 
   /** The card ids currently rendered, in DOM order. Tests read this. */
@@ -1193,6 +1209,7 @@ export class FOSFieldSurface {
       this.#resizeFrame = 0;
       this.#resizePasses++;
       if (!this.#repositionOverview()) {
+        this.#resizeRebuilds++;
         this.render();
       }
     });
