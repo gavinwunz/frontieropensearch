@@ -28,9 +28,16 @@
  * boundaries, so a context inferred from a recency window would be wrong most
  * of the time it mattered. Which trail a page is on is a fact the user stated
  * by opening a tab, and `context <mark>` lets them say otherwise outright.
- * Embedding-based merging of contexts across trails is the next step and rests
- * on this floor rather than replacing it — `context_member.source` is what
- * keeps the two distinguishable afterwards.
+ *
+ * Embedding-based merging across trails rests on that floor rather than
+ * replacing it: it is *offered* and never applied, and an accepted offer is
+ * recorded as `context.merged_into` rather than as membership. The plan had
+ * been to write the merged rows with `context_member.source = 'manual'`, and
+ * it does not work — `contextsForTrails` filters on `provenance` by
+ * construction, so membership written under any other source changes what a
+ * context contains without changing which context a trail is in. See
+ * `FOSContextMerge.sys.mjs` for the threshold and `002-merged-contexts.sql`
+ * for why the merge is a fact about contexts instead.
  */
 
 import {
@@ -38,6 +45,7 @@ import {
   extractEntities,
   normaliseIntent,
 } from "./FOSContextSignals.sys.mjs";
+import { bestMerge } from "./FOSContextMerge.sys.mjs";
 import { buildContextPack } from "./FOSContextPack.sys.mjs";
 import { summariseContents } from "./FOSContextSidebarView.sys.mjs";
 import { FOSContextStore } from "./FOSContextStore.sys.mjs";
@@ -384,6 +392,26 @@ export class FOSContextEngine {
   }
 
   /**
+   * Recompute trail → context for every trail this session knows about.
+   *
+   * The same read `#hydrate` does, factored out because accepting a merge has
+   * to redo it: the map is derived state, and the rule this component keeps
+   * arriving at is that derived state is recomputed rather than patched. See
+   * `activeContextId`, which is a getter for the same reason.
+   */
+  async #rebuildContextMap() {
+    const trailIds = [...this.#trailIds.values()];
+    if (!trailIds.length) {
+      return;
+    }
+    const contexts = await this.#store.contextsForTrails(trailIds);
+    for (const [trailId, contextId] of contexts) {
+      this.#contextByTrail.set(trailId, contextId);
+    }
+    this.#syncContextMarks();
+  }
+
+  /**
    * Write down anything in the in-memory tree the database has not seen.
    *
    * Nodes are walked in creation order so a parent is always written before its
@@ -644,6 +672,133 @@ export class FOSContextEngine {
       return null;
     }
     return this.#store.contextContents(contextId);
+  }
+
+  /**
+   * The context worth offering to merge with the active one, or null.
+   *
+   * Computed when a surface asks, which in practice is when the sidebar opens,
+   * and never on the navigation path. That is Horvitz's third principle rather
+   * than an implementation convenience: the timing of an offer is part of its
+   * cost, and the moment the user is browsing is the moment they are least
+   * interested in being asked to do filing. Opening the sidebar is a voluntary
+   * glance at exactly this question — the same argument that put the
+   * background-arrival signal on a surface the user chooses to look at.
+   *
+   * Best-effort in the same way the `related` tier is: no weights means no
+   * offer, which is the browser working as it does today rather than a broken
+   * promise. Nothing here is written, so a failure costs nothing.
+   *
+   * @returns {Promise<?{contextId: number, label: ?string, score: number}>}
+   */
+  async mergeOffer() {
+    await this.#queue;
+    const activeId = this.activeContextId;
+    if (activeId === null || !this.#store) {
+      return null;
+    }
+
+    try {
+      // Only contexts the user could still switch to; a merged one is already
+      // part of something and must not be offered a second time.
+      const family = new Set(await this.#store.contextFamily(activeId));
+      const others = (await this.#store.contexts()).filter(
+        row => !family.has(row.id)
+      );
+      if (!others.length) {
+        return null;
+      }
+
+      const texts = await this.#store.contextQueryTexts([
+        ...family,
+        ...others.map(row => row.id),
+      ]);
+      // A context nobody has searched in has nothing to compare. Provenance
+      // put its pages there, and pages are not what this threshold was
+      // measured over.
+      const activeTexts = [...family].flatMap(id => texts.get(id) ?? []);
+      if (!activeTexts.length) {
+        return null;
+      }
+
+      const withQueries = others.filter(row => texts.get(row.id)?.length);
+      if (!withQueries.length) {
+        return null;
+      }
+
+      // One embed call for everything, because the model is a lookup table and
+      // the cost is in the round trip rather than in the rows.
+      const flat = [
+        ...activeTexts,
+        ...withQueries.flatMap(row => texts.get(row.id)),
+      ];
+      const vectors = await lazy.FOSEmbeddings.embed(flat);
+      if (!vectors) {
+        return null;
+      }
+
+      let at = activeTexts.length;
+      const activeVectors = vectors.slice(0, at);
+      const candidates = withQueries.map(row => {
+        const count = texts.get(row.id).length;
+        const slice = vectors.slice(at, at + count);
+        at += count;
+        return { id: row.id, label: row.label, vectors: slice };
+      });
+
+      return bestMerge({
+        activeId,
+        activeVectors,
+        candidates,
+        declined: await this.#store.declinedMerges(),
+      });
+    } catch (error) {
+      console.error(error);
+      return null;
+    }
+  }
+
+  /**
+   * Accept an offer: the active context and `contextId` are one enquiry.
+   *
+   * Awaited rather than enqueued, unlike everything else this class writes.
+   * The recording rules exist because a navigation must never wait on a
+   * database, and this is not a navigation — it is a thing the user just asked
+   * for and is watching for the result of, so it is allowed to take its time
+   * and it is allowed to fail visibly.
+   *
+   * @param {number} contextId
+   * @returns {Promise<boolean>} False if there was nothing to do.
+   */
+  async acceptMerge(contextId) {
+    await this.#queue;
+    const activeId = this.activeContextId;
+    if (activeId === null || !this.#store) {
+      return false;
+    }
+    const merged = await this.#store.mergeContexts(activeId, contextId);
+    if (!merged) {
+      return false;
+    }
+    // The trail→context map was built before the merge and still names the
+    // context that lost. Rebuilding it is what makes `activeContextId` answer
+    // the merged root from the next read onwards, and it is the same walk
+    // `#hydrate` does — derived state, recomputed rather than patched.
+    await this.#rebuildContextMap();
+    return true;
+  }
+
+  /**
+   * Turn an offer down, permanently.
+   *
+   * @param {number} contextId
+   */
+  async declineMerge(contextId) {
+    await this.#queue;
+    const activeId = this.activeContextId;
+    if (activeId !== null && this.#store) {
+      await this.#store.declineMerge(activeId, contextId);
+    }
   }
 
   /**

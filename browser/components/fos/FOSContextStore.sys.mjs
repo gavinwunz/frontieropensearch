@@ -48,6 +48,7 @@ export const DATABASE_FILENAME = "context-engine.sqlite";
  */
 const MIGRATIONS = [
   [1, "chrome://browser/content/fos/migrations/001-initial.sql"],
+  [2, "chrome://browser/content/fos/migrations/002-merged-contexts.sql"],
 ];
 
 /** The schema version this build expects. */
@@ -504,13 +505,18 @@ export class FOSContextStore {
        ORDER BY members DESC`,
       params
     );
+    // Resolved through any accepted merge, which is what makes a merge change
+    // *which context is active* rather than only what one contains. The
+    // provenance rows above are untouched by a merge on purpose, so this is
+    // the only place the two statements are combined.
+    const roots = await this.mergeRoots();
     for (const row of rows) {
       const { trail_id: trailId, context_id: contextId } = plain(row, [
         "trail_id",
         "context_id",
       ]);
       if (!byTrail.has(trailId)) {
-        byTrail.set(trailId, contextId);
+        byTrail.set(trailId, roots.get(contextId) ?? contextId);
       }
     }
     return byTrail;
@@ -698,6 +704,169 @@ export class FOSContextStore {
     );
   }
 
+  // ---- merged contexts ----------------------------------------------------
+
+  /**
+   * Every merged context, mapped to the context it was merged into.
+   *
+   * One row per merge the user has ever accepted, which is a handful at most,
+   * and the partial index means the read costs nothing on a profile that has
+   * accepted none.
+   *
+   * @returns {Promise<Map<number, number>>} Merged id → root id.
+   */
+  async mergeRoots() {
+    const rows = await this.#connection.execute(
+      `SELECT id, merged_into FROM context WHERE merged_into IS NOT NULL`
+    );
+    const roots = new Map();
+    for (const row of rows) {
+      const { id, merged_into: root } = plain(row, ["id", "merged_into"]);
+      roots.set(id, root);
+    }
+    return roots;
+  }
+
+  /**
+   * The contexts that make up one context: its root and everything merged in.
+   *
+   * Always returns the root first, and always contains at least `contextId`
+   * itself, so a caller can use it without asking whether anything was merged.
+   *
+   * @param {number} contextId Either a root or a merged context.
+   * @returns {Promise<number[]>}
+   */
+  async contextFamily(contextId) {
+    const roots = await this.mergeRoots();
+    const root = roots.get(contextId) ?? contextId;
+    const family = [root];
+    for (const [merged, into] of roots) {
+      if (into === root && merged !== root) {
+        family.push(merged);
+      }
+    }
+    return family;
+  }
+
+  /**
+   * Record that two contexts are one enquiry, because the user said so.
+   *
+   * The surviving context is the one with the earlier id — the enquiry that
+   * started first — rather than whichever one happened to be active when the
+   * offer was accepted. An offer is symmetric ("these two are the same"), so
+   * letting the active side win would make the outcome depend on which trail
+   * the user was standing on, and the same pair accepted from the other side
+   * would produce a different database.
+   *
+   * The invariant `merged_into` never names a merged context is kept here:
+   * both sides are resolved to their roots first, so merging into something
+   * already merged follows the chain instead of extending it. Everything that
+   * had pointed at the losing root is re-pointed, which is what keeps
+   * resolution one hop everywhere else.
+   *
+   * @param {number} a
+   * @param {number} b
+   * @returns {Promise<?{root: number, merged: number}>} Null if already one.
+   */
+  async mergeContexts(a, b) {
+    const roots = await this.mergeRoots();
+    const left = roots.get(a) ?? a;
+    const right = roots.get(b) ?? b;
+    if (left === right) {
+      return null;
+    }
+    const root = Math.min(left, right);
+    const merged = Math.max(left, right);
+    const now = Date.now();
+
+    await this.#connection.executeTransaction(async () => {
+      await this.#connection.execute(
+        `UPDATE context SET merged_into = :root, updated_at = :now
+         WHERE id = :merged OR merged_into = :merged`,
+        { root, merged, now }
+      );
+      await this.#connection.execute(
+        `UPDATE context SET updated_at = :now WHERE id = :root`,
+        { root, now }
+      );
+    });
+    return { root, merged };
+  }
+
+  /**
+   * Record that the user turned down an offer to merge two contexts.
+   *
+   * Stored so the offer is never made again. An offer that comes back after
+   * being declined is worse than one never made: the second showing is proof
+   * the first was not listened to, and it teaches the user to stop reading the
+   * surface it appears on.
+   *
+   * @param {number} a
+   * @param {number} b
+   */
+  async declineMerge(a, b) {
+    await this.#connection.execute(
+      `INSERT INTO context_merge_declined (low_id, high_id, declined_at)
+       VALUES (:low, :high, :now) ON CONFLICT DO NOTHING`,
+      { low: Math.min(a, b), high: Math.max(a, b), now: Date.now() }
+    );
+  }
+
+  /**
+   * Every declined pair, as `"low:high"` keys.
+   *
+   * @returns {Promise<Set<string>>}
+   */
+  async declinedMerges() {
+    const rows = await this.#connection.execute(
+      `SELECT low_id, high_id FROM context_merge_declined`
+    );
+    return new Set(
+      rows.map(row => {
+        const { low_id: low, high_id: high } = plain(row, [
+          "low_id",
+          "high_id",
+        ]);
+        return `${low}:${high}`;
+      })
+    );
+  }
+
+  /**
+   * The queries belonging to each of several contexts, for scoring them.
+   *
+   * Raw text rather than `normalised_intent`, because the model this feeds is
+   * a static embedding table whose rows are words as written — normalising is
+   * the lexical path's preparation and throws away what this one reads.
+   *
+   * @param {number[]} contextIds
+   * @param {number} [perContext] Most recent N per context.
+   * @returns {Promise<Map<number, string[]>>}
+   */
+  async contextQueryTexts(contextIds, perContext = 12) {
+    const byContext = new Map();
+    if (!contextIds.length) {
+      return byContext;
+    }
+    const { names, params } = bindList(contextIds, "c");
+    const rows = await this.#connection.execute(
+      `SELECT m.context_id, q.raw, q.created_at
+       FROM query q JOIN context_member m ON m.query_id = q.id
+       WHERE m.context_id IN (${names})
+       ORDER BY m.context_id, q.created_at DESC`,
+      params
+    );
+    for (const row of rows) {
+      const { context_id: contextId, raw } = plain(row, ["context_id", "raw"]);
+      const texts = byContext.get(contextId) ?? [];
+      if (texts.length < perContext) {
+        texts.push(raw);
+        byContext.set(contextId, texts);
+      }
+    }
+    return byContext;
+  }
+
   /** @returns {Promise<?object>} The most recently active context, or null. */
   async activeContext() {
     const [row] = await this.#connection.execute(
@@ -707,12 +876,28 @@ export class FOSContextStore {
     return row ? plain(row, ["id", "label", "created_at", "active_at"]) : null;
   }
 
-  /** @returns {Promise<object[]>} Every context, most recently active first. */
+  /**
+   * Every context, most recently active first.
+   *
+   * A merged context is not one of them. It still exists, and every row that
+   * ever pointed at it still does, but it is no longer somewhere the user can
+   * switch to — `context <mark>` offering both halves of an enquiry they just
+   * told the browser was one enquiry would be the browser arguing back. Its
+   * members and its last-active time count towards the context it merged into,
+   * so nothing is lost from the list, only from the count of rows in it.
+   *
+   * @returns {Promise<object[]>}
+   */
   async contexts() {
     const rows = await this.#connection.execute(
-      `SELECT c.id, c.label, c.active_at,
-              (SELECT COUNT(*) FROM context_member m WHERE m.context_id = c.id) AS members
-       FROM context c ORDER BY c.active_at DESC NULLS LAST, c.id DESC`
+      `SELECT c.id, c.label,
+              MAX(c.active_at, IFNULL((SELECT MAX(m.active_at) FROM context m
+                                       WHERE m.merged_into = c.id), 0)) AS active_at,
+              (SELECT COUNT(*) FROM context_member m
+               WHERE m.context_id = c.id OR m.context_id IN (
+                 SELECT id FROM context WHERE merged_into = c.id)) AS members
+       FROM context c WHERE c.merged_into IS NULL
+       ORDER BY active_at DESC NULLS LAST, c.id DESC`
     );
     return rows.map(row => plain(row, ["id", "label", "active_at", "members"]));
   }
@@ -727,9 +912,16 @@ export class FOSContextStore {
    * @returns {Promise<object>} `{context, queries, pages, entities}`.
    */
   async contextContents(contextId) {
+    // Asked about either half of a merged pair, this answers about the whole.
+    // `what` and `pack` both come through here, so a merge the user accepted
+    // shows up in the summary and in the exported brief without either surface
+    // knowing that merges exist.
+    const family = await this.contextFamily(contextId);
+    const { names, params } = bindList(family, "f");
+
     const [contextRow] = await this.#connection.execute(
-      `SELECT id, label, created_at, active_at FROM context WHERE id = :id`,
-      { id: contextId }
+      `SELECT id, label, created_at, active_at FROM context WHERE id = :root`,
+      { root: family[0] }
     );
     if (!contextRow) {
       return null;
@@ -740,8 +932,8 @@ export class FOSContextStore {
         `SELECT q.id, q.raw, q.normalised_intent, q.input_mode, q.created_at,
                 q.trail_node_id
          FROM query q JOIN context_member m ON m.query_id = q.id
-         WHERE m.context_id = :id ORDER BY q.created_at`,
-        { id: contextId }
+         WHERE m.context_id IN (${names}) ORDER BY q.created_at`,
+        params
       )
     ).map(row =>
       plain(row, [
@@ -768,9 +960,9 @@ export class FOSContextStore {
          JOIN context_member m ON m.trail_node_id = n.id
          JOIN trail t ON t.id = n.trail_id
          LEFT JOIN visit v ON v.trail_node_id = n.id
-         WHERE m.context_id = :id
+         WHERE m.context_id IN (${names})
          GROUP BY n.id ORDER BY rank DESC, n.created_at`,
-        { id: contextId }
+        params
       )
     ).map(row => {
       const page = plain(row, [
@@ -798,12 +990,12 @@ export class FOSContextStore {
          FROM entity e JOIN entity_mention em ON em.entity_id = e.id
          WHERE em.trail_node_id IN (
                  SELECT trail_node_id FROM context_member
-                 WHERE context_id = :id AND trail_node_id IS NOT NULL)
+                 WHERE context_id IN (${names}) AND trail_node_id IS NOT NULL)
             OR em.query_id IN (
                  SELECT query_id FROM context_member
-                 WHERE context_id = :id AND query_id IS NOT NULL)
+                 WHERE context_id IN (${names}) AND query_id IS NOT NULL)
          GROUP BY e.id ORDER BY weight DESC, e.canonical`,
-        { id: contextId }
+        params
       )
     ).map(row =>
       plain(row, ["name", "canonical", "kind", "weight", "mentions"])

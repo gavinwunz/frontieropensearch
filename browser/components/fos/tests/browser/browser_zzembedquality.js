@@ -206,6 +206,70 @@ const TITLES = CORPUS.flatMap(({ task, titles }) =>
   titles.map(text => ({ task, text }))
 );
 
+/**
+ * The corpus again, cut into half-enquiries, for the merge question.
+ *
+ * The `related` tier compares one query to one title, and the threshold for
+ * that is measured above. Offering to merge two *contexts* is a different
+ * question with a different shape: a context is a set of queries, so the score
+ * is an aggregate over many pairs and the single-pair threshold does not
+ * transfer to it. Run 37's lesson is exactly this one — a threshold is only
+ * measured if you can say what it was measured over — so the aggregate is
+ * measured over aggregates.
+ *
+ * Splitting each enquiry in two is what makes positives exist at all. Every
+ * enquiry in `CORPUS` is one topic, so no two of them should ever merge; the
+ * case the feature is *for* is one topic the user researched on two trails,
+ * and two halves of one enquiry are that case. It gives 8 pairs that should
+ * merge against 112 that should not, which is few positives and plenty of
+ * negatives — the right way round for a rule whose whole risk is offering a
+ * merge that is wrong.
+ */
+const WHOLES = CORPUS.map(({ task, queries, titles }, index) => {
+  const queryBase = CORPUS.slice(0, index).reduce(
+    (sum, entry) => sum + entry.queries.length,
+    0
+  );
+  const titleBase = CORPUS.slice(0, index).reduce(
+    (sum, entry) => sum + entry.titles.length,
+    0
+  );
+  return {
+    task,
+    text: task,
+    queries: queries.map((_, k) => queryBase + k),
+    titles: titles.map((_, k) => titleBase + k),
+  };
+});
+
+const HALVES = (() => {
+  const halves = [];
+  let queryBase = 0;
+  let titleBase = 0;
+  const span = (base, from, to) =>
+    Array.from({ length: to - from }, (_, k) => base + from + k);
+
+  for (const { task, queries, titles } of CORPUS) {
+    const queryCut = Math.ceil(queries.length / 2);
+    const titleCut = Math.ceil(titles.length / 2);
+    halves.push({
+      task,
+      text: `${task}/a`,
+      queries: span(queryBase, 0, queryCut),
+      titles: span(titleBase, 0, titleCut),
+    });
+    halves.push({
+      task,
+      text: `${task}/b`,
+      queries: span(queryBase, queryCut, queries.length),
+      titles: span(titleBase, titleCut, titles.length),
+    });
+    queryBase += queries.length;
+    titleBase += titles.length;
+  }
+  return halves;
+})();
+
 /** @param {number[]} values */
 function median(values) {
   const sorted = [...values].sort((a, b) => a - b);
@@ -407,6 +471,97 @@ function reportPairs(label, distribution) {
 }
 
 /**
+ * The cheapest threshold that reaches a given precision, and what recall costs.
+ *
+ * `pairs` reports the F1 optimum, which is the right summary for a ranking and
+ * the wrong one for an offer. F1 treats a missed merge and a wrong merge as
+ * equally bad; this feature does not. A merge it fails to offer costs the user
+ * nothing they had — the two contexts go on working exactly as they do today —
+ * while a merge it offers wrongly spends their attention and, if accepted,
+ * puts two unrelated enquiries in one sidebar. So the threshold this fork
+ * ships is chosen for precision and the recall is whatever is left.
+ *
+ * @param {string} label
+ * @param {{same: number[], different: number[]}} distribution
+ * @param {number} target Precision to reach.
+ */
+function reportPrecisionFirst(label, { same, different }, target) {
+  const candidates = [...new Set([...same, ...different])].sort(
+    (a, b) => a - b
+  );
+  for (const threshold of candidates) {
+    const truePositives = same.filter(value => value >= threshold).length;
+    const falsePositives = different.filter(value => value >= threshold).length;
+    if (!truePositives) {
+      break;
+    }
+    const precision = truePositives / (truePositives + falsePositives);
+    if (precision >= target) {
+      info(
+        `##### EMBED ${label} precision>=${target} at threshold ` +
+          `${round(threshold)} → precision ${round(precision)} ` +
+          `recall ${round(truePositives / same.length)} ` +
+          `(${truePositives}/${same.length} found, ${falsePositives} wrong)`
+      );
+      return;
+    }
+  }
+  info(
+    `##### EMBED ${label} precision>=${target} UNREACHABLE at any threshold`
+  );
+}
+
+/**
+ * Ways of turning many pairwise similarities into one score for two contexts.
+ *
+ * This is the choice the merge offer rests on, and the reason it is measured
+ * rather than picked is that the rules fail in opposite directions. `max` asks
+ * whether the two contexts share *any* question, so it rises with the number
+ * of pairs compared and two large unrelated contexts will eventually contain
+ * one accidental near-match. `mean` asks whether they are about the same thing
+ * throughout, so it is dragged down by the breadth that any real enquiry has.
+ * Neither is obviously right, and the corpus can say which.
+ *
+ * `centroid` is the one the schema already anticipated — `context.centroid` is
+ * documented as the mean of member embeddings — so measuring it here says
+ * whether that column would have earned its keep.
+ *
+ * @type {Record<string, (values: number[]) => number>}
+ */
+const AGGREGATIONS = {
+  max: values => Math.max(...values),
+  mean: values => values.reduce((sum, value) => sum + value, 0) / values.length,
+  top3: values => {
+    const top = [...values].sort((a, b) => b - a).slice(0, 3);
+    return top.reduce((sum, value) => sum + value, 0) / top.length;
+  },
+};
+
+/**
+ * The mean of a set of vectors, normalised — one context as one vector.
+ *
+ * @param {number[]} indices
+ * @param {Float32Array[]} vectors
+ * @returns {number[]}
+ */
+function centroid(indices, vectors) {
+  const dimensions = vectors[indices[0]].length;
+  const sum = new Array(dimensions).fill(0);
+  for (const index of indices) {
+    for (let d = 0; d < dimensions; d++) {
+      sum[d] += vectors[index][d];
+    }
+  }
+  let squares = 0;
+  for (let d = 0; d < dimensions; d++) {
+    sum[d] /= indices.length;
+    squares += sum[d] * sum[d];
+  }
+  const magnitude = Math.sqrt(squares);
+  return magnitude ? sum.map(value => value / magnitude) : sum;
+}
+
+/**
  * Load the static backend at one dimension and embed the whole corpus.
  *
  * @param {number} dimensions
@@ -578,6 +733,95 @@ add_task(async function measure_embedding_quality() {
       info(
         `##### EMBED ${label} task ${task}: ${hits.length}/${rows.length} ` +
           `nearest neighbours stayed in task`
+      );
+    }
+
+    // The merge question, over aggregates rather than over pairs. Reported at
+    // both dimensions like everything else here, but only d256 can decide
+    // anything: it is what the fork ships and what the offer would run on.
+    for (const [name, combine] of Object.entries(AGGREGATIONS)) {
+      const aggregate = (i, j) => {
+        const values = [];
+        for (const a of HALVES[i].queries) {
+          for (const b of HALVES[j].queries) {
+            values.push(cosine(vectors.queries[a], vectors.queries[b]));
+          }
+        }
+        return combine(values);
+      };
+      const distribution = pairs(HALVES, aggregate);
+      reportPairs(`${label} merge/${name}`, distribution);
+      reportPrecisionFirst(`${label} merge/${name}`, distribution, 1);
+    }
+
+    const centroids = HALVES.map(half =>
+      centroid(half.queries, vectors.queries)
+    );
+    const byCentroid = pairs(HALVES, (i, j) =>
+      cosine(centroids[i], centroids[j])
+    );
+    reportPairs(`${label} merge/centroid`, byCentroid);
+    reportPrecisionFirst(`${label} merge/centroid`, byCentroid, 1);
+
+    // Does the rule's threshold survive a bigger context?
+    //
+    // Every context above holds two queries, and a real one holds more. `max`
+    // is the order statistic of the pairs compared, so it must climb as the
+    // number of pairs grows whether or not the contexts are any more alike;
+    // `centroid` compares one vector to one vector however many queries went
+    // into each. Whether that difference is big enough to matter is not
+    // something to reason about, so it is measured: the same rules over whole
+    // enquiries (4 queries, 16 pairs) against halves (2 queries, 4 pairs),
+    // reading only the different-task side, which is the side a threshold
+    // chosen for precision is holding back.
+    for (const [name, combine] of Object.entries(AGGREGATIONS)) {
+      const at = items => {
+        const values = [];
+        for (let i = 0; i < items.length; i++) {
+          for (let j = i + 1; j < items.length; j++) {
+            if (items[i].task === items[j].task) {
+              continue;
+            }
+            const cells = [];
+            for (const a of items[i].queries) {
+              for (const b of items[j].queries) {
+                cells.push(cosine(vectors.queries[a], vectors.queries[b]));
+              }
+            }
+            values.push(combine(cells));
+          }
+        }
+        return values;
+      };
+      const small = at(HALVES);
+      const large = at(WHOLES);
+      info(
+        `##### EMBED ${label} size ${name} diff-task ` +
+          `k=2 median ${round(median(small))} p95 ${round(percentile(small, 0.95))} max ${round(Math.max(...small))} | ` +
+          `k=4 median ${round(median(large))} p95 ${round(percentile(large, 0.95))} max ${round(Math.max(...large))}`
+      );
+    }
+    {
+      const centroidsWhole = WHOLES.map(whole =>
+        centroid(whole.queries, vectors.queries)
+      );
+      const at = (items, vecs) => {
+        const values = [];
+        for (let i = 0; i < items.length; i++) {
+          for (let j = i + 1; j < items.length; j++) {
+            if (items[i].task !== items[j].task) {
+              values.push(cosine(vecs[i], vecs[j]));
+            }
+          }
+        }
+        return values;
+      };
+      const small = at(HALVES, centroids);
+      const large = at(WHOLES, centroidsWhole);
+      info(
+        `##### EMBED ${label} size centroid diff-task ` +
+          `k=2 median ${round(median(small))} p95 ${round(percentile(small, 0.95))} max ${round(Math.max(...small))} | ` +
+          `k=4 median ${round(median(large))} p95 ${round(percentile(large, 0.95))} max ${round(Math.max(...large))}`
       );
     }
 

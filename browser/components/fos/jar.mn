@@ -16,3 +16,4 @@ browser.jar:
     # SCHEMA.md makes a shipped migration immutable, and a numbered file that is
     # only ever added to is what makes that auditable.
     content/browser/fos/migrations/001-initial.sql (/context-engine/migrations/001-initial.sql)
+    content/browser/fos/migrations/002-merged-contexts.sql (/context-engine/migrations/002-merged-contexts.sql)
