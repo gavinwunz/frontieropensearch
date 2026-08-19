@@ -754,3 +754,74 @@ add_task(async function test_hydrate_never_resumes_onto_a_finished_trail() {
 
   await BrowserTestUtils.closeWindow(win);
 });
+
+add_task(async function test_walking_back_into_a_finished_trail_resumes_it() {
+  const tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, PAGE_A);
+  const trail = session();
+  const bar = FOSCommandBar.forWindow(window);
+  await goTo(PAGE_B);
+
+  const finished = trail.activeTrailId;
+  const rootId = trail.store.nodes(finished)[0].id;
+  runVerb(bar, "done");
+  Assert.equal(trail.store.isArchived(finished), true);
+
+  // `enter` is what the context sidebar and the bar's rows call when a page is
+  // picked off a list, and an archived trail's nodes are still in this
+  // session's tree — so this is the ordinary way back in, not a contrivance.
+  await trail.enter(rootId);
+
+  Assert.equal(
+    trail.store.isArchived(finished),
+    false,
+    "walking back into a trail is the plainest way of saying it was not " +
+      "finished after all, so `done` needs no undo verb"
+  );
+  Assert.equal(
+    trail.activeTrailId,
+    finished,
+    "and the user is on it, rather than standing on a trail still archived"
+  );
+
+  // The state that made this worth fixing: extending a trail that would never
+  // be offered back. It is a live trail again, so the next page is safe.
+  await goTo(PAGE_C);
+  Assert.equal(trail.activeTrailId, finished);
+  Assert.equal(trail.store.isArchived(finished), false);
+
+  // And it can be finished again — the ordinary shape of using this.
+  Assert.equal(runVerb(bar, "done"), true);
+  Assert.equal(trail.store.isArchived(finished), true);
+
+  BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function test_a_resumed_trail_comes_back_to_the_field() {
+  const tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, PAGE_A);
+  const trail = session();
+  const bar = FOSCommandBar.forWindow(window);
+  const field = FOSFieldSurface.forWindow(window);
+  await goTo(PAGE_B);
+
+  const finished = trail.activeTrailId;
+  const rootId = trail.store.nodes(finished)[0].id;
+  field.sync();
+  runVerb(bar, "done");
+  field.sync();
+  Assert.equal(
+    field.model.regions().some(r => r.id === finished),
+    false
+  );
+
+  await trail.enter(rootId);
+  field.sync();
+
+  Assert.ok(
+    field.model.regions().some(r => r.id === finished),
+    "the region comes back with the trail — `sync` places every live node, and " +
+      "the trail is live again"
+  );
+  Assert.ok(field.model.cardsIn(finished).length, "with its cards");
+
+  BrowserTestUtils.removeTab(tab);
+});

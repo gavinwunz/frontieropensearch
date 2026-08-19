@@ -192,6 +192,15 @@ list is deliberately small — every action must be worth a word.
   finished; `done` is the user saying so, and the freed slot goes to a nested
   trail rather than sitting empty.
 
+  **It has no undo verb, because walking back into a trail is the undo.** The
+  context sidebar and the bar's rows both re-enter a page by picking it off a
+  list, and an archived trail's nodes are still in the session's tree — so the
+  reversal is a gesture the user already has, costs no word out of the table,
+  and cannot be forgotten the way a second verb could. It also had to exist:
+  without it, re-entry left the user standing on a trail that was still
+  archived, extending work that would never be offered back, with nothing on
+  screen saying so.
+
   What it does not do is delete, and the pages it holds stay in the Context
   Engine. Arc's auto-archive is the shape to avoid here: it fires on a clock
   rather than on a fact about the work, cannot be switched off, and drops the

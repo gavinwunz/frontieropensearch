@@ -918,3 +918,43 @@ add_task(async function test_context_query_texts_are_raw_and_capped() {
   Assert.equal((await store.contextQueryTexts([])).size, 0);
   await store.close();
 });
+
+add_task(async function test_resuming_reopens_a_trail_and_lifts_it() {
+  const store = await freshStore();
+  const trailId = await store.addTrail({ now: 1000 });
+  await store.addNode({ trailId, url: "https://example.invalid/" });
+  await store.archiveTrail(trailId, 7000);
+
+  await store.resumeTrail(trailId, 9000);
+
+  const { trails } = await store.restorable();
+  Assert.deepEqual(
+    trails.map(t => t.id),
+    [trailId],
+    "a resumed trail is offered again, which is what makes `done` reversible"
+  );
+  Assert.equal(
+    trails[0].updated_at,
+    9000,
+    "and it is recent, because walking back into a trail is working on it"
+  );
+  await store.close();
+});
+
+add_task(async function test_resuming_an_open_trail_leaves_it_alone() {
+  const store = await freshStore();
+  const trailId = await store.addTrail({ now: 1000 });
+
+  await store.resumeTrail(trailId, 9000);
+
+  const [row] = await store.connection.execute(
+    "SELECT updated_at FROM trail WHERE id = :id",
+    { id: trailId }
+  );
+  Assert.equal(
+    row.getResultByName("updated_at"),
+    1000,
+    "re-entry happens constantly; only the ones that undo a `done` may move it"
+  );
+  await store.close();
+});

@@ -199,6 +199,25 @@ export class FOSContextStore {
   }
 
   /**
+   * Undo `done`: the user walked back into the trail.
+   *
+   * `updated_at` moves here, unlike in `archiveTrail`. Resuming a trail is the
+   * user working on it again, which is exactly what that column records, and
+   * it puts the trail back at the top of the resumption list where a trail
+   * being actively used belongs.
+   *
+   * @param {number} trailId
+   * @param {number} [now] Unix ms.
+   */
+  async resumeTrail(trailId, now = Date.now()) {
+    await this.#connection.execute(
+      `UPDATE trail SET archived_at = NULL, updated_at = :now
+       WHERE id = :id AND archived_at IS NOT NULL`,
+      { id: trailId, now }
+    );
+  }
+
+  /**
    * Record a page as a node on a trail.
    *
    * @param {object} fields

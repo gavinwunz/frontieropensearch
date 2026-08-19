@@ -468,6 +468,16 @@ export class FOSContextEngine {
         if (trail.archived_at !== null && !this.#archivedTrails.has(trailId)) {
           await store.archiveTrail(trailId, trail.archived_at);
           this.#archivedTrails.add(trailId);
+        } else if (
+          trail.archived_at === null &&
+          this.#archivedTrails.has(trailId)
+        ) {
+          // Re-entry resumed it. The set has to give the id back or the trail
+          // could never be finished a second time, which is the ordinary shape
+          // of using this: close a thread, get pulled back into it, close it
+          // again.
+          await store.resumeTrail(trailId);
+          this.#archivedTrails.delete(trailId);
         }
       }
 

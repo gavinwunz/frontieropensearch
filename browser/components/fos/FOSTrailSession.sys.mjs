@@ -769,6 +769,12 @@ export class FOSTrailSession {
 
     // Both of these happen before the load, so there is no window in which a
     // progress notification can see a stale current node.
+    // Walking back into a finished trail is how `done` is undone. The context
+    // sidebar and the bar both re-enter nodes by database id, and an archived
+    // trail's nodes are still in this session's tree, so without this the user
+    // ends up standing on a trail that is still archived — extending work that
+    // will never be offered back, with nothing on screen saying so.
+    this.store.resumeTrail(node.trail_id);
     this.#restoring.set(browser, { nodeId, url: entry.url ?? node.url });
     this.#trailByBrowser.set(browser, node.trail_id);
     this.#setCurrent(browser, nodeId);
@@ -894,8 +900,15 @@ export class FOSTrailSession {
    * @returns {boolean} Whether a trail was finished.
    */
   finishTrail() {
+    // No archived check, and the mutation pass is why. It was here first, it
+    // could not be made to fail, and the reason turned out to be a bug rather
+    // than caution: re-entry used to leave the user on a trail that was still
+    // archived, which was the only way `#activeTrailId` could name one. Fixing
+    // that — `enter` resumes the trail — made the branch genuinely unreachable,
+    // so it goes. `archiveTrail` is idempotent if anything ever proves this
+    // wrong.
     const trailId = this.#activeTrailId;
-    if (trailId === null || this.store.isArchived(trailId)) {
+    if (trailId === null) {
       return false;
     }
     const nodes = this.store.nodes(trailId);

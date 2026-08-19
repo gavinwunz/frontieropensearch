@@ -115,6 +115,33 @@ export class TrailStore {
     return trail;
   }
 
+  /**
+   * Undo `done`, because going back to a trail is the plainest way of saying
+   * it was not finished after all.
+   *
+   * Re-entry is the only caller and that is deliberate — there is no second
+   * verb. A trail is finished when the user says so and open again when they
+   * walk back into it, so the reversal costs no word in `GRAMMAR.md` §4 and
+   * cannot be forgotten, which a verb could be. Without it, re-entering a page
+   * of a finished trail from the context sidebar would leave the user standing
+   * on a trail that was still archived: the rail would show it, the next
+   * navigation would extend it, and none of it would ever be offered back.
+   *
+   * @param {number} id
+   */
+  resumeTrail(id) {
+    const trail = this.#trails.get(id);
+    if (!trail) {
+      throw new Error(`no such trail: ${id}`);
+    }
+    if (trail.archived_at === null) {
+      return trail;
+    }
+    trail.archived_at = null;
+    trail.updated_at = this.#now();
+    return trail;
+  }
+
   isArchived(id) {
     return this.#trails.get(id)?.archived_at != null;
   }

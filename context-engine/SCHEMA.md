@@ -115,6 +115,11 @@ start.** Nothing else changes — the tree, the scroll offsets, the nodes and th
 context all survive, and the pages stay findable through the command bar by
 subject rather than by URL.
 
+It is cleared again when the user re-enters any of the trail's nodes, which is
+the only way back and the only undo `done` has. `updated_at` moves on the way
+back but not on the way out: finishing work is a statement about it, resuming it
+is working on it again.
+
 It exists because recency cannot express it. A trail finished an hour ago and a
 trail paused an hour ago have the same `updated_at`, so without a second column
 the resumption list can be *ordered* but never *shortened*, and it is the only

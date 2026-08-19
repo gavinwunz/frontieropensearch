@@ -3127,16 +3127,54 @@ being nested, so the metric no longer has to guess about the case it was worst
 at. What remains open is genuinely narrower — what to do with trails nobody has
 said anything about.
 
+### A guard that could not be made to fail — **the run's second finding**
+
+Written after the section above, because the mutation pass is what found it.
+
+Seven mutations of the node-level logic were each caught by the test that should
+have caught them. One was not: deleting `|| this.store.isArchived(trailId)` from
+`finishTrail`'s guard changed no result. The reflex is to write a test that
+reaches the branch. The right question turned out to be *why* nothing reached
+it, and the answer was a bug.
+
+`#activeTrailId` could name an archived trail by exactly one route: the context
+sidebar and the bar's rows re-enter a page by calling `session.enter(nodeId)`,
+and an archived trail's nodes are **still in the session's tree**. So picking a
+page off a list put the user back on a finished trail — the rail showed it, the
+marks synced to it, the next navigation extended it, and it stayed archived, so
+none of that work would ever be offered back. Silent, and it loses exactly the
+material the verb promised to keep.
+
+The fix is that re-entry resumes the trail, which is also the undo the design had
+been arguing it did not need. It is better than a verb would have been: it costs
+no word out of `GRAMMAR.md` §4's table, and it is the gesture a user reaches for
+anyway. With it in place the guard is genuinely unreachable, so it was deleted
+rather than tested.
+
+**Generalises, and it is the useful half:** *an unreachable guard is sometimes
+evidence of a missing behaviour rather than of over-caution.* The branch was
+written because the author could picture the state; the state was reachable when
+they pictured it; something else was supposed to prevent it and did not. Before
+deleting a defensive branch as dead — or writing a contrived test to keep it —
+ask what would have had to be true for it to fire, and check that the thing
+preventing it is a design decision rather than an accident. Both answers are
+useful; only one of them is a deletion.
+
+It also sharpens run 39's rule about mutation testing. A mutation that *survives*
+is not merely a gap in coverage. It is a claim that a line does nothing, and that
+claim is worth taking literally before it is worth patching over.
+
 ### Still open
 
-- **There is no way back into a finished trail as itself.** Its pages are
-  findable by subject through the bar, which is the return path this fork is
-  built for and is strictly better than Arc's retype-the-URL, but re-entering
-  one starts a fresh trail rather than resuming the old tree. That is arguably
-  correct — returning to a subject later *is* new work — and it is deliberately
-  not decided here, because deciding it needs use rather than argument.
-- **No undo.** A mistaken `done` costs exactly one thing: the trail is not
-  offered at the next start. Nothing is deleted. That cost is small enough not
-  to buy a second verb at today's prices, and the reasoning is only sound
-  because the verb was kept narrow — if `done` ever grows a destructive half,
-  this has to be revisited first.
+- **A finished trail is not offered at the next start, and there is no surface
+  that lists finished trails.** Getting back into one within the session is
+  re-entry; across a restart it is finding a page by subject in the bar, which
+  starts a fresh trail rather than rebuilding the old tree. That is arguably
+  correct — returning to a subject weeks later *is* new work — and it is
+  deliberately not decided here, because deciding it needs use rather than
+  argument. What would change the answer is someone wanting the *tree* back
+  rather than the pages.
+- **The undo is only as good as the re-entry paths.** It hangs off `enter`, so
+  any future way of reaching a node that does not go through `enter` would
+  reintroduce exactly the bug above. Worth a check if a new re-entry surface is
+  ever added.

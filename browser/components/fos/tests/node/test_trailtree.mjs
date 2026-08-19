@@ -481,3 +481,46 @@ test("an archived trail survives a hydrate round trip", () => {
     "or the verb would last exactly one session"
   );
 });
+
+test("resuming a trail clears the stamp and moves it back up the list", () => {
+  const store = new TrailStore({ now: fixedClock() });
+  const trailId = store.createTrail();
+  store.addNode({ trailId, url: "https://a.invalid/" });
+  store.archiveTrail(trailId);
+  const parked = store.getTrail(trailId).updated_at;
+
+  const trail = store.resumeTrail(trailId);
+
+  assert.equal(trail.archived_at, null);
+  assert.equal(store.isArchived(trailId), false);
+  assert.ok(
+    trail.updated_at > parked,
+    "working on a trail again is what updated_at records, unlike finishing it"
+  );
+});
+
+test("resuming an open trail leaves its recency alone", () => {
+  const store = new TrailStore({ now: fixedClock() });
+  const trailId = store.createTrail();
+  store.addNode({ trailId, url: "https://a.invalid/" });
+  const before = store.getTrail(trailId).updated_at;
+
+  assert.equal(store.resumeTrail(trailId).updated_at, before);
+  assert.throws(() => store.resumeTrail(9999), /no such trail/);
+});
+
+test("a trail can be finished, resumed and finished again", () => {
+  const store = new TrailStore({ now: fixedClock() });
+  const trailId = store.createTrail();
+  store.addNode({ trailId, url: "https://a.invalid/" });
+
+  const first = store.archiveTrail(trailId).archived_at;
+  store.resumeTrail(trailId);
+  const second = store.archiveTrail(trailId).archived_at;
+
+  assert.ok(
+    second > first,
+    "the second finish is its own fact, not the first one remembered"
+  );
+  assert.equal(store.isArchived(trailId), true);
+});
