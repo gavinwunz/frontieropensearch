@@ -77,17 +77,20 @@ function recordNotices() {
  *
  * @param {object} options
  * @param {boolean} [options.fail] Resolve to null, as a missing model does.
- * @param {number[]} [options.progress] Percentages to report on the way.
+ * @param {number[]} [options.loaded] Cumulative byte counts to report.
  * @param {?Promise} [options.until] Held open until this resolves.
  * @returns {object} `{calls}`, counting how often the runtime was reached.
  */
-function stubOpen({ fail = false, progress = [], until = null } = {}) {
+function stubOpen({ fail = false, loaded = [], until = null } = {}) {
   const state = { calls: 0 };
   FOSEmbeddings._open = function (onProgress) {
     state.calls++;
     return (async () => {
-      for (const percent of progress) {
-        onProgress?.({ progress: percent });
+      for (const totalLoaded of loaded) {
+        // Shaped like the runtime's own report: `progress` is a per-file
+        // percentage that restarts, `totalLoaded` is the running total. The
+        // double carries both so that reading the wrong one still fails here.
+        onProgress?.({ progress: 100, totalLoaded });
       }
       if (until) {
         await until;
@@ -136,7 +139,7 @@ async function reset() {
 add_task(async function test_the_first_line_says_the_size_and_the_host() {
   await reset();
   stubPresent(false);
-  const opened = stubOpen({ progress: [12, 12, 87] });
+  const opened = stubOpen({ loaded: [4.2e6, 4.9e6, 26e6] });
   const said = recordNotices();
 
   Assert.ok(!Services.prefs.getBoolPref(PREF), "the tier starts off");
@@ -153,14 +156,17 @@ add_task(async function test_the_first_line_says_the_size_and_the_host() {
     `and names the host it contacts: ${said[0]}`
   );
 
-  const percents = said.filter(line => /\d+% of about/.test(line));
+  const moved = said.filter(line => /MB of about/.test(line));
   Assert.equal(
-    percents.length,
+    moved.length,
     2,
-    `two of the three reports moved the number: ${percents.join(" | ")}`
+    `two of the three reports moved the number: ${moved.join(" | ")}`
   );
-  Assert.ok(percents[0].includes("12%"), "the first percentage is reported");
-  Assert.ok(percents[1].includes("87%"), "and so is the next distinct one");
+  Assert.ok(moved[0].includes("4MB of about"), "the running total is reported");
+  Assert.ok(
+    moved[1].includes("26MB of about"),
+    "and it counts up rather than restarting per file"
+  );
 
   Assert.ok(/ready/.test(said.at(-1)), `and it ends: ${said.at(-1)}`);
   Assert.equal(opened.calls, 1, "the runtime was reached once");
@@ -222,6 +228,48 @@ add_task(async function test_weights_here_but_the_tier_off_says_no_download() {
   );
   Assert.ok(/ready/.test(said.at(-1)), `and it reports ready: ${said.at(-1)}`);
   Assert.ok(Services.prefs.getBoolPref(PREF), "with consent recorded");
+});
+
+add_task(async function test_deleted_weights_are_not_silently_refetched() {
+  await reset();
+  // Consent given in some earlier session...
+  Services.prefs.setBoolPref(PREF, true);
+  // ...and the user has since cleared the model cache to get the 30MB back.
+  stubPresent(false);
+  const opened = stubOpen({});
+
+  // The Chrome failure this is here to not repeat: a model deleted from disk
+  // and quietly downloaded again, because a flag set months ago was treated as
+  // permission for a transfer happening now. `IDEAS.md` run 38.
+  Assert.equal(await FOSEmbeddings.ensure(), null, "the tier gets no engine");
+  Assert.equal(
+    opened.calls,
+    0,
+    "and nothing reached the runtime, so nothing was fetched"
+  );
+  Assert.equal(
+    await FOSEmbeddings.embed(["a title"]),
+    null,
+    "so a keystroke gets no vectors and the tier is simply absent"
+  );
+  Assert.ok(
+    Services.prefs.getBoolPref(PREF),
+    "the pref is left alone — the user's answer was never the problem"
+  );
+});
+
+add_task(async function test_weights_that_are_here_still_load_on_a_keystroke() {
+  await reset();
+  Services.prefs.setBoolPref(PREF, true);
+  stubPresent(true);
+  const opened = stubOpen({});
+
+  // The other half of the gate above: a presence check that answered "no" to
+  // everything would switch the tier off for good and pass the test before it.
+  Assert.ok(await FOSEmbeddings.ensure(), "the engine loads from the cache");
+  Assert.equal(opened.calls, 1, "reaching the runtime once");
+  Assert.ok(await FOSEmbeddings.ensure(), "and is kept for the next keystroke");
+  Assert.equal(opened.calls, 1, "without a second load");
 });
 
 add_task(async function test_a_second_run_joins_the_one_in_flight() {

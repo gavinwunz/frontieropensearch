@@ -125,7 +125,10 @@ function backend({
 
   voice().useBackend({
     recorder,
-    listFiles: async () => (weights ? [{ path: "model.onnx" }] : []),
+    // The real `ModelHub.listFiles` resolves to `{files, metadata}`. The double
+    // said an array for thirteen runs and taught the production code to believe
+    // it, which is how the presence check came to answer "no" forever.
+    listFiles: async () => ({ files: weights ? [{ path: "model.onnx" }] : [] }),
     createEngine: async onProgress => {
       counts.engines++;
       if (onProgress) {

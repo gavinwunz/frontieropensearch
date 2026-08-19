@@ -17,6 +17,14 @@
  * candidate identically at zero under the strict predicate — so it is worth a
  * file that proves it in a browser rather than a mock that assumes it.
  *
+ * It also carries the one claim about the `model` verb that a stub cannot
+ * make. `browser_modeldownload.js` covers everything above the runtime, but
+ * whether `FOSEmbeddings.present` actually finds weights in the cache depends
+ * on the key the ML runtime files them under — a task name and a revision this
+ * module hands over and never sees again. Get that wrong and nothing fails:
+ * the verb simply says "Downloading" forever, on a browser transferring
+ * nothing. Only a real load can tell.
+ *
  * Gated and off by default, like every other measurement here, because it
  * needs weights this repository does not carry:
  *
@@ -64,6 +72,12 @@ function engine() {
   return FOSContextEngine.forWindow(window);
 }
 
+function bar() {
+  return ChromeUtils.importESModule(
+    "resource:///modules/FOSCommandBar.sys.mjs"
+  ).FOSCommandBar.forWindow(window);
+}
+
 function skipUnlessWeights() {
   if (Services.env.get("MOZ_MODELS_HUB")) {
     return false;
@@ -80,13 +94,20 @@ add_setup(async function () {
   if (skipUnlessWeights()) {
     return;
   }
-  // The tier is off by default because turning it on authorises a model
-  // download; see `FOSEmbeddings`. A test that needs the tier has to say so,
-  // which is the same statement a user's "download the search model" step will
-  // make.
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.fos.suggest.semanticTier", true]],
-  });
+  // The tier is off by default and, since run 38, flipping the pref is not
+  // enough on its own: nothing but `download` may fetch weights, so a profile
+  // that has never run the verb has no engine no matter what the pref says.
+  // That makes this setup the product's own first-run path rather than a
+  // shortcut around it — the same two lines a user gets.
+  Assert.ok(
+    await bar().actions.run({ action: "model", target: null, text: null })
+      .result,
+    "the model verb fetched the weights and switched the tier on"
+  );
+  Assert.ok(
+    Services.prefs.getBoolPref("browser.fos.suggest.semanticTier"),
+    "which is what recorded the consent"
+  );
 
   // Both pages are *browsed*, not merely inserted into Places. The tier draws
   // its candidates from what this fork knows — the trail, the context and its
@@ -102,6 +123,7 @@ add_setup(async function () {
   registerCleanupFunction(async () => {
     await PlacesUtils.history.remove([ANSWER, UNRELATED]);
     await FOSEmbeddings.shutdown();
+    Services.prefs.clearUserPref("browser.fos.suggest.semanticTier");
   });
 });
 
@@ -161,6 +183,44 @@ add_task(async function test_the_engine_agrees_with_the_floor_it_ships() {
     cosine(query, unrelated),
     RELATED_FLOOR,
     "and a title from another enquiry does not"
+  );
+});
+
+add_task(async function test_the_cache_can_be_found_again_by_the_verb() {
+  if (skipUnlessWeights()) {
+    return;
+  }
+
+  // The tasks above have loaded a real engine, so by now the weights are on
+  // disk by definition. `present` asks the cache the same question the `model`
+  // verb asks before it claims to be downloading anything, and it has to agree.
+  Assert.ok(
+    await FOSEmbeddings.present(),
+    "the weights a real load just fetched are found by the presence check"
+  );
+
+  // And the verb is idempotent against that: a second run transfers nothing
+  // and says so, which is the whole difference between an honest one-time
+  // download and a browser that claims to be fetching 30MB on every ask.
+  const target = bar();
+  const said = [];
+  const notify = target.notify.bind(target);
+  target.notify = message => {
+    said.push(message);
+    notify(message);
+  };
+  try {
+    Assert.ok(
+      await target.actions.run({ action: "model", target: null, text: null })
+        .result,
+      "the verb reports the tier on"
+    );
+  } finally {
+    delete target.notify;
+  }
+  Assert.ok(
+    !said.some(line => /Downloading/.test(line)),
+    `nothing claimed to be downloading: ${said.join(" | ")}`
   );
 });
 

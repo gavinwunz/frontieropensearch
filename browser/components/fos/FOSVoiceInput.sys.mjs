@@ -746,27 +746,47 @@ export class FOSVoiceInput {
    * Read from the cache rather than from the network, so the answer on a
    * machine with no network is "yes" whenever it is true, and the offline path
    * never depends on being able to ask anyone.
+   *
+   * This answered "no" on every machine from run 25 until run 38, including one
+   * with the weights sitting in its cache, for two reasons that fail
+   * identically and are both contradicted by `ModelHub.sys.mjs`'s own JSDoc:
+   * `listFiles` resolves to `{files, metadata}` rather than to an array, and
+   * the cache keys a model by `hostname/organization/name` rather than by the
+   * id configured here. See `FOSEmbeddings.present`, where the same pair was
+   * finally caught against a real cache.
+   *
+   * The cost here was small and entirely invisible, which is why it lasted: a
+   * spurious "Downloading the speech model" on the first press of a session,
+   * followed by a `createEngine` that read the cache and worked.
+   *
+   * The double is asked for the real shape rather than a convenient one. A
+   * double that returns an array is a second, easier contract, and it is the
+   * reason the first mistake went unchallenged for thirteen runs.
    */
   async #weightsPresent() {
     try {
-      if (this.#listFiles) {
-        const files = await this.#listFiles();
-        return !!files?.length;
-      }
-      const { ModelHub } = ChromeUtils.importESModule(
-        "chrome://global/content/ml/ModelHub.sys.mjs"
-      );
-      const hub = new ModelHub(this.#hub());
-      const files = await hub.listFiles({
-        taskName: TASK_NAME,
-        model: MODEL_ID,
-        revision: MODEL_REVISION,
-      });
-      return !!files?.length;
+      const listed = await this.#list();
+      return !!listed?.files?.length;
     } catch (error) {
       console.error(error);
       return false;
     }
+  }
+
+  /** The cache query, or the double standing in for it. */
+  #list() {
+    if (this.#listFiles) {
+      return this.#listFiles();
+    }
+    const { ModelHub } = ChromeUtils.importESModule(
+      "chrome://global/content/ml/ModelHub.sys.mjs"
+    );
+    const options = this.#hub();
+    return new ModelHub(options).listFiles({
+      taskName: TASK_NAME,
+      model: `${URL.parse(options.rootUrl)?.hostname}/${MODEL_ID}`,
+      revision: MODEL_REVISION,
+    });
   }
 
   #hub() {

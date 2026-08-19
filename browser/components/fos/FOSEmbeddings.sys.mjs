@@ -228,9 +228,27 @@ export const FOSEmbeddings = {
    * Are the weights already in the profile's model cache?
    *
    * Asked of the cache and never of the network, so that the answer on a
-   * machine with no connection is "yes" whenever it is true — the same rule
-   * the voice path follows, and for the same reason: an offline browser must
-   * never need permission from a server to use a model it already has.
+   * machine with no connection is "yes" whenever it is true: an offline
+   * browser must never need permission from a server to use a model it
+   * already has.
+   *
+   * Two things about `ModelHub.listFiles` have to be right and neither is what
+   * the file's own documentation says, which is why this took a real cache to
+   * get working rather than a careful read.
+   *
+   *   - It resolves to `{files, metadata}`, **not** to an array. Its JSDoc
+   *     promises an array.
+   *   - The cache keys a model by `hostname/organization/name`, so the id this
+   *     module configures is only two thirds of the key. The `model` parameter
+   *     is documented as `organization/name` in one JSDoc block and as
+   *     `hostname/organization/name` in another, thirty lines apart.
+   *
+   * Both mistakes fail the same way — a check that compiles, runs, and answers
+   * "no weights" on a machine holding the weights — and this fork shipped the
+   * first of them in the voice path from run 25 to run 38, where it cost a
+   * spurious download line on the first press of every session. Nothing but a
+   * real load could have caught either; `browser_zzrelated.js` is where that
+   * question is asked.
    *
    * @returns {Promise<boolean>}
    */
@@ -243,9 +261,13 @@ export const FOSEmbeddings = {
         rootUrl: this._hubRoot || undefined,
         urlTemplate: ENGINE_OPTIONS.modelHubUrlTemplate,
       });
-      const files = await hub.listFiles({
+      const { files } = await hub.listFiles({
         taskName: ENGINE_OPTIONS.taskName,
-        model: ENGINE_OPTIONS.modelId,
+        // The same host the download line names, which is not a coincidence:
+        // weights fetched from one hub are a different cache entry from the
+        // same weights fetched from another, and both statements are about
+        // where this browser's copy came from.
+        model: `${this.hubHost}/${ENGINE_OPTIONS.modelId}`,
         revision: ENGINE_OPTIONS.modelRevision,
       });
       return !!files?.length;
@@ -273,16 +295,28 @@ export const FOSEmbeddings = {
    * @returns {Promise<?object>} The engine, or null if it could not be had.
    */
   async download(onProgress = null) {
-    if (this._engine) {
-      Services.prefs.setBoolPref(PREF_ENABLED, true);
-      return this._engine;
-    }
-    // A load that failed for want of weights is exactly what this call is here
-    // to fix, so the flag that stops keystrokes retrying must not stop this.
-    this._unavailable = false;
     this._downloading = true;
     try {
-      const engine = await (this._loading ??= this._open(onProgress));
+      // A keystroke may have a load in flight already. It is waited out rather
+      // than raced or joined: it holds the same single engine slot this call
+      // wants, and — since `ensure` never fetches — it may be about to resolve
+      // to null for weights this call is here to go and get.
+      if (this._loading) {
+        await this._loading;
+      }
+      if (this._engine) {
+        Services.prefs.setBoolPref(PREF_ENABLED, true);
+        return this._engine;
+      }
+      // A load that gave up for want of weights is exactly what this call is
+      // here to fix, so the flag that stops keystrokes retrying must not stop
+      // this one.
+      this._unavailable = false;
+      const engine = await (this._loading = this._open(onProgress).finally(
+        () => {
+          this._loading = null;
+        }
+      ));
       if (engine) {
         Services.prefs.setBoolPref(PREF_ENABLED, true);
       }
@@ -293,7 +327,22 @@ export const FOSEmbeddings = {
   },
 
   /**
-   * Load the engine, or report that this machine cannot.
+   * Load the engine, if the weights are already here.
+   *
+   * **This path never fetches.** `createEngine` would happily do it — it is
+   * the same call `download` makes — and the pref alone is not enough to let
+   * it, because a pref set months ago is not consent to a transfer happening
+   * now. The case that decides it is the one Chrome was taken apart over in
+   * May 2026: it wrote a 4GB model to disk unasked, and the complaint that
+   * outlasted the headline was that deleting the file simply got it downloaded
+   * again. A user who clears this browser's model cache to reclaim 30MB, with
+   * the tier still switched on from last month, would have hit exactly that —
+   * the weights back on disk on the next keystroke into the command bar, with
+   * no one asked and nothing said. `IDEAS.md` run 38.
+   *
+   * So the presence check is the gate, `download` is the only method in this
+   * module that may transfer anything, and deleting the weights degrades the
+   * bar to five tiers until the user runs `model` again.
    *
    * @returns {Promise<?object>} The engine, or null.
    */
@@ -310,15 +359,32 @@ export const FOSEmbeddings = {
     if (this._unavailable) {
       return null;
     }
-    return (this._loading ??= this._open(null));
+    return (this._loading ??= this._openIfPresent());
   },
 
   /**
-   * Create the engine. The one place that talks to the ML runtime.
+   * @returns {Promise<?object>} The engine, or null if nothing is cached.
+   */
+  async _openIfPresent() {
+    try {
+      if (!(await this.present())) {
+        // Remembered, so the cache is asked once per session rather than once
+        // per first-keystroke-after-a-failure.
+        this._unavailable = true;
+        return null;
+      }
+      return await this._open(null);
+    } finally {
+      this._loading = null;
+    }
+  },
+
+  /**
+   * Create the engine, fetching the weights if they are not here.
    *
-   * Shared by `ensure` and `download` so that a keystroke arriving mid-fetch
-   * joins the load in flight rather than starting a second one — the engine is
-   * process-wide and two of them would be two copies of the weights.
+   * The one place that talks to the ML runtime, and the one place that can put
+   * bytes on the wire. `ensure` reaches it only behind the presence check
+   * above; `download` reaches it directly, which is what the verb is for.
    *
    * @param {?Function} onProgress
    * @returns {Promise<?object>}
@@ -345,9 +411,6 @@ export const FOSEmbeddings = {
         console.warn(`FOS: no embedding engine, related tier off — ${error}`);
         this._unavailable = true;
         return null;
-      })
-      .finally(() => {
-        this._loading = null;
       });
   },
 

@@ -1067,16 +1067,21 @@ export class FOSContextEngine {
 
     let shown = -1;
     const engine = await embeddings.download(report => {
-      const percent = Math.round(Number(report?.progress));
-      // Only on a whole-percent change: the runtime reports every chunk, and
-      // rewriting the same sentence a hundred times a second is a live region
-      // a screen reader would read a hundred times.
-      if (!Number.isFinite(percent) || percent === shown) {
+      // `report.progress` is a percentage **of the file in flight**, and this
+      // model is two files — so it runs 0-100 for the tokeniser and then
+      // starts again at 0 for the 30MB table. A bar that goes backwards is
+      // worse than no bar. `totalLoaded` is the sum across every callback, so
+      // it is the one field that only ever grows.
+      const mb = Math.floor(Number(report?.totalLoaded) / 1e6);
+      // Only when the whole megabyte changes: the runtime reports every chunk,
+      // and this is a live region, so rewriting the same sentence a hundred
+      // times a second is a screen reader saying it a hundred times.
+      if (!Number.isFinite(mb) || mb <= shown) {
         return;
       }
-      shown = percent;
+      shown = mb;
       this.#bar?.notify(
-        `Downloading the search model — ${percent}% of about ` +
+        `Downloading the search model — ${mb}MB of about ` +
           `${embeddings.weightsMB}MB, once.`
       );
     });
