@@ -36,6 +36,8 @@ support-files = [
 
 ["browser_zzfieldperf.js"]
 
+["browser_zzforget.js"]
+
 ["browser_zzmergeoffer.js"]
 
 ["browser_zzrelated.js"]

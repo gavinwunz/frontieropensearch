@@ -24,6 +24,7 @@ EXTRA_JS_MODULES += [
     "FOSField.sys.mjs",
     "FOSFieldSurface.sys.mjs",
     "FOSFieldView.sys.mjs",
+    "FOSForget.sys.mjs",
     "FOSGrammar.sys.mjs",
     "FOSLocationDisplay.sys.mjs",
     "FOSMarks.sys.mjs",

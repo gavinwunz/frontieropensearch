@@ -10,6 +10,12 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   Downloads: "resource://gre/modules/Downloads.sys.mjs",
   ExtensionUtils: "resource://gre/modules/ExtensionUtils.sys.mjs",
+  // Frontier OpenSearch's Context Engine records browsing beside Places, so
+  // CLEAR_HISTORY has to reach it. The getter is lazy and every call through
+  // it is behind the MOZ_BUILD_APP guard in `fosCleaner`, so an application
+  // built from this tree without the component never resolves this URL.
+  // eslint-disable-next-line mozilla/no-browser-refs-in-toolkit
+  FOSForget: "resource:///modules/FOSForget.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   ServiceWorkerCleanUp: "resource://gre/modules/ServiceWorkerCleanUp.sys.mjs",
 });
@@ -1178,6 +1184,52 @@ const StorageAccessCleaner = {
   },
 };
 
+/**
+ * Frontier OpenSearch's Context Engine.
+ *
+ * The fork records browsing in a second database beside Places — what was
+ * searched, from which page, and how long each result was read — so clearing
+ * history has to reach it too or the shipped UI clears half of what it says it
+ * does. Everything it does lives in `FOSForget.sys.mjs`; this is only the
+ * registration, kept to a delegation so the reasoning sits with the component
+ * that owns the data.
+ */
+/**
+ * The fork's cleaner, or null in an application built from this tree that has
+ * no Context Engine to clear. Guarded because this is toolkit code and
+ * `resource:///` is the application's own directory.
+ *
+ * @returns {?object}
+ */
+function fosCleaner() {
+  if (AppConstants.MOZ_BUILD_APP != "browser") {
+    return null;
+  }
+  return lazy.FOSForget;
+}
+
+const FOSContextEngineCleaner = {
+  deleteByHost(aHost) {
+    return fosCleaner()?.deleteByHost(aHost) ?? Promise.resolve();
+  },
+
+  deleteByPrincipal(aPrincipal) {
+    return fosCleaner()?.deleteByPrincipal(aPrincipal) ?? Promise.resolve();
+  },
+
+  deleteBySite(aSchemelessSite) {
+    return fosCleaner()?.deleteBySite(aSchemelessSite) ?? Promise.resolve();
+  },
+
+  deleteByRange(aFrom, aTo) {
+    return fosCleaner()?.deleteByRange(aFrom, aTo) ?? Promise.resolve();
+  },
+
+  deleteAll() {
+    return fosCleaner()?.deleteAll() ?? Promise.resolve();
+  },
+};
+
 const HistoryCleaner = {
   deleteByHost(aHost) {
     if (!AppConstants.MOZ_PLACES) {
@@ -2255,6 +2307,7 @@ const FLAGS_MAP = [
       HistoryCleaner,
       SessionHistoryCleaner,
       AboutHomeStartupCacheCleaner,
+      FOSContextEngineCleaner,
     ],
   },
 

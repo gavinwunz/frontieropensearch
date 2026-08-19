@@ -126,6 +126,19 @@ export class FOSContextEngine {
     return storePromise;
   }
 
+  /**
+   * Whether the shared store has already been opened in this process.
+   *
+   * `store()` opens on demand, so asking for it is not a way to find out. A
+   * caller that must not *cause* the database to exist — clearing history on a
+   * profile that has never used the Context Engine — needs to know first.
+   *
+   * @returns {boolean}
+   */
+  static get storeIsOpen() {
+    return storePromise !== null;
+  }
+
   /** Drop the shared store, so a test can open a fresh one. */
   static async resetStore() {
     const opened = storePromise;
