@@ -57,9 +57,13 @@ const SECRET = "https://example.com/private-only-";
  * `attach` is started by window init and deliberately not awaited there, so a
  * test that navigated immediately would be racing the store opening.
  *
+ * @param {object} [options]
+ * @param {boolean} [options.explicit] Ask for a private window outright. False
+ *   asks for an ordinary one, which is what permanent private browsing turns
+ *   into a private one.
  * @returns {Promise<object>} The window.
  */
-async function openPrivateWindow() {
+async function openPrivateWindow({ explicit = true } = {}) {
   let started;
   const startedUp = new Promise(resolve => {
     started = resolve;
@@ -72,7 +76,12 @@ async function openPrivateWindow() {
   Services.obs.addObserver(observer, "browser-delayed-startup-finished");
   let win;
   try {
-    win = window.OpenBrowserWindow({ private: true });
+    // Under `browser.privatebrowsing.autostart` the caller asks for an
+    // *ordinary* window and gets a private one; that is the whole point of the
+    // mode, and asking for a private one explicitly would not test it.
+    win = explicit
+      ? window.OpenBrowserWindow({ private: true })
+      : window.OpenBrowserWindow();
     await startedUp;
   } finally {
     Services.obs.removeObserver(observer, "browser-delayed-startup-finished");
@@ -311,4 +320,63 @@ add_task(async function test_nothing_private_reaches_the_disk_at_all() {
       `no trace of the private session anywhere in ${PathUtils.filename(path)}`
     );
   }
+});
+
+add_task(async function test_never_remember_history_gets_the_same_treatment() {
+  // "Never remember history" in `about:preferences`' data panel is permanent
+  // private browsing: it sets `browser.privatebrowsing.autostart`, and every
+  // window is then private without anybody asking for one. A user who picks it
+  // has made the strongest statement the shipped UI offers about not being
+  // recorded, and this component had never heard of the pref.
+  //
+  // It needs no code, because the engine asks `isWindowPrivate` rather than
+  // reading a pref or watching how a window was opened, and that answers yes
+  // here for the same reason it does for an explicit private window. This is
+  // the assertion that says so, because "it follows from the API we happen to
+  // call" is exactly the kind of claim that stops being true quietly.
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.privatebrowsing.autostart", true]],
+  });
+
+  const win = await openPrivateWindow({ explicit: false });
+  Assert.ok(
+    PrivateBrowsingUtils.isWindowPrivate(win),
+    "an ordinary window is private when the user asked never to be remembered"
+  );
+
+  const engine = FOSContextEngine.forWindow(win);
+  Assert.equal(
+    engine.store,
+    await FOSContextEngine.privateStore(),
+    "and its engine records to the memory store, not to the profile's file"
+  );
+
+  await browse(win, `${SECRET}autostart`);
+  await engine.settled;
+  const profileStore = await FOSContextEngine.store();
+  Assert.equal(
+    await nodesUnder(profileStore, `${SECRET}autostart`),
+    0,
+    "so nothing it visited reached the database on disk"
+  );
+
+  // Closing it does *not* drop the store, and that is right rather than a
+  // leak: `last-pb-context-exited` fires when the last private window goes,
+  // and under this pref the next window will be private too. There is no
+  // session boundary to hang a teardown on until the process exits, which is
+  // also when a memory database ceases to exist. Asserting it here because it
+  // is the one place the private store's lifetime differs from §Private
+  // browsing's description of it, and a reader of that section would guess
+  // wrong.
+  await BrowserTestUtils.closeWindow(win);
+  Assert.ok(
+    FOSContextEngine.privateStoreIsOpen,
+    "the memory store outlives the window, because the mode outlives it too"
+  );
+
+  await SpecialPowers.popPrefEnv();
+  // Left open, the store would be handed to the next private window in the
+  // suite as if it were the same session — which is exactly what
+  // `test_a_private_session_cannot_see_the_last_one` denies.
+  await FOSContextEngine.resetStore();
 });

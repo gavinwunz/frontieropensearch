@@ -260,6 +260,22 @@ forgotten one. Clearing history is about what is on the disk, and nothing a
 private window has recorded is; Firefox's sanitizer does not reach into a live
 private session either.
 
+### Permanent private browsing
+
+"Never remember history" in `about:preferences` sets
+`browser.privatebrowsing.autostart`, and every window is then private without
+anyone asking for one. This needs no separate handling — the engine asks
+`isWindowPrivate` rather than reading a pref or watching how a window was
+opened, and that answers yes here for the same reason — but the store's
+*lifetime* is different and the difference is easy to guess wrong.
+
+There is no last private window. `last-pb-context-exited` fires when the last
+one closes, and under this pref the next one will be private too, so the
+memory store is not dropped when a window goes; it lives until the process
+does, which is also when a memory database ceases to exist anyway. Everything
+above still holds — nothing reaches a file — but a reader expecting the store
+to be torn down per session will not find that here.
+
 ## Migrations
 
 Versioned and forward-only. `PRAGMA user_version` holds the applied version;
