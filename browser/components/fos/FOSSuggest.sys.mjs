@@ -70,6 +70,7 @@ export const T_MARK = "mark";
 export const T_CONTEXT = "context";
 export const T_TRAIL = "trail";
 export const T_CROSSING = "crossing";
+export const T_RELATED = "related";
 export const T_HISTORY = "history";
 
 /** The order tiers are offered in. Exported so a test can assert it. */
@@ -78,8 +79,25 @@ export const TIER_ORDER = Object.freeze([
   T_CONTEXT,
   T_TRAIL,
   T_CROSSING,
+  T_RELATED,
   T_HISTORY,
 ]);
+
+/**
+ * How close a page has to be to what was typed before it is worth offering.
+ *
+ * This is a measured number, not a taste: `browser_zzembedquality.js` swept
+ * every observed pair similarity over eight enquiries and 0.169 is where
+ * "these are the same enquiry" best separates from "these are not", at
+ * precision 0.756 and recall 0.646. Below it a pair is more likely to be
+ * unrelated than related, and a row the user has to read and reject is worse
+ * than a shorter list.
+ *
+ * The same measurement is why this tier only ever *offers*. Three quarters
+ * right is a good list and a bad automatic decision, so nothing above this
+ * floor is acted on without the user picking it.
+ */
+export const RELATED_FLOOR = 0.169;
 
 /**
  * The one line each tier is explained by, shown as the group heading.
@@ -92,6 +110,7 @@ export const TIER_LABELS = Object.freeze({
   [T_CONTEXT]: "In this context",
   [T_TRAIL]: "On this trail",
   [T_CROSSING]: "Another trail reached this",
+  [T_RELATED]: "Close to what you typed",
   [T_HISTORY]: "Visited before",
 });
 
@@ -184,6 +203,11 @@ function detailFor(tier, page) {
       return [page.trail_name || "an unnamed trail", hostOf(page.url)].join(
         " · "
       );
+    case T_RELATED:
+      // A related row shares no words with the query by construction, so the
+      // host on its own says nothing about why it is here. Where it came from
+      // does, and it is the same provenance every other tier shows.
+      return [page.trail_name, hostOf(page.url)].filter(Boolean).join(" · ");
     default:
       return hostOf(page.url);
   }
@@ -228,12 +252,22 @@ function rowFor(tier, page, index) {
  * it again here would be this module inventing a second opinion about an order
  * the store has already justified.
  *
+ * `related` is the one exception, and it is one for the same reason: there is
+ * no other claim about that tier's order than the similarity itself, so this
+ * module sorts it because nothing upstream has an opinion to defend. It is
+ * also the only tier exempt from `pageMatches`, which is what it exists for —
+ * a third of real queries share no word at all with the pages that answer
+ * them, and a predicate that requires every term is silent on all of them.
+ *
  * @param {string} query What the user has typed.
  * @param {object} sources
  * @param {object[]} [sources.marked] Pages the typed token addresses directly.
  * @param {object[]} [sources.context] Pages in the active context.
  * @param {object[]} [sources.trail] Pages on the active trail.
  * @param {object[]} [sources.crossings] Pages other trails reached.
+ * @param {object[]} [sources.related] Pages close in meaning, each carrying a
+ *   `similarity` in -1..1. Anything below `RELATED_FLOOR` is dropped here
+ *   rather than upstream, so the floor is stated once.
  * @param {object[]} [sources.history] Places rows, already frecency-ordered.
  * @param {object} [options]
  * @param {number} [options.limit] How many rows at most.
@@ -241,7 +275,14 @@ function rowFor(tier, page, index) {
  */
 export function suggestionsFor(
   query,
-  { marked = [], context = [], trail = [], crossings = [], history = [] } = {},
+  {
+    marked = [],
+    context = [],
+    trail = [],
+    crossings = [],
+    related = [],
+    history = [],
+  } = {},
   { limit = DEFAULT_LIMIT } = {}
 ) {
   const text = String(query ?? "").trim();
@@ -254,6 +295,9 @@ export function suggestionsFor(
     [T_CONTEXT]: context,
     [T_TRAIL]: trail,
     [T_CROSSING]: crossings,
+    [T_RELATED]: related
+      .filter(page => Number(page?.similarity) >= RELATED_FLOOR)
+      .sort((left, right) => right.similarity - left.similarity),
     [T_HISTORY]: history,
   };
 
@@ -270,9 +314,11 @@ export function suggestionsFor(
         continue;
       }
       // A mark is an address: it was resolved by the mark rule, so it is not
-      // asked to match the text as well. Every other tier is a guess and has
+      // asked to match the text as well. A related page has already answered
+      // the text, by meaning rather than by spelling, and asking it for the
+      // words as well would empty the tier. Everything else is a guess and has
       // to earn its place by answering what was typed.
-      if (tier !== T_MARK && !pageMatches(text, page)) {
+      if (tier !== T_MARK && tier !== T_RELATED && !pageMatches(text, page)) {
         continue;
       }
       seen.add(key);

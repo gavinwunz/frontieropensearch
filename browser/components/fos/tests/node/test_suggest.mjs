@@ -15,7 +15,9 @@ import {
   T_CROSSING,
   T_HISTORY,
   T_MARK,
+  T_RELATED,
   T_TRAIL,
+  RELATED_FLOOR,
   TIER_LABELS,
   TIER_ORDER,
   pageMatches,
@@ -241,6 +243,7 @@ describe("suggestionsFor", () => {
       T_CONTEXT,
       T_TRAIL,
       T_CROSSING,
+      T_RELATED,
       T_HISTORY,
     ]);
   });
@@ -248,5 +251,117 @@ describe("suggestionsFor", () => {
   it("treats missing sources as empty ones", () => {
     assert.deepEqual(suggestionsFor("memex", {}), []);
     assert.deepEqual(suggestionsFor("memex"), []);
+  });
+});
+
+describe("the related tier", () => {
+  const near = (url, title, similarity, extra = {}) =>
+    page(url, title, { similarity, ...extra });
+
+  it("offers a page that shares no word with the query", () => {
+    // The whole point of the tier: `pageMatches` requires every term, and
+    // these two strings have no term in common at all.
+    const p = near("https://a.test/", "As We May Think", 0.42);
+    assert.ok(!pageMatches("associative memory machine", p));
+    const rows = suggestionsFor("associative memory machine", { related: [p] });
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].tier, T_RELATED);
+    assert.equal(rows[0].kind, R_PAGE);
+    assert.equal(rows[0].label, "As We May Think");
+  });
+
+  it("drops anything below the measured floor", () => {
+    const rows = suggestionsFor("memex", {
+      related: [
+        near("https://keep.test/", "Kept", RELATED_FLOOR),
+        near("https://drop.test/", "Dropped", RELATED_FLOOR - 0.001),
+      ],
+    });
+    assert.deepEqual(
+      rows.map(r => r.url),
+      ["https://keep.test/"]
+    );
+  });
+
+  it("drops a row carrying no similarity at all", () => {
+    // A caller with no engine loaded must not accidentally promote every page
+    // it has into the tier by passing rows with the field missing.
+    const rows = suggestionsFor("memex", {
+      related: [
+        page("https://a.test/", "Untitled"),
+        near("https://b.test/", "B", 0.5),
+      ],
+    });
+    assert.deepEqual(
+      rows.map(r => r.url),
+      ["https://b.test/"]
+    );
+  });
+
+  it("orders by similarity, unlike every other tier", () => {
+    const rows = suggestionsFor("memex", {
+      related: [
+        near("https://low.test/", "Low", 0.2),
+        near("https://high.test/", "High", 0.9),
+        near("https://mid.test/", "Mid", 0.5),
+      ],
+    });
+    assert.deepEqual(
+      rows.map(r => r.url),
+      ["https://high.test/", "https://mid.test/", "https://low.test/"]
+    );
+  });
+
+  it("does not re-order the caller's array", () => {
+    const given = [
+      near("https://low.test/", "Low", 0.2),
+      near("https://high.test/", "High", 0.9),
+    ];
+    suggestionsFor("memex", { related: given });
+    assert.deepEqual(
+      given.map(p => p.url),
+      ["https://low.test/", "https://high.test/"]
+    );
+  });
+
+  it("sits below the tiers that matched the words and above the floor", () => {
+    const rows = suggestionsFor("memex", {
+      context: [page("https://ctx.test/", "memex in context")],
+      related: [near("https://rel.test/", "As We May Think", 0.8)],
+      history: [page("https://his.test/", "memex in history")],
+    });
+    assert.deepEqual(
+      rows.map(r => r.tier),
+      [T_CONTEXT, T_RELATED, T_HISTORY]
+    );
+  });
+
+  it("does not offer a page an exact tier already offered", () => {
+    const rows = suggestionsFor("memex", {
+      trail: [page("https://a.test/", "The memex")],
+      related: [near("https://a.test/", "The memex", 0.9)],
+    });
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].tier, T_TRAIL);
+  });
+
+  it("says where a related page came from, since the host explains nothing", () => {
+    const rows = suggestionsFor("memex", {
+      related: [
+        near("https://a.test/x", "As We May Think", 0.4, {
+          trail_name: "hypertext history",
+        }),
+        near("https://b.test/x", "Nameless", 0.3),
+      ],
+    });
+    assert.equal(rows[0].detail, "hypertext history \u00b7 a.test");
+    assert.equal(rows[1].detail, "b.test");
+  });
+
+  it("obeys the limit like any other tier", () => {
+    const related = Array.from({ length: 12 }, (_, i) =>
+      near(`https://a.test/${i}`, `Page ${i}`, 0.9 - i / 100)
+    );
+    assert.equal(suggestionsFor("memex", { related }).length, DEFAULT_LIMIT);
   });
 });

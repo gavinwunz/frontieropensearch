@@ -521,8 +521,10 @@ add_task(async function measure_embedding_quality() {
       continue;
     }
 
-    const queryToQuery = (i, j) => cosine(vectors.queries[i], vectors.queries[j]);
-    const queryToTitle = (i, j) => cosine(vectors.queries[i], vectors.titles[j]);
+    const queryToQuery = (i, j) =>
+      cosine(vectors.queries[i], vectors.queries[j]);
+    const queryToTitle = (i, j) =>
+      cosine(vectors.queries[i], vectors.titles[j]);
 
     const queries = score(QUERIES, QUERIES, queryToQuery, true);
     const titles = score(QUERIES, TITLES, queryToTitle, false);

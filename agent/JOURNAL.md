@@ -882,3 +882,71 @@ fixed — 41ms a frame against a 20ms control — and the reason is that one
 bounded the rebuilds per frame at one; it could not make one rebuild cheap.
 Recorded rather than chased, but recorded honestly: run 18's note reads as
 though the gap was closed, and what closed was the burst.
+
+## Run 36 — 2026-08-19 — the embedding pass, measured before it was built
+
+**Phase:** post-plan. **Task:** item 1 — the embedding pass, top of the list
+since Phase 2. **Tests:** 232 node tests, FOS browser-chrome suite green, the
+measurement itself green.
+
+Item 1 was carried for a reason and unblocked for a reason: run 27 proved this
+build has an offline inference stack and run 29 measured it as fast enough. So
+the question left was never "can it run" — it was "is it worth what it costs
+the user", and that question has an answer nobody had gone and got.
+
+**The published number does not transfer.** `potion-retrieval-32M` reaches
+81.7–86.7% of `all-MiniLM-L6-v2` on retrieval, which is a claim about
+benchmarks whose queries are sentences. This fork's input is four lower-case
+words. So `browser_zzembedquality.js` measures the thing actually being
+shipped: eight enquiries, 32 queries written the way they are typed and 24
+capitalised titles, with two of the eight pairs deliberately adjacent so the
+score is not carried by easy separations.
+
+**The control is what makes it a measurement.** The Context Engine already
+stores `normaliseIntent` for every query, so a 30MB download has to beat
+Jaccard overlap on those tokens — not a straw man, but what shipped. It does:
+query→query p@1 0.625→0.844, query→title 0.750→0.938.
+
+**The finding is in the asterisk, not the table.** For **11 of 32** queries the
+lexical arm returns the same similarity — zero — against every candidate in the
+corpus. Those rows are credited to it in the table because sort order had to
+break the tie, so its real p@1 is at or below 0.66. The gap is not that the
+shallow path is weak on lower-case queries; it is that it is **silent** on a
+third of them, and a tie at zero looks exactly like a ranking to everything
+downstream of it. That is a sharper statement of the problem than the one
+`IDEAS.md` had carried since Phase 2.
+
+**Both dimensions, because the download size is a design decision.** d256 and
+d512 are indistinguishable here — identical query→query p@1, one query's
+difference on titles, both well inside the noise of 32 rows — and the fetch is
+30MB against 60MB. Adopted at d256: where the evidence is a tie, the smaller
+one wins, and `run36.sh` re-runs the comparison if that is ever doubted.
+
+**What the numbers refuse is the more useful half.** The best separating
+threshold for "same enquiry" is 0.169 at precision 0.756 — about one in four
+pairs above it are from *different* enquiries, and buying precision costs
+recall immediately. That kills silent cross-trail context merging, which is
+what I would otherwise have built: a rule that folds two research topics
+together and is wrong a quarter of the time is worse than no rule, because the
+user cannot see what it did. It does not kill offering the merge, and the
+threshold is now measured rather than guessed.
+
+**Cost turned out not to be a conversation.** An embedding is 1.27ms for one
+query and 3.1ms for all 32, because the model is a lookup table and an
+embedding is a sum of rows. That has a design consequence worth more than the
+latency: candidates can be embedded on demand, per keystroke, so the command
+bar's use needs **no vector column, no migration and no staleness rule** — the
+schema does not move.
+
+**The first consumer's pure half is in.** `FOSSuggest` gained a sixth tier,
+`T_RELATED` — "Close to what you typed" — between crossings and the Places
+floor. It is the only tier exempt from `pageMatches`, which is precisely what
+it is for, and the only one this module sorts, because unlike the store's
+orderings there is no upstream claim about it to defend. `RELATED_FLOOR` is
+0.169, carrying the measurement in its comment. Nine node tests, including the
+one that matters: a page sharing no word with the query is offered, and a row
+arriving with no similarity at all is dropped rather than promoted.
+
+Left for the next run: `FOSEmbeddings.sys.mjs`, the engine lifecycle and the
+surfaced one-time download, which is the voice path's settled pattern and the
+only thing between this tier and a user seeing it.

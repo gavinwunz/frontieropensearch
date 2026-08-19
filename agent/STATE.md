@@ -23,6 +23,27 @@ one.
 
 ## Done
 
+- **The embedding pass is measured, and the answer changed what to build.**
+  `browser_zzembedquality.js` and `agent/jobs/run36.sh` score
+  `potion-retrieval-32M` against the control this fork already ships — Jaccard
+  overlap on the `normaliseIntent` tokens the store keeps for every query — on
+  32 queries written the way they are typed and 24 capitalised titles across
+  eight enquiries. Static wins everywhere: query→query p@1 0.625→0.844,
+  query→title 0.750→0.938. **The finding is underneath the table**: for 11 of
+  32 queries the lexical arm scores every candidate identically at zero, so its
+  p@1 is inflated by tie-breaking and the real gap is not weakness but
+  *silence* on a third of the input. Adopted at **d256** — indistinguishable
+  from d512 on this corpus, 30MB against 60MB, and a download is something this
+  fork asks a user for. Cost is a non-issue and has a design consequence: an
+  embedding is 1.27ms because the model is a lookup table, so candidates are
+  embedded on demand and **the schema does not move**. What the numbers refuse
+  is the half worth keeping: the best "same enquiry" threshold is 0.169 at
+  precision 0.756, so silent cross-trail merging is out and *offering* it is
+  in. The first consumer's pure half landed with it — `FOSSuggest`'s sixth
+  tier, `T_RELATED` ("Close to what you typed"), the only tier exempt from
+  `pageMatches` and the only one this module sorts, with `RELATED_FLOOR` at the
+  measured 0.169. 232 node tests.
+
 - **Three defects a picture found, and the pointer the research said was
   missing.** Run 32's task was the oldest item on the list — two run-23 changes
   that "owe eyes rather than assertions". Looking at them found three things no
@@ -483,7 +504,14 @@ Nothing waits on a person. **Nothing is running — the harness is free.**
 
 `run32` (the smoke run plus the Field's perf file), `run33`, `run34` and `run35`
 all finished green. The last of them left the pictures in `agent/reports/`
-current with the tree.
+current with the tree. `run36` is the embedding measurement and also finished
+green; its numbers are in `IDEAS.md` rather than in a picture.
+
+The static embedding weights live beside the speech ones at
+`/data/ml-models/onnx-models/mozilla/static-embeddings/`, put there by
+`agent/jobs/fetch-static-embeddings.sh` (~86MB for both dimensions; a shipped
+build needs only d256's 30MB). Same local-hub requirement as every other
+measurement here.
 
 Model weights live at `/data/ml-models/onnx-models`, outside the repo, put there
 by `agent/jobs/fetch-whisper.sh` (~43MB). `agent/jobs/run30.sh` is the template
@@ -498,20 +526,32 @@ pointed at it, because mochitest kills the process on a non-local connection.
 The phase plan is complete, so nothing pulls the next run in a particular
 direction. Ordered by value.
 
-1. **The embedding pass.** Carried since Phase 2 and now the largest single
-   improvement available, because its blocker is gone: run 27 proved this build
-   has a working offline inference stack (`onnx-native` on the packaged
-   `libonnxruntime.so`), and run 29 measured it as fast enough. The target is
-   specific rather than general — `IDEAS.md`'s entity-extractor entry found that
-   **queries are typed in lower case**, so the capitalisation signal the
-   shallow extractor rests on is absent from exactly the input that carries the
-   user's intent. `EmbeddingsGenerator.sys.mjs` and `ClusterAlgos.sys.mjs` are
-   in-tree and tested; `static-embeddings` (potion-retrieval-32M) is a lookup
-   table rather than a transformer and is the arm to measure first. What it
-   buys, in order: query understanding, then cross-trail context merging —
-   which `context_member.source` was designed to keep tellable apart from
-   provenance — then better `pack` and `what`. Weights are a surfaced one-time
-   fetch, exactly as the voice path settled it.
+1. **Wire the embedding pass to the command bar.** The measurement is done and
+   the verdict is adopt — run 36, `IDEAS.md`, numbers below — and the pure half
+   is in: `FOSSuggest`'s sixth tier `T_RELATED`, "Close to what you typed",
+   with `RELATED_FLOOR = 0.169` carrying the measurement. What is left is the
+   impure half, and it is one module:
+
+   - `FOSEmbeddings.sys.mjs` — create the static engine once (`backend:
+     "static-embeddings"`, `modelId: "mozilla/static-embeddings"`, revision
+     `v1.0.0`, subfolder `models/minishlab/potion-retrieval-32M`, dtype `fp16`,
+     **dimensions 256**, `compression: true`), keep it, terminate at window
+     teardown. Load is ~0.5s and belongs where the voice path puts it: before
+     the first use, not inside it.
+   - `FOSContextEngine.suggest` fills `related` — embed the typed text and the
+     candidates the strict predicate rejected, cosine, hand them over with a
+     `similarity`. **No schema change is needed and none should be made**: an
+     embedding is 1.27ms, so candidates are embedded on demand and there is no
+     vector column to keep fresh.
+   - The weights are a surfaced one-time fetch, ~30MB, exactly as the voice
+     path settled it — never a tier that quietly fails. `run36.sh` and
+     `fetch-static-embeddings.sh` are the offline harness.
+
+   After that, and only after: **offering** a cross-trail context merge. The
+   measurement refuses to do it silently — the best threshold is precision
+   0.756, so one in four merges above it would be wrong — and
+   `context_member.source` is what keeps an accepted offer tellable apart from
+   provenance.
 
 2. **The two narrow defects.** The active card can have no thumbnail, and
    closing the rail while the Field is open leaves Escape with nowhere to go.
