@@ -329,6 +329,58 @@ private browsing. That is the same class of defect as the second one in this
 section, arriving by a route that has nothing to do with this fork's store, and
 `browser_zztransition.js` is where all of it is asserted.
 
+**The same lens, asked a second time, found a second missing write, and this one
+is not in a database at all.** `browser.userTypedValue` is a field on the browser
+element holding the request a user has made and the browser has not yet
+answered. `Tabbrowser.addTab` states the purpose in its own comment — *"pretend
+the user typed this so it'll be available till the document successfully loads"*
+— and two things read it. The address bar shows it in place of the current URI,
+with the page proxy state set to invalid, so the bar says where you are going
+rather than continuing to claim you are still where you were. `TabState.collect`
+copies it into the session with `userTypedClear`, and when a load had started
+and not finished `SessionStore._restoreTabEntry` reissues *that* load rather
+than restoring the entry underneath it — so a browser killed mid-load comes back
+to the page that was asked for.
+
+The dispatcher goes straight to `browser.loadURI`, which writes none of it. So
+until now this fork spent every slow load showing the previous page's address as
+though nothing had been requested, and discarded the request outright if it was
+interrupted. Firefox writes the field from
+`UrlbarParentController.#prepareAddressbarLoad`, and what it writes is one
+branch — the search terms when the line resolved to a search, the decoded URL
+when it did not. `resolveInput` already computes exactly that split into
+`display`, because the command bar's own "Go to …" / "Search for …" row needed
+it first, so the value is not a second decision.
+
+Three things about the fix are less obvious than the write itself.
+
+It also sets `initialPageLoadedFromUserAction`, and half would have been worse
+than none. The field is cleared for the fork by the tab progress listener, on
+the location change that ends the load, via `didStartLoadSinceLastUserTyping` —
+and that flag is only raised if the listener called
+`urlbarChangeTracker.startedLoad()` at load start, which it deliberately skips
+for an initial page (`about:newtab` and its kin) arriving over a blank tab, on
+the grounds that such a load is chrome's doing and must not wipe what a user was
+typing. `initialPageLoadedFromUserAction` is how a surface opts out of that
+carve-out. Writing the pending value without it would leave `about:newtab`
+sitting in the address bar permanently, over a page that had finished loading.
+
+There is no private-window guard, unlike the typed mark a few paragraphs up, and
+the asymmetry is deliberate. The typed mark writes a process-global map that an
+ordinary window reads back; this writes one field on one browser element, and
+session store never persists a private window to disk. Guarding it would only
+blind a private window's address bar to its own pending loads.
+
+The redraw belongs with the write. Firefox needs no such line, because its
+address bar *is* the surface that was typed into and is already showing the
+value before the field is set; this fork moved entry to the command bar and left
+the bar as a display, so nothing repaints it between the request and the
+location change that has already cleared the request. Splitting the write from
+the redraw across two modules is precisely how the previous finding in this
+section went unnoticed for fifty runs — the module that wrote the state and the
+module that depended on it could not see each other. `browser_zzpending.js`
+asserts all of it.
+
 Upstream Firefox guidance in `AGENTS.md` and `docs/` still applies to everything
 below that line.
 

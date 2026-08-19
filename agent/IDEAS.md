@@ -4163,3 +4163,151 @@ default), `browser/components/urlbar/UrlbarParentController.sys.mjs`
 (`#prepareAddressbarLoad`), `browser/components/tabbrowser/Tabbrowser.sys.mjs`
 (`_updateTriggerMetadataForLoad`, and that `browser.loadURI` is the wrapper
 rather than the custom element's own method). All in-tree.
+
+## Run 51 — the second missing write, and the one Firefox gets for free
+
+### Where the lens pointed
+
+Run 50's finding came with two named next probes and a verdict on each.
+`moz_inputhistory` was rejected in advance and stays rejected: it is the
+adaptive signal the five-tier design deliberately replaced with provenance, and
+"Firefox does it" is not a reason to reconsider. `browser.userTypedValue` was
+flagged "real but small, worth its own look". It is real. It is not small — the
+"small" judgement came from reading only the session-restore half.
+
+### What the field is, and who reads it
+
+A field on the browser element holding a request that has been made and not yet
+answered. `Tabbrowser.addTab` gives the purpose more plainly than any doc
+comment in the tree: *"pretend the user typed this so it'll be available till
+the document successfully loads"*. Two readers, and the fork had given up both:
+
+- **The address bar.** `UrlbarInputBase.setURI` starts with
+  `let value = this.userTypedValue`, and when that is non-null the bar shows it
+  instead of the current URI. So Firefox's bar says where you are *going* from
+  the moment you ask; this fork's bar kept claiming you were still where you
+  were, for the entire duration of every load, and for good if the load stalled.
+- **Session restore.** `TabState.collect` copies it out with `userTypedClear`,
+  which is `didStartLoadSinceLastUserTyping()` as 0 or 1. `_restoreTabEntry`
+  branches on `userTypedValue && userTypedClear`: with both, it calls
+  `fixupAndLoadURIString` on the *request*; without, it restores the history
+  entry. So a browser killed mid-load comes back to the page that was asked for
+  rather than the one being left — and this fork came back to the one being
+  left, having thrown the request away.
+
+`FOSActionDispatcher` calls `browser.loadURI` directly and nothing on that path
+writes the field. **Adopt**, and the same shape as run 50: not a wrong value, an
+absent one, with no diff and no stack trace, visible only against the Firefox
+surface that was replaced.
+
+### What to write, which was already decided
+
+`UrlbarInputBase` computes it in one branch — `loadRequest.engineSearch.query`
+for a search, `losslessDecodeURI(new URL(url).URI)` for a URL. `resolveInput`
+already computes exactly that split into `display` (`info.keywordAsSent` or
+`preferredURI.displaySpec`), because the bar's own "Go to …" / "Search for …"
+row needed it two dozen runs ago. So the value is not a second decision, and
+punycode goes through `NS_DomainToDisplayAndASCII` — the IDN service's
+spoof-checked conversion — rather than being decoded unconditionally.
+
+### The half that would have made it worse than nothing
+
+The fork does not clear the field; the tab progress listener does, on the
+location change that ends the load, via `didStartLoadSinceLastUserTyping()`.
+That flag is only raised if the listener called `urlbarChangeTracker.startedLoad()`
+at `STATE_START` — and it skips that call, deliberately, when an initial page
+(`about:newtab` and kin) arrives over a blank tab, because such a load is
+chrome's doing and must not wipe what a user was mid-way through typing.
+`initialPageLoadedFromUserAction` is how a surface opts out of the carve-out and
+says the user asked for this one by name. Write the pending value without it and
+`about:newtab` sits in the address bar permanently, over a page that finished
+loading — worse than the staleness the change exists to fix. Firefox sets both
+in the same function; so does this.
+
+### Showing a URL you are not at, and why that is not spoofing
+
+The one thing here Firefox does *not* do, and the only decision in this change
+that needed checking rather than copying. Firefox needs no redraw: its address
+bar is the surface that was typed into, so it is already displaying the pending
+value before the field is written. This fork moved entry to the command bar and
+left the bar as a display, so without an explicit `gURLBar.setURI()` the field
+would be set, read by session store, and never once seen by a user.
+
+Displaying a URL the browser is not at is the exact shape of a large family of
+real vulnerabilities — the 2020 sweep across seven mobile browsers, CVE-2016-1707
+on Chrome iOS, MFSA 2013-04 "URL spoofing in addressbar during page loads" — and
+Firefox's own bug 610357, which added the pending-URL display for new tabs,
+carries the phishing constraint in a source comment to this day: only *"if it's
+safe (from a phishing point of view) to do so, thus there's no session history
+and the load starts from a non-web-controlled blank page"*.
+
+That constraint does not bind here, and it is worth being precise about why
+rather than waving at it. Every one of those bugs is web content choosing the
+URL and the timing. This field is written only by `FOSActionDispatcher`, whose
+sole callers are the command bar and the context sidebar — chrome surfaces, and
+the same trust position Firefox's own address bar occupies when you type a URL
+over a loaded page and it shows what you typed for the whole load. The safety
+comes from `setURI` setting `pageproxystate="invalid"` on that path, which is
+not cosmetic: `identity-block.css` hides the identity box on it and
+`browser-siteIdentity.js` refuses to open the identity panel unless the state is
+`valid`. So the bar shows a string with no origin, no lock and no claim attached
+— verified in the tree, and asserted in the test rather than trusted.
+
+### Method note — a fixture that crashes clears the thing you are measuring
+
+The initial-page test first used `about:newtab`, and removing
+`initialPageLoadedFromUserAction` failed only the assertion that the attribute
+was set; the *behaviour* it protects kept passing. The reason was not a subtle
+one about the carve-out. `about:newtab`'s content process segfaults on this
+configuration — the known x11/24.04 family — and a crashed browser clears the
+field by a route that has nothing to do with the change. Swapping the fixture
+for `chrome://browser/content/blanktab.html`, a static document with no script,
+removed the second cause and the mutation then failed the behaviour too.
+
+Generalises past this test: **a mutation that is caught only by an assertion on
+the implementation, while the assertion on the consequence still passes, is
+usually a second mechanism producing the same outcome — not a weak test.** Find
+the second mechanism before rewriting the assertion.
+
+### The transferable part
+
+Run 50's lens has now returned two findings from two probes, and the second was
+in a field rather than a database. So the sharper statement of it is not "audit
+what the fork writes to shared stores" but: **for every Firefox surface this
+fork replaced, enumerate what that surface wrote, not just what it read.** The
+address bar wrote three things on every load — the typed mark, the pending
+value, and the initial-page declaration — and the dispatcher that replaced it
+wrote none of them. Two are now fixed. The remaining probes below come from the
+same enumeration.
+
+### Not chased, same lens, next probes
+
+- **`UrlbarInput.handleRevert` and the Escape key.** Firefox's bar reverts to
+  the current URI on Escape, clearing `userTypedValue`. The fork's bar is
+  read-only and cannot be typed in, so there is nothing to revert *in the bar* —
+  but a pending value now exists and there is no way to abandon it short of the
+  load finishing. Probably wants to be the command bar's own cancel rather than
+  a second Escape handler.
+- **`SessionStore` search mode and `TabStateCache.update({searchMode})`.** The
+  fork has no search mode, so likely a genuine non-issue, but it is on the list
+  of things the address bar wrote and has not been checked.
+- **Tab title during a load.** `setInitialTabTitle` is the third thing the
+  listener does inside the same phishing-guarded branch as the pending URL. The
+  Field draws cards, not tabs, so the question is whether a card shows anything
+  at all for a page that has been asked for and not arrived. Unknown; the Field
+  restructure on the standing list is where it belongs.
+
+**Sources:** `toolkit/content/widgets/browser-custom-element.mjs`
+(`userTypedValue` setter, `urlbarChangeTracker`, `didStartLoadSinceLastUserTyping`),
+`browser/components/tabbrowser/Tabbrowser.sys.mjs` (`addTab`'s comment, the
+`STATE_START` carve-out, the `onLocationChange` clear),
+`browser/components/urlbar/UrlbarParentController.sys.mjs`
+(`#prepareAddressbarLoad`), `browser/components/urlbar/content/UrlbarInputBase.mjs`
+(`setURI`, the `userTypedValue` accessor, `setPageProxyState`),
+`browser/components/sessionstore/TabState.sys.mjs` and `SessionStore.sys.mjs`
+(`_restoreTabEntry`), `browser/themes/shared/identity-block/identity-block.css`
+and `browser/base/content/browser-siteIdentity.js` (what `invalid` withholds).
+Web: [bug 610357](https://bugzilla.mozilla.org/show_bug.cgi?id=610357),
+[MFSA 2013-04](https://www.mozilla.org/en-US/security/advisories/mfsa2013-04/),
+[the 2020 mobile address-bar spoofing sweep](https://thehackernews.com/2020/10/browser-address-spoofing-vulnerability.html),
+[CVE-2016-1707](https://xlab.tencent.com/en/2016/10/10/cve-2016-1707-chrome-address-bar-url-spoofing-on-ios/).

@@ -4,6 +4,7 @@ support-files = [
   "fixtures/memex.html",
   "fixtures/nls.html",
   "fixtures/page.css",
+  "fixtures/slow.sjs",
   "fixtures/sourdough.html",
   "fixtures/xanadu.html",
 ]
@@ -41,6 +42,8 @@ support-files = [
 ["browser_zzforgetpreview.js"]
 
 ["browser_zzmergeoffer.js"]
+
+["browser_zzpending.js"]
 
 ["browser_zzprivate.js"]
 

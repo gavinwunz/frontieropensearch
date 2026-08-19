@@ -272,6 +272,9 @@ export class FOSActionDispatcher {
     this.#load(resolved.uri, resolved.postData, {
       searchEngine:
         resolved.kind === KIND_SEARCH ? keywordEngineName(isPrivate) : null,
+      // The words for a search, the decoded URL for a URL. `resolveInput` made
+      // that split already; re-deriving it here would be a second opinion.
+      typedValue: resolved.display,
     });
 
     for (const listener of this.#queryListeners) {
@@ -340,10 +343,18 @@ export class FOSActionDispatcher {
    * @param {object} [options]
    * @param {?string} [options.searchEngine] The engine whose result page this
    *   is, when the line resolved to a search rather than to a URL.
+   * @param {string} [options.typedValue] What to show and remember as the
+   *   thing that was asked for, while the load is in flight. Defaults to the
+   *   URL; a search passes the words instead.
    */
-  #load(uri, postData, { searchEngine = null } = {}) {
+  #load(
+    uri,
+    postData,
+    { searchEngine = null, typedValue = uri.displaySpec } = {}
+  ) {
     this.#loads++;
     this.#markAsTyped(uri);
+    this.#markAsPending(uri, typedValue);
     this.#window.gBrowser.selectedBrowser.loadURI(uri, {
       triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
       postData,
@@ -387,5 +398,95 @@ export class FOSActionDispatcher {
       // hold up the navigation.
       console.error(e);
     }
+  }
+
+  /**
+   * Say what is being asked for, for as long as the asking is unanswered.
+   *
+   * `browser.userTypedValue` is the browser element's record of a request that
+   * has been made and not yet landed. Firefox sets it from the address bar
+   * (`UrlbarParentController.#prepareAddressbarLoad`) and from `addTab`, whose
+   * comment is the plainest statement of the purpose in the tree: *"pretend the
+   * user typed this so it'll be available till the document successfully
+   * loads"*. Two things read it, and the fork had given up both:
+   *
+   *   1. The address bar shows it instead of the current URI, with the page
+   *      proxy state set to invalid — the "this is a request, not a place you
+   *      are" presentation.
+   *   2. `TabState.collect` copies it into the session, with `userTypedClear`
+   *      recording whether the load had started. `SessionStore._restoreTabEntry`
+   *      then reissues *that* load rather than restoring the stale history
+   *      entry, so a browser killed mid-load comes back to what was asked for
+   *      instead of to what it was showing when the asking began.
+   *
+   * Neither is reachable by anything the dispatcher does today, because the
+   * dispatcher goes straight to `browser.loadURI` and nothing on that path
+   * writes the field. Same shape as the missing `markPageAsTyped`: not a wrong
+   * value, an absent one, with no diff and no stack trace to find it by.
+   *
+   * **What to say, for a search.** The urlbar's rule is one branch — the search
+   * terms when the line resolved to a search, the decoded URL when it did not
+   * — and `resolveInput` already computes exactly that split into `display`,
+   * because the command bar's own "Go to …" / "Search for …" row needed it
+   * first. So the value is not a new decision here, it is the one already made.
+   * Punycode is decoded by `displaySpec`, which routes through the IDN
+   * service's spoof checks rather than decoding unconditionally.
+   *
+   * **Why this also sets `initialPageLoadedFromUserAction`, and why half is
+   * worse than none.** The field is cleared for us by the tab progress
+   * listener, on the location change that ends the load, via
+   * `didStartLoadSinceLastUserTyping`. That flag is only raised if the listener
+   * called `urlbarChangeTracker.startedLoad()` at load start — and it skips
+   * that call for an initial page (`about:newtab` and friends) loading over a
+   * blank tab, on the grounds that such a load is chrome's doing and must not
+   * wipe what a user typed. `initialPageLoadedFromUserAction` is how the
+   * address bar opts out of that carve-out and says the user did ask for this
+   * one. Setting the pending value without it would leave `about:newtab`
+   * sitting in the address bar permanently, over a page that had finished
+   * loading. The two go in together.
+   *
+   * **Why there is no private-window guard here, unlike `#markAsTyped`.** The
+   * asymmetry is deliberate and it is worth stating so it does not read as an
+   * omission. The typed mark writes to a process-global map keyed by URL, which
+   * an ordinary window can then read back; this writes one field on one browser
+   * element in one window, and session store never persists a private window to
+   * disk. There is nothing for it to leak into. Guarding it would only blind a
+   * private window's address bar to its own pending loads.
+   *
+   * **Why the redraw is here and not in the location display.** Firefox does
+   * not need this line: its address bar is the thing the user typed into, so it
+   * is already showing the pending value before the field is ever set. This
+   * fork moved entry to the command bar and left the address bar as a display,
+   * so nothing repaints it until the next location change — by which point the
+   * value has been cleared and never appeared. Splitting the write from the
+   * redraw across two modules is precisely how the last one of these went
+   * unnoticed for fifty runs: the module that wrote the state and the module
+   * that depended on it could not see each other.
+   *
+   * @param {nsIURI} uri The URL being loaded.
+   * @param {string} typedValue What was asked for, in the form to show.
+   */
+  #markAsPending(uri, typedValue) {
+    const browser = this.#window.gBrowser.selectedBrowser;
+
+    // Before the load, not after. The setter resets the change tracker
+    // (`urlbarChangeTracker.userTyped`), and the tracker is what the listener
+    // sets on load start and reads on load end to decide to clear this. Set it
+    // after `loadURI` and a fast enough load has already raised the flag this
+    // knocks down, leaving the request on screen over the page that answered it.
+    //
+    // No test pins this down, and the honest reason is that none can here:
+    // moving the call below `loadURI` survives the whole suite, because with a
+    // remote browser the load goes out over IPC and `STATE_START` cannot land
+    // between two statements of the same synchronous block. The ordering is
+    // correct by construction for the non-remote case and free in every case.
+    // Do not reorder it because a mutation says it does not matter.
+    browser.userTypedValue = typedValue;
+
+    if (this.#window.gInitialPages.includes(uri.spec)) {
+      browser.initialPageLoadedFromUserAction = uri.spec;
+    }
+
+    this.#window.gURLBar.setURI();
   }
 }
