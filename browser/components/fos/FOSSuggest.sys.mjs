@@ -107,18 +107,28 @@ export const TIER_ORDER = Object.freeze([
 /**
  * How close a page has to be to what was typed before it is worth offering.
  *
- * This is a measured number, not a taste: `browser_zzembedquality.js` swept
- * every observed pair similarity over eight enquiries and 0.169 is where
- * "these are the same enquiry" best separates from "these are not", at
- * precision 0.756 and recall 0.646. Below it a pair is more likely to be
- * unrelated than related, and a row the user has to read and reject is worse
- * than a shorter list.
+ * This is a measured number, not a taste: `browser_zzembedquality.js` sweeps
+ * every observed pair similarity over eight enquiries and reports where "the
+ * same enquiry" best separates from "not". At the dimension this fork ships,
+ * for the comparison this tier actually makes, that is **0.173** — precision
+ * 0.708, recall 0.656. Below it a pair is more likely to be unrelated than
+ * related, and a row the user has to read and reject is worse than a shorter
+ * list.
  *
- * The same measurement is why this tier only ever *offers*. Three quarters
- * right is a good list and a bad automatic decision, so nothing above this
- * floor is acted on without the user picking it.
+ * **Which comparison, specifically.** The first version of this constant was
+ * 0.169, taken from the query→query distribution, and it was applied to a tier
+ * that only ever compares a query to a *title*. Those are different
+ * distributions from the same model — at d256 the query→title threshold is
+ * 0.173 and the query→query one is 0.201 — and nothing about the code said
+ * which one it was using. Run 37 caught it by driving the tier in a browser
+ * and watching a page fail to be offered at 0.159. A threshold is only
+ * measured if you can say what it was measured over.
+ *
+ * The same measurement is why this tier only ever *offers*. Seven in ten right
+ * is a good list and a bad automatic decision, so nothing above this floor is
+ * acted on without the user picking it.
  */
-export const RELATED_FLOOR = 0.169;
+export const RELATED_FLOOR = 0.173;
 
 /**
  * The one line each tier is explained by, shown as the group heading.

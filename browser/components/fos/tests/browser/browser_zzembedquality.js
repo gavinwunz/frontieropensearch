@@ -330,20 +330,33 @@ function score(rows, columns, similarity, skipSelf) {
 
 /**
  * Every pair's similarity, split by whether the pair is the same task. This is
- * what a merge threshold is chosen from, and reporting the two distributions
- * rather than one score is the point: a mean that separates cleanly and a
+ * what a threshold is chosen from, and reporting the two distributions rather
+ * than one score is the point: a mean that separates cleanly and a
  * ninety-fifth percentile that does not means there is no threshold.
+ *
+ * `columns` defaults to `items`, which is the within-type case — every
+ * unordered pair, diagonal dropped. Passing a different array gives the
+ * **cross-type** case, every row against every column, which is a genuinely
+ * different distribution and not an approximation of the first one. Getting
+ * that wrong is what run 37 caught: a floor derived from query→query pairs was
+ * applied to a tier that only ever compares a query to a title, and it
+ * rejected a page it should have offered at 0.159 against a floor of 0.169.
  *
  * @param {{task: string, text: string}[]} items
  * @param {(a: number, b: number) => number} similarity
+ * @param {{task: string, text: string}[]} [columns]
  */
-function pairs(items, similarity) {
+function pairs(items, similarity, columns = null) {
   const same = [];
   const different = [];
+  const against = columns ?? items;
   for (let i = 0; i < items.length; i++) {
-    for (let j = i + 1; j < items.length; j++) {
+    // Within one set a pair is unordered and self-comparison is meaningless;
+    // across two sets every cell is a real pair.
+    const from = columns ? 0 : i + 1;
+    for (let j = from; j < against.length; j++) {
       const value = similarity(i, j);
-      (items[i].task === items[j].task ? same : different).push(value);
+      (items[i].task === against[j].task ? same : different).push(value);
     }
   }
 
@@ -512,7 +525,8 @@ add_task(async function measure_embedding_quality() {
       `p@3 ${round(lexicalTitles.atThree)}  ` +
       `no-signal rows ${lexicalTitles.flat}/${QUERIES.length}`
   );
-  reportPairs("lexical", pairs(QUERIES, lexicalQuery));
+  reportPairs("lexical q→q", pairs(QUERIES, lexicalQuery));
+  reportPairs("lexical q→t", pairs(QUERIES, lexicalTitle, TITLES));
 
   for (const dimensions of [256, 512]) {
     const label = `static/d${dimensions}`;
@@ -536,7 +550,9 @@ add_task(async function measure_embedding_quality() {
       `##### EMBED ${label} query→title  p@1 ${round(titles.atOne)}  ` +
         `p@3 ${round(titles.atThree)}`
     );
-    reportPairs(label, pairs(QUERIES, queryToQuery));
+    reportPairs(`${label} q→q`, pairs(QUERIES, queryToQuery));
+    // The distribution the `related` tier actually thresholds on.
+    reportPairs(`${label} q→t`, pairs(QUERIES, queryToTitle, TITLES));
 
     // Named so a regression says which enquiry stopped working rather than
     // only that the mean fell.

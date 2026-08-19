@@ -3788,3 +3788,12 @@ pref("browser.fos.commandBar.replacesAddressBar", true);
 // this fork growing a second history surface beside the one it replaced. Set
 // to false to get the history sidebar's shortcut back.
 pref("browser.fos.trailRail.replacesHistorySidebar", true);
+
+// Frontier OpenSearch, pillar C. The command bar's "Close to what you typed"
+// tier needs a local embedding model, and the model's weights are a ~30MB
+// download from Mozilla's model hub. This fork does not make network requests
+// the user did not ask for -- app update and telemetry are off for the same
+// reason -- so the tier is off until something the user runs turns it on, and
+// the pref is that consent rather than a feature flag. Everything else about
+// the bar works unchanged with it off; the list is simply shorter.
+pref("browser.fos.suggest.semanticTier", false);

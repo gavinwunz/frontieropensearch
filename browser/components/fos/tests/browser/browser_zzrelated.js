@@ -35,22 +35,30 @@ const { FOSEmbeddings } = ChromeUtils.importESModule(
 );
 const { RELATED_FLOOR, T_RELATED, TIER_LABELS, pageMatches } =
   ChromeUtils.importESModule("resource:///modules/FOSSuggest.sys.mjs");
-const { PlacesTestUtils } = ChromeUtils.importESModule(
-  "resource://testing-common/PlacesTestUtils.sys.mjs"
-);
-
 requestLongerTimeout(10);
 
-/** A page whose title answers the query without sharing a word with it. */
-const ANSWER = "https://example.org/as-we-may-think";
-const ANSWER_TITLE = "As We May Think: The Memex and Associative Indexing";
+/**
+ * A page whose title answers the query without sharing a word with it, and one
+ * from another enquiry entirely so that the floor is doing something.
+ *
+ * The pair is *measured*, not chosen by eye — a bag-of-tokens model's
+ * similarity between two texts with no overlap is not something a person can
+ * estimate from reading them, and the first attempt at this fixture scored
+ * 0.159 against a floor of 0.173 and failed. `browser_zzembedquality.js`
+ * scored eight candidates and these are the ends of that range: 0.36 for the
+ * pair below and 0.014 for the control, both with no term in common.
+ */
+const FIXTURES =
+  "https://example.com/browser/browser/components/fos/tests/browser/fixtures/";
 
-/** A page from another enquiry entirely, to prove the floor does something. */
-const UNRELATED = "https://example.org/dutch-oven-bread";
+const ANSWER = `${FIXTURES}lisbon.html`;
+const ANSWER_TITLE = "Lisbon Travel Guide: Where to Stay";
+
+const UNRELATED = `${FIXTURES}sourdough.html`;
 const UNRELATED_TITLE = "Baking Sourdough Bread in a Dutch Oven";
 
 /** Typed the way queries are typed, and sharing no term with either title. */
-const QUERY = "hypertext research trails linking";
+const QUERY = "cheap airfare to portugal";
 
 function engine() {
   return FOSContextEngine.forWindow(window);
@@ -72,10 +80,25 @@ add_setup(async function () {
   if (skipUnlessWeights()) {
     return;
   }
-  await PlacesTestUtils.addVisits([
-    { uri: Services.io.newURI(ANSWER), title: ANSWER_TITLE },
-    { uri: Services.io.newURI(UNRELATED), title: UNRELATED_TITLE },
-  ]);
+  // The tier is off by default because turning it on authorises a model
+  // download; see `FOSEmbeddings`. A test that needs the tier has to say so,
+  // which is the same statement a user's "download the search model" step will
+  // make.
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.fos.suggest.semanticTier", true]],
+  });
+
+  // Both pages are *browsed*, not merely inserted into Places. The tier draws
+  // its candidates from what this fork knows — the trail, the context and its
+  // crossings — and deliberately not from the floor, whose rows have already
+  // been filtered by a lexical query and so cannot contain a page that shares
+  // no word with the text. See `FOSContextEngine.#related`.
+  for (const url of [ANSWER, UNRELATED]) {
+    BrowserTestUtils.startLoadingURIString(gBrowser.selectedBrowser, url);
+    await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser, false, url);
+  }
+  await FOSContextEngine.forWindow(window).settled;
+
   registerCleanupFunction(async () => {
     await PlacesUtils.history.remove([ANSWER, UNRELATED]);
     await FOSEmbeddings.shutdown();
@@ -151,5 +174,11 @@ add_task(async function test_a_second_query_reuses_the_vectors() {
   // shifted one, and this is the cheapest way to notice if it ever does not.
   const [first] = await FOSEmbeddings.embed([ANSWER_TITLE]);
   const [second] = await FOSEmbeddings.embed([ANSWER_TITLE]);
-  Assert.deepEqual([...first], [...second], "the same text embeds the same");
+  // Compared as one number rather than with deepEqual: a failing deepEqual on
+  // two 256-element arrays prints both of them, which is a screenful of log
+  // for a fact that fits on a line.
+  Assert.ok(
+    first.every((value, index) => value === second[index]),
+    "the same text embeds the same"
+  );
 });

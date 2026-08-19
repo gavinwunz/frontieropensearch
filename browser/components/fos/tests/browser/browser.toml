@@ -1,8 +1,10 @@
 [DEFAULT]
 support-files = [
+  "fixtures/lisbon.html",
   "fixtures/memex.html",
   "fixtures/nls.html",
   "fixtures/page.css",
+  "fixtures/sourdough.html",
   "fixtures/xanadu.html",
 ]
 

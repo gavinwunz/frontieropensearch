@@ -777,11 +777,19 @@ export class FOSContextEngine {
    * The `related` tier: pages that answer the query by meaning after the other
    * tiers have taken everything that answers it by spelling.
    *
-   * Candidates are drawn from the tiers already read rather than from a wider
-   * query, which is the honest scope: this tier recovers pages the strict
-   * predicate dropped, it does not go looking for new ones. The floor is
-   * included because it is where a page the user visited once last year lives,
-   * and that is exactly the page a lexical match cannot find.
+   * Candidates are drawn from the tiers this component owns — the context, the
+   * trail and its crossings — and **not** from the Places floor. That is a
+   * scope this run tried to widen and could not, so it is worth stating rather
+   * than leaving to be rediscovered: the floor's rows arrive from
+   * `frecencyMatches(text)`, which is itself a lexical query, so a page
+   * sharing no word with what was typed is not in that array to be recovered.
+   * Reaching it would mean embedding *all* of Places on every keystroke, and
+   * at 1.27ms a page that is a vector store with persistence and staleness
+   * rules — the thing Firefox's own semantic history search built. It is a
+   * real feature and it is not this one.
+   *
+   * What this tier does cover is every page the fork itself knows about, which
+   * is where its own users' enquiries live.
    *
    * Everything here is best-effort. A machine without the weights gets no
    * engine, `embed` returns null, and the tier is absent — which is a shorter
@@ -795,7 +803,7 @@ export class FOSContextEngine {
   async #related(text, sources) {
     const seen = new Set();
     const candidates = [];
-    for (const tier of ["context", "trail", "crossings", "history"]) {
+    for (const tier of ["context", "trail", "crossings"]) {
       for (const page of relatedCandidates(text, sources[tier])) {
         const url = String(page.url ?? "");
         if (url && !seen.has(url)) {

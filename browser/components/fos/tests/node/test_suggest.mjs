@@ -372,14 +372,14 @@ describe("cosine", () => {
   // Floating point: two vectors pointing the same way come out at
   // 0.9999999999999998 as often as at 1, and a similarity compared against a
   // threshold does not care about the difference.
-  const close = (actual, expected) =>
+  const nearly = (actual, expected) =>
     assert.ok(
       Math.abs(actual - expected) < 1e-12,
       `${actual} is not within 1e-12 of ${expected}`
     );
 
   it("is 1 for a vector against itself", () => {
-    close(cosine([1, 2, 3], [1, 2, 3]), 1);
+    nearly(cosine([1, 2, 3], [1, 2, 3]), 1);
   });
 
   it("is 0 for orthogonal vectors", () => {
@@ -387,16 +387,16 @@ describe("cosine", () => {
   });
 
   it("is -1 for opposites", () => {
-    close(cosine([1, 0], [-1, 0]), -1);
+    nearly(cosine([1, 0], [-1, 0]), -1);
   });
 
   it("ignores magnitude, which is what makes it a similarity", () => {
-    close(cosine([1, 1], [5, 5]), 1);
+    nearly(cosine([1, 1], [5, 5]), 1);
   });
 
   it("reads a Float32Array, which is what the engine returns", () => {
     const a = new Float32Array([0.5, 0.5]);
-    close(cosine(a, [0.5, 0.5]), 1);
+    nearly(cosine(a, [0.5, 0.5]), 1);
   });
 
   it("refuses rather than throws on nothing, or on a length mismatch", () => {

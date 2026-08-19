@@ -32,31 +32,47 @@
  *     only the query. It is dropped whole at shutdown and is never written
  *     anywhere.
  *
+ * WHY A PREF GUARDS THE LOAD
+ *
+ * `createEngine` fetches the weights if it does not have them, so on an
+ * ordinary machine the first keystroke into the command bar would have sent a
+ * ~30MB request to Mozilla's model hub that nobody asked for. This fork
+ * disables app update and telemetry precisely so that it never contacts
+ * Mozilla behind the user's back, and a suggestion tier quietly downloading a
+ * model is the same thing wearing a different hat.
+ *
+ * So `browser.fos.suggest.semanticTier` is consent rather than a feature flag,
+ * and it is off by default. Nothing here turns it on; the surfaced "download
+ * the search model" step belongs on a command the user runs, and that is the
+ * piece still to build.
+ *
  * WHAT HAPPENS WITHOUT THE WEIGHTS
  *
- * The weights are a download this fork has not yet asked the user for. Until
- * it does, `embed` returns null on a machine that does not have them and the
- * `related` tier is simply absent from the list.
+ * `embed` returns null and the `related` tier is simply absent from the list.
  *
  * That is a deliberate difference from the voice path, which refuses to fail
  * quietly: pressing a key and getting nothing is a broken promise, so the
  * microphone surfaces its download. A suggestion tier promises nothing — the
  * bar has five other tiers and the user did not ask for this one by name — so
- * fewer suggestions is a degradation, not a failure, and a modal about a
- * 30MB download on the first keystroke would be far worse than the absence.
- * When the surfaced fetch is built, it belongs on a command the user runs,
- * not here.
+ * fewer suggestions is a degradation, not a failure.
  *
  * The engine is **process-wide** rather than per-window, unlike every other
  * FOS component. The ML engine already lives in its own process and costs
  * ~0.5s to load; three windows must not pay it three times.
  */
 
+import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
+
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   createEngine: "chrome://global/content/ml/EngineProcess.sys.mjs",
 });
+
+/** The user's consent to a one-time model download. See the file comment. */
+const PREF_ENABLED = "browser.fos.suggest.semanticTier";
+
+XPCOMUtils.defineLazyPreferenceGetter(lazy, "enabled", PREF_ENABLED, false);
 
 /**
  * The engine configuration, which is `EmbeddingsGenerator`'s static entry with
@@ -140,6 +156,12 @@ export const FOSEmbeddings = {
   async ensure() {
     if (this._engine) {
       return this._engine;
+    }
+    // Checked on every call rather than cached as unavailable: the pref is
+    // what a future "download the search model" command will flip, and the
+    // tier should start working when it does rather than at the next restart.
+    if (!lazy.enabled) {
+      return null;
     }
     if (this._unavailable) {
       return null;
