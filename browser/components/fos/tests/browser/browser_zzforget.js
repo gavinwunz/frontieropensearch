@@ -292,6 +292,24 @@ add_task(async function test_forgetting_reaches_the_live_window() {
   );
   Assert.equal(session.currentNodeId, null, "including the dwell clock");
 
+  // `back` walks the window's own recency list, which is not the tree and was
+  // not pruned by anything above. A forgotten id left in it is a page `enter`
+  // throws on, and the throw would land on the next `back` rather than here —
+  // which is why this is asserted rather than reasoned about.
+  gBrowser.selectedTab = walker;
+  const { FOSCommandBar } = ChromeUtils.importESModule(
+    "resource:///modules/FOSCommandBar.sys.mjs"
+  );
+  const back = FOSCommandBar.forWindow(window).run("back");
+  // `run` hands back the handler's return value rather than awaiting it, and
+  // `enter` restores asynchronously — a test that closed these tabs without
+  // waiting would have `setTabState` land on a browser that had gone.
+  await Promise.all(back.ran.map(outcome => outcome.result));
+  Assert.ok(
+    !doomedNodes.includes(session.currentNodeId),
+    "going back does not land on a page that has been forgotten"
+  );
+
   BrowserTestUtils.removeTab(sitter);
   BrowserTestUtils.removeTab(walker);
 });
