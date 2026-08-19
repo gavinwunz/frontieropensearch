@@ -36,6 +36,11 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   FOSContextEngine: "resource:///modules/FOSContextEngine.sys.mjs",
   FOSContextStore: "resource:///modules/FOSContextStore.sys.mjs",
+  // A module-level export beside the class, not a static on it, and each key
+  // here resolves to the export of that name — so it needs its own line. The
+  // sweep is about files in the profile rather than rows in a database, which
+  // is why it is not on the store.
+  movedAsideDatabases: "resource:///modules/FOSContextStore.sys.mjs",
 });
 
 /**
@@ -124,6 +129,41 @@ async function forget(work) {
 }
 
 /**
+ * Delete any database the store had to move aside.
+ *
+ * `FOSContextStore.open` keeps a database it cannot read rather than deleting
+ * it, because nothing in it exists anywhere else and a byte-level recovery is
+ * better than no recovery. That is a defensible thing to do to a user's data
+ * exactly as long as the user can still get rid of it, and this is the half
+ * that makes it so: a file nobody can see, that "Clear everything" does not
+ * reach, is the shape of defect this whole module was written to remove.
+ *
+ * Only `deleteAll` sweeps. A moved-aside database cannot be queried, so there
+ * is no way to tell whether it holds anything from the host or the range being
+ * cleared; deleting it for a request that specific would throw away far more
+ * than was asked for, and keeping it is at least the honest answer to a
+ * question that cannot be answered. `SCHEMA.md` §Recovery says so.
+ *
+ * @returns {Promise<void>}
+ */
+async function discardMovedAside() {
+  let kept;
+  try {
+    kept = await lazy.movedAsideDatabases();
+  } catch (e) {
+    console.error("FOSForget: cannot list moved-aside databases", e);
+    return;
+  }
+  for (const path of kept) {
+    try {
+      await IOUtils.remove(path);
+    } catch (e) {
+      console.error(`FOSForget: cannot remove ${path}`, e);
+    }
+  }
+}
+
+/**
  * The Context Engine as an `nsIClearDataService` cleaner.
  *
  * Named for the module rather than for what it is because
@@ -162,7 +202,8 @@ export const FOSForget = {
     );
   },
 
-  deleteAll() {
-    return forget(store => store.forgetAll());
+  async deleteAll() {
+    await forget(store => store.forgetAll());
+    await discardMovedAside();
   },
 };

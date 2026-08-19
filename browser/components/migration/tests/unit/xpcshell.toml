@@ -111,4 +111,6 @@ run-if = [
   "os == 'mac'",
 ]
 
+["test_fx_context_engine.js"]
+
 ["test_fx_telemetry.js"]

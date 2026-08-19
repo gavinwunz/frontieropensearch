@@ -13,9 +13,12 @@
  * wrong. Every check here is one the pure tests cannot make.
  */
 
-const { FOSContextStore, SCHEMA_VERSION } = ChromeUtils.importESModule(
-  "resource:///modules/FOSContextStore.sys.mjs"
-);
+const {
+  FOSContextStore,
+  SCHEMA_VERSION,
+  DATABASE_FILENAME,
+  movedAsideDatabases,
+} = ChromeUtils.importESModule("resource:///modules/FOSContextStore.sys.mjs");
 const { extractEntities } = ChromeUtils.importESModule(
   "resource:///modules/FOSContextSignals.sys.mjs"
 );
@@ -1556,3 +1559,227 @@ add_task(async function test_memory_stores_do_not_share_a_database() {
   );
   await second.close();
 });
+
+/*
+ * Recovery: a database on disk that cannot be opened.
+ *
+ * This is the only failure the store recovers from rather than reports, and
+ * the reason is that the alternative is a browser which records nothing, ever
+ * again, until somebody finds a file and deletes it by hand. There is no
+ * surface that would tell them to. So the unreadable file is moved aside and
+ * an empty database takes its place.
+ *
+ * Both halves need holding down. Recovering too eagerly is worse than not
+ * recovering at all — a bug in a migration would move a perfectly good record
+ * aside and replace it with nothing — so the tests below check what is *not*
+ * recovered from as carefully as what is.
+ */
+
+/**
+ * What a store under test moved aside, by scanning for it.
+ *
+ * Not `movedAsideDatabases`, which asks about the *profile's* database by its
+ * real name — these fixtures each use a scratch name so they cannot collide
+ * with each other or with a real profile. The sweep predicate gets its own
+ * test below, against the name it actually ships with.
+ *
+ * @param {string} path The database the store was told to open.
+ * @returns {Promise<string[]>} Absolute paths.
+ */
+async function movedAside(path) {
+  // Prefix and suffix, never a reconstructed name — the same shape as the
+  // shipped predicate and for the same reason. The first version of this
+  // helper built the expected name and missed the *second* recovery of a
+  // profile entirely, because `IOUtils.createUniqueFile` uniquifies by
+  // inserting before the last extension: `x.sqlite.corrupt` becomes
+  // `x.sqlite-1.corrupt`, not `x.sqlite.corrupt-1`.
+  const stem = PathUtils.filename(path);
+  const children = await IOUtils.getChildren(PathUtils.parent(path));
+  return children.filter(p => {
+    const name = PathUtils.filename(p);
+    return (
+      name.startsWith(stem) &&
+      (name.endsWith(".corrupt") || name.endsWith(".corrupt-journal"))
+    );
+  });
+}
+
+/**
+ * A path holding bytes that are not a database.
+ *
+ * Deliberately not a truncated real database: what reaches this path in the
+ * wild is anything from a half-finished copy to a file the filesystem handed
+ * back as zeroes, and the one thing they share is that SQLite refuses the
+ * header. That is what `NOTADB` means and it is the cheapest way to produce it.
+ *
+ * @param {string} name Leaf name, inside the profile.
+ * @returns {Promise<string>} The path written.
+ */
+async function corruptDatabaseAt(name) {
+  const path = PathUtils.join(PathUtils.profileDir, name);
+  await IOUtils.writeUTF8(path, "this is not a database, it is a sentence");
+  return path;
+}
+
+add_task(async function test_an_unreadable_database_is_kept_and_replaced() {
+  const path = await corruptDatabaseAt("context-engine-corrupt-1.sqlite");
+
+  const store = await FOSContextStore.open({ path });
+  Assert.equal(
+    await store.connection.getSchemaVersion(),
+    SCHEMA_VERSION,
+    "opening succeeds, on a fresh database at the current version"
+  );
+  // Not merely "it opened": the replacement has to be usable, because a store
+  // that opens and then throws on the first write is the same outage wearing
+  // a different hat.
+  const trailId = await store.addTrail({ name: "after the trouble" });
+  Assert.ok(trailId, "and the empty database takes writes");
+  await store.close();
+
+  const kept = await movedAside(path);
+  Assert.equal(kept.length, 1, "the unreadable file is kept, not deleted");
+  Assert.equal(
+    await IOUtils.readUTF8(kept[0]),
+    "this is not a database, it is a sentence",
+    "byte for byte — it is the only copy of whatever was in there"
+  );
+});
+
+add_task(async function test_no_journal_is_left_beside_the_fresh_database() {
+  const path = await corruptDatabaseAt("context-engine-corrupt-2.sqlite");
+  await IOUtils.writeUTF8(path + "-journal", "hot journal");
+
+  await (await FOSContextStore.open({ path })).close();
+
+  // The property that has to hold. A rollback journal is matched to its
+  // database by filename, so one surviving here would be adopted by the empty
+  // database that has just replaced the unreadable one, and rolled back into
+  // it — recovery producing the corruption it was recovering from.
+  Assert.ok(
+    !(await IOUtils.exists(path + "-journal")),
+    "no journal is left beside the fresh database"
+  );
+
+  // Deliberately not asserting that the journal was *kept* beside the
+  // moved-aside copy, which is what this test first claimed. It usually is
+  // not, and the reason is worth writing down: `Sqlite.openConnection`
+  // attempts hot-journal recovery before it reports the file unreadable, and
+  // deletes the journal on the way out — so the store is handed a database
+  // whose journal is already gone. `moveAside` still moves one when it finds
+  // one, for the case where corruption surfaces during a migration rather
+  // than at open, and that is best-effort by construction.
+});
+
+add_task(async function test_a_second_failure_keeps_both() {
+  const path = await corruptDatabaseAt("context-engine-corrupt-3.sqlite");
+  await (await FOSContextStore.open({ path })).close();
+  await IOUtils.writeUTF8(path, "and this is a different sentence");
+  await (await FOSContextStore.open({ path })).close();
+
+  const kept = await movedAside(path);
+  const databases = kept.filter(p => p.endsWith(".corrupt"));
+  Assert.equal(
+    databases.length,
+    2,
+    "a profile that goes wrong twice keeps both"
+  );
+  const contents = await Promise.all(databases.map(p => IOUtils.readUTF8(p)));
+  Assert.ok(
+    contents.includes("this is not a database, it is a sentence") &&
+      contents.includes("and this is a different sentence"),
+    "the second recovery does not overwrite the first"
+  );
+});
+
+add_task(async function test_a_healthy_database_is_never_moved_aside() {
+  const path = PathUtils.join(
+    PathUtils.profileDir,
+    "context-engine-healthy.sqlite"
+  );
+  await IOUtils.remove(path, { ignoreAbsent: true });
+
+  let store = await FOSContextStore.open({ path });
+  const trailId = await store.addTrail({ name: "worth keeping" });
+  await store.close();
+
+  store = await FOSContextStore.open({ path });
+  const trails = await store.connection.execute("SELECT id FROM trail");
+  await store.close();
+
+  Assert.equal(trails.length, 1, "reopening finds the record still there");
+  Assert.ok(trailId, "which is the whole point of not recovering eagerly");
+  Assert.deepEqual(await movedAside(path), [], "and nothing was moved aside");
+});
+
+add_task(async function test_a_failure_that_is_not_corruption_still_throws() {
+  // A directory where the database should be. `openConnection` fails, and it
+  // fails for a reason that has nothing to do with the bytes in a file — so
+  // recovering would mean deleting a directory the user may care about and
+  // reporting success. Every non-corruption failure has this shape: a full
+  // disk, a read-only profile, a migration with a typo. The store must report
+  // them rather than paper over them by throwing the record away.
+  const path = PathUtils.join(
+    PathUtils.profileDir,
+    "context-engine-directory.sqlite"
+  );
+  await IOUtils.makeDirectory(path, { ignoreExisting: true });
+
+  await Assert.rejects(
+    FOSContextStore.open({ path }),
+    /./,
+    "a failure that is not corruption is reported, not recovered from"
+  );
+  Assert.ok(
+    await IOUtils.exists(path),
+    "and nothing of the user's was moved or removed"
+  );
+});
+
+add_task(async function test_the_sweep_finds_what_a_clear_has_to_remove() {
+  // `FOSForget.deleteAll` removes these, which is what keeps "keep the
+  // unreadable file" compatible with "everything here can be deleted". The
+  // predicate is the load-bearing part: it matches on the shipped filename,
+  // and `IOUtils.createUniqueFile` decides for itself where to put the number
+  // that makes a second one unique — so a sweep that reconstructs the name
+  // instead of matching it misses files silently.
+  const dir = PathUtils.join(PathUtils.profileDir, "sweep-scratch");
+  await IOUtils.makeDirectory(dir, { ignoreExisting: true });
+  const decoys = [
+    DATABASE_FILENAME, // the live database is not swept
+    DATABASE_FILENAME + "-journal",
+    "places.sqlite.corrupt", // nor is anybody else's
+    "notes.txt",
+  ];
+  const targets = [
+    DATABASE_FILENAME + ".corrupt",
+    DATABASE_FILENAME + ".corrupt-journal",
+  ];
+  for (const name of [...decoys, ...targets]) {
+    await IOUtils.writeUTF8(PathUtils.join(dir, name), "x");
+  }
+
+  const found = (await movedAsideDatabases(dir)).map(p =>
+    PathUtils.filename(p)
+  );
+  Assert.deepEqual(
+    found.sort(),
+    targets.slice().sort(),
+    "exactly the kept ones"
+  );
+});
+
+add_task(
+  async function test_the_sweep_survives_a_directory_that_is_not_there() {
+    // A clear on a profile that has never recovered from anything must not
+    // report a failure, and `deleteAll` swallows it if it does — so this is
+    // checked here rather than left to the caller's catch.
+    Assert.deepEqual(
+      await movedAsideDatabases(
+        PathUtils.join(PathUtils.profileDir, "no-such-directory")
+      ),
+      [],
+      "nothing to sweep, and no throw"
+    );
+  }
+);

@@ -20,6 +20,11 @@ ChromeUtils.defineESModuleGetters(lazy, {
   PlacesBackups: "resource://gre/modules/PlacesBackups.sys.mjs",
   ProfileAge: "resource://gre/modules/ProfileAge.sys.mjs",
   SessionMigration: "resource:///modules/sessionstore/SessionMigration.sys.mjs",
+  // Read rather than spelled out, so renaming the Context Engine's database
+  // cannot silently drop it out of a profile refresh. A missing file here is
+  // indistinguishable from a profile that never ran the engine, so the
+  // failure would be invisible until somebody refreshed and lost everything.
+  DATABASE_FILENAME: "resource:///modules/FOSContextStore.sys.mjs",
 });
 
 /**
@@ -162,7 +167,7 @@ export class FirefoxProfileMigrator extends MigratorBase {
    * sourceProfileDir to migrate into the currentProfileDir
    */
   getResourcesInternal(sourceProfileDir, currentProfileDir) {
-    let getFileResource = (aMigrationType, aFileNames) => {
+    let getFileResource = (aMigrationType, aFileNames, aName) => {
       let files = [];
       for (let fileName of aFileNames) {
         let file = this._getFileObject(sourceProfileDir, fileName);
@@ -174,6 +179,7 @@ export class FirefoxProfileMigrator extends MigratorBase {
         return null;
       }
       return {
+        name: aName, // name is used only by tests, as elsewhere in this file.
         type: aMigrationType,
         migrate(aCallback) {
           for (let file of files) {
@@ -237,6 +243,26 @@ export class FirefoxProfileMigrator extends MigratorBase {
       "favicons.sqlite",
       "favicons.sqlite-wal",
     ]);
+    // The Context Engine's record, carried with `places` and under the same
+    // type, because it is the same kind of thing. This file is not history in
+    // the sense of a list of URLs — it is every query typed, the page each was
+    // typed from, how long each page was read, the shape of the trail it was
+    // found on and the names given to whole afternoons of work — and none of
+    // it exists anywhere else on the machine. A refresh that keeps history,
+    // bookmarks, passwords and the open session while dropping this hands back
+    // a browser whose entire interface is empty: no rail, no Field, nothing
+    // for the sidebar to answer with. That is the worst outcome a refresh can
+    // produce here and it would happen silently.
+    //
+    // The journal comes too. This store is in SQLite's default rollback mode,
+    // so a source profile that crashed has a hot journal beside its database,
+    // and copying the database without it turns a recoverable crash into an
+    // unreadable file. `places` copies its `-wal` for exactly this reason.
+    let contextEngine = getFileResource(
+      types.HISTORY,
+      [lazy.DATABASE_FILENAME, lazy.DATABASE_FILENAME + "-journal"],
+      "contextEngine"
+    );
     let cookies = getFileResource(types.COOKIES, [
       "cookies.sqlite",
       "cookies.sqlite-wal",
@@ -489,6 +515,7 @@ export class FirefoxProfileMigrator extends MigratorBase {
       times,
       telemetry,
       favicons,
+      contextEngine,
     ].filter(r => r);
   }
 

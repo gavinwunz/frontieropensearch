@@ -18,11 +18,9 @@
  * IDS. The in-memory `TrailStore` numbers its own trails and nodes from 1 for
  * each session, so those ids collide across restarts and cannot be database
  * keys. The database allocates its own, and the recorder holds the mapping for
- * the life of the session. The consequence worth knowing is that the store is
- * currently write-mostly: it is the durable record of what happened, but the
- * in-memory tree is not yet rehydrated from it at startup, so a restart still
- * begins with an empty Field and an empty rail. Rehydration is the next piece
- * of work on this file and is deliberately not smuggled in here.
+ * the life of the session. Restoration reads that mapping back the other way
+ * at startup, so the ids a restored trail carries are freshly minted in memory
+ * and joined to the rows they came from — see `claimRestoration`.
  */
 
 const lazy = {};
@@ -33,6 +31,27 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
 /** The database file, in the profile directory. */
 export const DATABASE_FILENAME = "context-engine.sqlite";
+
+/**
+ * What a database that could not be opened is renamed to.
+ *
+ * Appended to the whole filename rather than replacing the extension, so the
+ * moved-aside file still sorts beside the live one and still reads as a
+ * database. `IOUtils.createUniqueFile` makes it unique, so a profile that goes
+ * wrong twice keeps both.
+ */
+const CORRUPT_SUFFIX = ".corrupt";
+
+/**
+ * SQLite's rollback journal, which shares the database's name.
+ *
+ * The store does not set `journal_mode`, so it is in SQLite's default rollback
+ * mode and this is the file that exists mid-transaction and after a crash. It
+ * matters twice here: a journal is matched to its database *by filename*, so
+ * moving a database aside without it leaves a hot journal that the next,
+ * empty database would roll back into itself.
+ */
+const JOURNAL_SUFFIX = "-journal";
 
 /**
  * Migrations in order, as `[version, url]`.
@@ -105,6 +124,112 @@ async function openMemoryConnection() {
 }
 
 /**
+ * Whether a failure to open means the file on disk is not a usable database.
+ *
+ * Deliberately narrow, because the consequence of a false positive is that a
+ * perfectly good record gets moved aside and replaced with an empty one. A
+ * migration with a typo in it, a disk that is full, a profile that is
+ * read-only and a shutdown race all throw from the same two calls, and none of
+ * them is a reason to give up on the file. Only the two results that say the
+ * bytes themselves cannot be read as a database count: `NS_ERROR_FILE_CORRUPTED`
+ * from `Sqlite.sys.mjs`, and `NOTADB` from mozStorage when the file is
+ * something else entirely — a truncated copy, a text file, half a download.
+ *
+ * `PlacesSemanticHistoryDatabase` tests exactly this pair, and it is the
+ * closest thing in the tree to this store.
+ *
+ * @param {Error} e Whatever `open` caught.
+ * @returns {boolean}
+ */
+function isUnopenable(e) {
+  return (
+    e?.result == Cr.NS_ERROR_FILE_CORRUPTED ||
+    e?.errors?.some(
+      error =>
+        error.result == Ci.mozIStorageError.NOTADB ||
+        error.result == Ci.mozIStorageError.CORRUPT
+    ) === true
+  );
+}
+
+/**
+ * Move a database that cannot be opened out of the way, keeping it.
+ *
+ * Keeping it is the decision worth defending, because the two precedents in
+ * the tree disagree and the disagreement is about one thing: whether the data
+ * exists anywhere else. `PlacesSemanticHistoryDatabase` deletes its corrupt
+ * files outright, and is right to — it is an index over Places and can be
+ * recomputed from it. `FormHistory` keeps its own under `.corrupt`, and is
+ * also right, because what you typed into a form is not written down twice.
+ * This store is firmly in the second class and further into it than either:
+ * Places can be rebuilt by browsing, but the question you typed, the trail you
+ * found a page on and the name you gave an afternoon's work have no second
+ * copy anywhere on the machine. A byte-level recovery of a mangled file is a
+ * miserable afternoon; it is still an afternoon that a deleted file does not
+ * offer at all.
+ *
+ * The cost is a file the user cannot see and did not ask for, which collides
+ * head-on with what `FOSForget` exists to guarantee — so `deleteAll` sweeps
+ * these up, and `SCHEMA.md` §Recovery says both halves. A record kept for the
+ * user's benefit is only defensible while the user can still get rid of it.
+ *
+ * @param {string} path The database that would not open.
+ * @returns {Promise<string>} Where it went.
+ */
+async function moveAside(path) {
+  const target = await IOUtils.createUniqueFile(
+    PathUtils.parent(path),
+    PathUtils.filename(path) + CORRUPT_SUFFIX,
+    0o600
+  );
+  await IOUtils.move(path, target);
+  // The journal goes with it, under the matching name, when there still is
+  // one. Usually there is not, and finding that out took running it: a failing
+  // `openConnection` has already tried hot-journal recovery and *deleted* the
+  // journal on its way out, so by the time this runs the common case has none
+  // left to move. What survives to here is the other route into this function
+  // — a database that opened cleanly and failed later, on a migration
+  // statement touching a damaged page — which can still have one.
+  //
+  // Either way the property that matters holds, and it is the one worth
+  // stating: no journal is left beside `path`. A journal is matched to its
+  // database by filename, so one left behind would be adopted by the empty
+  // database created next and rolled back into it.
+  await IOUtils.move(path + JOURNAL_SUFFIX, target + JOURNAL_SUFFIX).catch(
+    () => {}
+  );
+  return target;
+}
+
+/**
+ * Every database this profile has moved aside, newest name last.
+ *
+ * Matched on the filename rather than reconstructed, because
+ * `IOUtils.createUniqueFile` decides for itself where to put the number that
+ * makes a name unique, and a sweep that guesses that pattern is a sweep that
+ * silently misses files.
+ *
+ * @param {string} [directory] Where to look; defaults to the profile.
+ * @returns {Promise<string[]>} Absolute paths.
+ */
+export async function movedAsideDatabases(directory = null) {
+  let children;
+  try {
+    children = await IOUtils.getChildren(directory ?? PathUtils.profileDir);
+  } catch (e) {
+    return [];
+  }
+  return children.filter(child => {
+    const name = PathUtils.filename(child);
+    return (
+      name.startsWith(DATABASE_FILENAME) &&
+      (name.endsWith(CORRUPT_SUFFIX) ||
+        name.endsWith(CORRUPT_SUFFIX + JOURNAL_SUFFIX))
+    );
+  });
+}
+
+/**
  *
  */
 export class FOSContextStore {
@@ -132,6 +257,13 @@ export class FOSContextStore {
   /**
    * Open the store, applying any outstanding migrations.
    *
+   * Opening never fails because the file on disk is unreadable. A database
+   * whose bytes are not a database is moved aside — kept, see `moveAside` —
+   * and an empty one is started in its place, because the alternative is a
+   * browser that will not record anything again until somebody finds the file
+   * and deletes it by hand. Every other failure still throws: this recovers
+   * from a damaged file, not from a bug in this component.
+   *
    * @param {object} [options]
    * @param {string} [options.path] Database path; defaults to the profile.
    * @param {boolean} [options.memory] Open a memory database instead of a file.
@@ -139,17 +271,60 @@ export class FOSContextStore {
    * @returns {Promise<FOSContextStore>}
    */
   static async open({ path, memory = false } = {}) {
-    let connection;
-    let raw = null;
     if (memory) {
-      ({ connection, raw } = await openMemoryConnection());
-    } else {
-      connection = await lazy.Sqlite.openConnection({
-        path: path ?? PathUtils.join(PathUtils.profileDir, DATABASE_FILENAME),
-        // The tables are small and the writes are on the navigation path, so
-        // durability matters more than throughput; the defaults are right.
-      });
+      const { connection, raw } = await openMemoryConnection();
+      return FOSContextStore.#migrated(connection, raw);
     }
+    const file =
+      path ?? PathUtils.join(PathUtils.profileDir, DATABASE_FILENAME);
+    try {
+      return await FOSContextStore.#openFile(file);
+    } catch (e) {
+      if (!isUnopenable(e)) {
+        throw e;
+      }
+      // Once, and only once. A second failure on a database this process just
+      // created is not corruption on disk — it is something wrong with the
+      // build, the profile directory or the migrations — and retrying it in a
+      // loop would move a fresh empty file aside on every attempt and fill the
+      // profile with them.
+      const kept = await moveAside(file);
+      console.error(
+        `FOSContextStore: ${file} could not be opened and was kept as ${PathUtils.filename(kept)}; starting an empty database`,
+        e
+      );
+      return FOSContextStore.#openFile(file);
+    }
+  }
+
+  /**
+   * Open one file and migrate it, with no recovery.
+   *
+   * Split out so that `open`'s recovery covers the migration as well as the
+   * connection. A database can open cleanly and fail on the first statement
+   * that touches a damaged page, so a recovery wrapped around `openConnection`
+   * alone catches only the easy half.
+   *
+   * @param {string} path
+   * @returns {Promise<FOSContextStore>}
+   */
+  static async #openFile(path) {
+    const connection = await lazy.Sqlite.openConnection({
+      path,
+      // The tables are small and the writes are on the navigation path, so
+      // durability matters more than throughput; the defaults are right.
+    });
+    return FOSContextStore.#migrated(connection, null);
+  }
+
+  /**
+   * Wrap an open connection in a store and bring its schema up to date.
+   *
+   * @param {object} connection
+   * @param {?object} raw The mozStorage handle, for a memory database.
+   * @returns {Promise<FOSContextStore>}
+   */
+  static async #migrated(connection, raw) {
     const store = new FOSContextStore(connection);
     store.#raw = raw;
     try {
