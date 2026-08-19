@@ -1699,3 +1699,48 @@ consecutive full-suite runs; the new file contributes 35. Node 345, 0 failures.
 Eight mutations, eight caught — two only after the tests they named were written: nothing had ever re-entered a node whose
 chain entry had been truncated away, and every forget in the suite happened with
 the cursor at the top of its stack, where a shift changes nothing.
+
+## 2026-08-19 — Run 57 — post-phase — `enter` resolves on the landing
+
+Task 2 off run 56's list, and the one thing that run found and deliberately did
+not fix. **`enter` now resolves when its page has committed, not when it has been
+asked for.** The verb returned once it had asked for a node, which reads as "was
+entered" and means "was requested"; the gap between the two was a race every
+caller had to know about and handle for itself, and six tests hit it in a single
+run with every one reporting as a timeout somewhere else in the file.
+
+**The landing is the commit, not the load.** `onSettled` already means "finished
+loading", and waiting for that too would make every `back` cost a whole page
+load before the next command could run while preventing no defect. Checked
+against prior art rather than shipped on reasoning: Playwright's `waitUntil` has
+this exact rung and calls it `commit` — "response headers parsed and session
+history updated" — and it is the rung it recommends where a load event is never
+coming at all. "Session history updated" is not incidental here; it is the whole
+of what a re-entry does. Not made a parameter the way Playwright's is, because
+this fork knows all six of its callers and none of them wants the assets;
+anything that does already has `onSettled`, which is the `load` rung under a name
+this codebase uses.
+
+Keyed on the browser and not on the restored URL. A URL match is more precise and
+hangs on a redirect: a server-side 3xx commits only the destination, so a
+re-entry to a redirecting page would never see its own URL and would always pay
+the bound. The wait is bounded at six seconds, so a page that never arrives
+cannot leave the verb pending — the failure worse than the race it replaced —
+and a superseded re-entry, a closed tab and a detached session all settle rather
+than hang. The bound never changes the answer: a node whose page is slow was
+still entered, and a `back` that reported failure while the page was visibly
+loading would be lying about the one thing the user can see.
+
+The change also found what it did *not* fix, by reading a claim and checking it:
+**the chain is the one caller the landing does not help, because `runAll` never
+awaits.** `enter cap branch` is documented as branching from the card `enter`
+just made active, and it does not — the dispatcher drops each handler's result,
+so `branch` runs while `enter` is still suspended and branches from the node
+being left. False before this run too. Sized and left at the top of the list
+rather than folded in, because the narrow fix moves the back-stack cursor run 56
+spent a whole run getting right.
+
+Green: 1365 FOS browser-chrome checks across 30 files, 0 failures — the new
+`browser_zzlanding.js` contributes 13 — plus xpcshell 2 and node 345. Four
+mutations, four caught: each path's `await` dropped, the supersede settle
+removed, and the landing moved from the commit to the load stop.

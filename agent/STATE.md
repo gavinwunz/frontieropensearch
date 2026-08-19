@@ -55,82 +55,76 @@ document cites**, which found the count wrong by thirty-six commands.
 
 Nothing waits on a person. **Nothing is running except the confirming suite.**
 
-Run 56 built task 1: **`Browser:Back` and `Browser:Forward`, decided together.**
-It had sat at the top of the list for three runs with its own reason attached:
-`back` is not `Browser:Back`, the verb steps the pages you stood on and the
-gesture steps one tab's session history chain, and two movements under one name
-is worse than one movement with no name.
+Run 57 built task 2, which run 56 found and deliberately did not fix: **`enter`
+resolves when its page lands, not when it is asked for.**
 
-**The decision is that back and forward are time, and `up` is structure.** That
-is what dissolves "in a tree the forward direction is plural" — it is true of a
-*structural* forward, and this fork does not have one, because `up` already owns
-the parent. Nyxt is the control: the only shipped browser with a history tree
-has a structural backwards, so it needs three commands to say forward and the
-user must know which of the three they meant before they can ask. `forward` is
-the seventeenth verb and takes no target; the plural form is `back <mark>`,
-which has had a word since marks landed and reaches any node rather than only
-the ones ahead.
+The verb returned once it had *asked* for a node. The word read as "was entered"
+and meant "was requested", and the gap between the two was a race every caller
+had to know about and handle for itself — a navigation started on top of a
+traversal that has not committed arrives first and is then overwritten by the
+restore landing behind it, putting the window back on the page it was told to
+leave. Six tests hit it in a single run and every one reported as a timeout
+somewhere else in the file.
 
-**The gesture runs the verb**, rebound on `BrowserCommands.back`/`.forward`
-rather than on the four `<key>` elements — the buttons, the context menu, the
-mouse's side buttons, the swipe and `Backspace` all arrive there too, and
-rebinding the keyboard alone would have replaced one unvoiced movement with two
-that disagree depending on which hand you used.
-`browser.fos.trails.replacesLinearHistory` reverses it everywhere at once. Four
-manifest entries left `debt` for `verb`.
+**The landing is the commit, not the load.** `onSettled` already means "finished
+loading" and this is narrower on purpose: a traversal stops being pending the
+moment the location changes, and waiting for the stop event too would make every
+`back` cost a whole page load before the next thing could run, preventing no
+defect. Checked against prior art rather than shipped on reasoning alone —
+Playwright's `waitUntil` has exactly this rung and calls it `commit`, documented
+as "response headers parsed and session history updated", and it is the rung
+recommended where a load event is never coming. `IDEAS.md` (run 57) has why it
+is not made a parameter the way Playwright's is: this fork knows all six of its
+callers and none of them wants the assets.
 
-Three things had to be true for the verb to be fit to be the gesture, and each
-was a defect in its own right:
+**Keyed on the browser and not on the restored URL.** A URL match is more precise
+and hangs on a redirect — a server-side 3xx commits only the destination, so a
+re-entry to a redirecting page would never see its own URL and would always pay
+the bound. The first top-level location change on the browser we asked ends the
+flight whatever it says.
 
-- **`back` had no cursor.** It re-read a visit log after appending its own move
-  to it, so the second press found the page it had just left and went there:
-  two presses returned you to where you started, and the third page back was
-  unreachable by the word that exists to reach it. It is now a back-stack with
-  an index, and the cursor rather than a flag is what tells a walk from a move
-  — which matters because a walk lands twice, once from `enter` and once from
-  the traversal's own location change.
-- **The stack was window-wide, and had to become per trail.** Found by a test
-  rather than by argument: one list made `back` a move *between* trails, so
-  closing a card and pressing it restored the page you closed over the page you
-  were reading. A trail is this fork's unit of place, so it is what a step
-  through time steps within.
-- **`enter` flattened the tab's chain on every move.** It replaced the whole
-  session history with one entry, which is right for a node the chain cannot
-  represent and wrong for the common case — every press of the most-used gesture
-  in the browser would have rebuilt the tab from a blob: no bfcache, a fresh
-  load, `history.length` stuck at 1 for content reading it. A node still in the
-  chain is now traversed to.
+**The wait is bounded** (`LANDING_MS`, six seconds), so a page that never arrives
+cannot leave the verb pending — the failure that would have been worse than the
+race it replaced. A re-entry superseded by another, a closed tab and a detached
+session all settle rather than hang. The bound never changes the answer: `enter`
+reports whether the node was *entered*, and a node whose page is slow was still
+entered. A `back` that reported failure while the page it asked for was visibly
+loading would be lying about the one thing the user can see.
 
-The stack **truncates on arrival**, like every browser's, and this is the only
-browser where that costs nothing: the pages walked past are nodes in the tree,
-lettered and on the rail, one `back <mark>` away.
-
-Green: **1352 FOS browser-chrome checks across 29 files, 0 failures**, on two
-consecutive full-suite runs — the new file contributes 35. Node: 345. **Eight mutations, eight caught, two only after
-the tests they named were written.** Lint clean on every changed file.
+Green: **1365 FOS browser-chrome checks across 30 files, 0 failures** — the new
+file `browser_zzlanding.js` contributes 13. Node: 345. xpcshell: 2. **Four
+mutations, four caught.** Lint clean on every changed file.
 
 `main` is at `phase-3`. `agent/dev` has this run's commits.
 
 ## Next task
 
-1. **Watch whether twenty-six links is actually the bound in use.** Unchanged
-   from run 55 and now the top of the list. Shipped answer is document order,
-   truncate, say the count. `IDEAS.md` (run 55) has the two candidates — two-word
-   marks, and narrowing by typed text — and deliberately does not choose. The
-   second is cheaper and composes with `cmd_find`, which is the cheapest entry
-   left on the §5.1.1 debt list for the same reason: it takes terminal free text
-   exactly like `search` and `name`. Decide from use rather than from the
-   document.
+1. **The chain is the one caller the landing did not fix, because `runAll` never
+   awaits.** Found this run by reading the claim at `FOSActions.sys.mjs` §`runAll`
+   — *"`enter cap branch` branches from the card `enter` just made active"* — and
+   checking it. It is false, and was false before this run's change too.
+   `FOSActionDispatcher.runAll` is synchronous and drops each handler's result on
+   the floor, so `branch` runs while `enter` is still suspended on its first
+   `await` and `#requireCurrent()` returns **the node being left**. The chain
+   records a branch under the wrong parent. Nothing in the suite covers
+   `enter <mark> branch` as one line, which is why fifty-seven runs did not see
+   it. Note `up` has the same shape and is fine — it reads the current node
+   *before* calling `enter`.
 
-2. **`enter` resolves before the page arrives, and six tests knew it.** The one
-   thing this run found and did not fix. `enter` returns once it has *asked* for
-   a node; the load lands later, and a fresh navigation started on top of a
-   pending traversal is a race — six tests hit it in a single run, each
-   reporting as a timeout somewhere else in the file. The tests now wait for the
-   landing, which is right for them, but the verb's contract still says "was
-   entered" and means "was asked for". Making it resolve on arrival would remove
-   the race for every caller; the risk is a verb that never resolves, so it
-   wants a bounded wait and a decision about what the bar reports meanwhile.
+   Sized, so next run can go straight at it: making `run`/`runAll` async touches
+   45 call sites in the tests, of which only 3 read the return value, plus
+   `FOSVoiceInput`'s `this.#bar.run(effect.run)`. **Rejected the narrow fix** of
+   moving `#setCurrent` above the departure `await` inside `enter`: it also moves
+   `#arrived`, and therefore the back-stack cursor that run 56 spent a whole run
+   getting right. Do it as the contract change, with a test for the chain first.
+
+2. **Watch whether twenty-six links is actually the bound in use.** Unchanged
+   from runs 55 and 56. Shipped answer is document order, truncate, say the
+   count. `IDEAS.md` (run 55) has the two candidates — two-word marks, and
+   narrowing by typed text — and deliberately does not choose. The second is
+   cheaper and composes with `cmd_find`, the cheapest entry left on the §5.1.1
+   debt list for the same reason: it takes terminal free text exactly like
+   `search` and `name`. Decide from use rather than from the document.
 
 3. **`follow` reaches links and not buttons**, deliberately: `[onclick]` and
    `[role=button]` sweep in every layout wrapper on a modern site, and a hint on
@@ -154,28 +148,30 @@ the tests they named were written.** Lint clean on every changed file.
 
 ## Found this run, not yet chased
 
-- **A timeout aborts the whole browser-chrome run, not just its file.** Six
-  separate fixes each cost a full-suite run to discover the next one, because
-  the harness stops after the first `TIMEOUT` — so a green tail says nothing
-  about the files that never started. The count in the summary is the tell:
-  "Ran 319 checks (5 tests)" when the suite has 29 files. Worth reading the file
-  count before the pass count, always.
+- **A verb that resolves on the network needs a bound before it needs anything
+  else.** The whole design of the landing is downstream of one question — what
+  happens when the page never comes — and the answer had to be decided before
+  the mechanism, because it is what says the bound must not change the return
+  value. Generalises: **when a synchronous contract is made asynchronous, name
+  the failure mode you are creating before you name the one you are removing.**
 
-- **`gotoIndex(-1)` takes the content process down**, and the symptom is an
-  unrelated load hanging three tasks later. A browser with no session history
-  reports index -1, and nothing stopped that from being recorded as an entry a
-  node could be traversed to. Bounded at the point of use *and* at the point of
-  writing. Generalises: **a value read out of a platform API is in range only
-  where you check it**, and the crash is charged to whoever is holding the
-  process when it lands, not to whoever wrote the -1.
+- **`build faster` fails in a fresh shell** with `ERROR: Cannot find ccache`. The
+  mozconfig points `--with-ccache` at `$MOZBUILD_STATE_PATH/sccache/sccache` and
+  nothing exports `MOZBUILD_STATE_PATH` for `mach`, so it expands to
+  `/sccache/sccache`. `source agent/env.sh` first, every time — the shell does
+  not persist between commands. Costs one failed build per run until either the
+  mozconfig defaults the path or `env.sh` is sourced from the mozconfig itself;
+  the second is probably right and is a five-line change.
 
-- **A test that re-runs an idempotent operation proves nothing** — run 55's
-  lesson — has a sibling this run: **a test whose subject is at the end of a
-  list proves nothing about the list shifting.** Every forget in the suite
-  happened with the cursor at the top of its stack, where a shift changes
-  nothing, so the cursor could be left behind and no assertion moved.
+- **The `about:newtab` content-process crashes are the container, not the fork.**
+  Three `exited on signal 11` per file, alongside
+  `Sandbox: CanCreateUserNamespace() unshare(CLONE_NEWPID): EPERM`. Checked
+  rather than assumed: `browser_zzbackstack.js`, untouched this run, produces
+  exactly the same three and passes 34/34. Worth knowing before spending a run
+  chasing it — but also worth *not* filing as harmless forever, since a real
+  crash would look identical.
 
-- **`key_gotoHistory` is still worth one probe.** Carried from run 54,
+- **`key_gotoHistory` is still worth one probe.** Carried from runs 54–56,
   untouched. Upstream dispatches it by id from the `mainKeyset` listener, and
   this fork gave the same element a `command="FOS:TrailRail"`. Both paths still
   exist. If the id-keyed listener still sees the event, accel+H opens the trail
@@ -184,9 +180,8 @@ the tests they named were written.** Lint clean on every changed file.
 
 ## Background jobs
 
-**Nothing is running — the harness is free.** Check `./agent/bg-status.sh` first
-thing anyway. `fossuite56h` and `fossuite56i` both finished green: 1352 checks
-across 29 files, 0 failures either time, plus node 345 and the two xpcshell
-files. Earlier jobs this session — `fossuite56` through `fossuite56g` — were the
-iteration described above and are superseded; the first six each stopped early
-on a timeout, which is why their check counts are small.
+**Check `./agent/bg-status.sh` first thing.** `fossuite57` finished green — 1365
+browser-chrome checks across 30 files, 0 failures, plus the two xpcshell files —
+and `fossuite57b` is the second consecutive confirming run of the same suite.
+Node (345) and the four mutation runs were foreground and are done. Everything
+earlier in the log directory is superseded.
