@@ -96,6 +96,18 @@ export const ACTIONS = Object.freeze({
     text: "required",
     summary: "Name an object, making it first-class and searchable",
   },
+  // No mark, for the same reason `name`'s bare form has none: the only trail
+  // the user can address is the one they are on. Nodes are what get marked, and
+  // a verb that takes a mark it can never be given is a verb the bar would
+  // offer and then refuse. It grows an optional target on the day trails become
+  // markable, and not before.
+  done: {
+    pillar: "trails",
+    target: "none",
+    accepts: [],
+    text: false,
+    summary: "Finish this trail: it is kept, but no longer offered on return",
+  },
 
   // Pillar C — the context engine.
   // Optional, not required, and the bare form is the release. A pinned context

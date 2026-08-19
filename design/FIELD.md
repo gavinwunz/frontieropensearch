@@ -299,6 +299,14 @@ is in play. Trails hold everything that ever happened, losslessly, and the
 Context Engine is what searches it. A user who dismisses aggressively should end
 up with a better browser, not a worse one — that is the test.
 
+`done` is the same guarantee one level up, and it is in `GRAMMAR.md` §4 rather
+than here because it is a statement about a trail that the Field then obeys.
+`dismiss` takes a page off the Field and leaves it on its trail; `done` takes a
+trail off the Field and leaves it in the store. Nothing is written to the nodes
+when a trail is finished — a whole trail's worth of pages marked individually
+dismissed would misreport what the user did, and would come back looking
+discarded rather than filed if the trail were ever picked up again.
+
 ## 9. How to tell whether this was built as specified
 
 Four properties, each falsifiable, each mapping to a decision above.
@@ -326,6 +334,17 @@ Recorded rather than guessed at, to be settled by building.
   region-of-regions (§3) is the obvious rule, but "least recently touched" may be
   the wrong metric — a trail parked deliberately is not a trail abandoned. The
   Context Engine has the dwell data to do better; revisit once 2C has real data.
+
+  **Partly answered from the other end, by `done`.** The reason the metric had
+  to guess is that nothing in the system knew which trails were finished, so it
+  inferred it from silence. `done` lets the user say it outright, and a trail
+  said to be finished leaves the Field entirely rather than being nested. That
+  does not settle what to do with the trails nobody has said anything about —
+  which is still the open half — but it takes the finished ones out of the
+  population the metric has to guess over, which was the case it was worst at.
+  A freed slot is given to the most recently touched nested region and a nest
+  that empties gives its own slot back, so saying `done` buys back exactly the
+  room the guess had taken.
 - ~~**What a region looks like when its trail is a deep tree.**~~ **Settled: the
   structure is transient, and it is lineage rather than a tree.** See §11.
 - **Whether pinning should be explicit as well as implicit.** Moving a card pins

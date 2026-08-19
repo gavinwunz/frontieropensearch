@@ -54,6 +54,25 @@ async function goTo(url) {
   await BrowserTestUtils.browserLoaded(browser, false, url);
 }
 
+/**
+ * Run one verb and give back what its handler returned.
+ *
+ * `bar.run` reports on the whole line — `{type, ran: [...]}` — because a line
+ * may carry more than one command. A test asserting on a verb wants the
+ * handler's own answer, and comparing the report to a boolean silently passes
+ * nothing: every object is unequal to `true` and to `false` alike.
+ *
+ * @param {object} bar An `FOSCommandBar`.
+ * @param {string} verb The action word.
+ * @returns {*} What the handler returned.
+ */
+function runVerb(bar, verb) {
+  const outcome = bar.run(verb);
+  Assert.equal(outcome.type, "commands", `\`${verb}\` parsed as a command`);
+  Assert.equal(outcome.ran.length, 1, `and as exactly one`);
+  return outcome.ran[0].result;
+}
+
 registerCleanupFunction(() => {
   rail().close();
   FOSCommandBar.forWindow(window).marks.clear();
@@ -220,7 +239,7 @@ add_task(async function test_pillar_bs_verbs_are_wired_and_act_on_the_tree() {
   const trail = session();
   const bar = FOSCommandBar.forWindow(window);
 
-  for (const verb of ["up", "back", "branch", "graft", "name"]) {
+  for (const verb of ["up", "back", "branch", "graft", "name", "done"]) {
     Assert.ok(bar.actions.has(verb), `\`${verb}\` has a handler`);
   }
 
@@ -584,4 +603,154 @@ add_task(async function test_closing_a_panel_returns_the_keyboard_upwards() {
   );
 
   BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function test_done_finishes_the_trail_without_losing_it() {
+  const tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, PAGE_A);
+  const trail = session();
+  const bar = FOSCommandBar.forWindow(window);
+  await goTo(PAGE_B);
+
+  const finished = trail.activeTrailId;
+  const nodes = trail.store.nodes(finished).map(n => n.id);
+  Assert.greaterOrEqual(
+    nodes.length,
+    2,
+    "the fixture built a trail worth finishing"
+  );
+
+  Assert.equal(runVerb(bar, "done"), true, "`done` ran");
+
+  Assert.equal(
+    trail.store.isArchived(finished),
+    true,
+    "the trail is finished, which is what stops it being offered on return"
+  );
+  Assert.equal(
+    trail.activeTrailId,
+    null,
+    "and the user is between threads rather than still on the one they closed"
+  );
+  Assert.equal(
+    trail.store.nodes(finished).length,
+    nodes.length,
+    "nothing was deleted: `done` is not a delete"
+  );
+  Assert.equal(
+    tab.linkedBrowser.currentURI.spec,
+    PAGE_B,
+    "and the tab stays on the page it was showing — `done` is a statement " +
+      "about the thread, not about the window"
+  );
+
+  // The payoff: the next page is new work, not more of what was just filed.
+  await goTo(PAGE_C);
+  const next = trail.activeTrailId;
+  Assert.notEqual(next, finished, "the next navigation started a fresh trail");
+  Assert.equal(trail.store.isArchived(next), false);
+  Assert.equal(
+    trail.store.getNode(trail.currentNodeId).trail_id,
+    next,
+    "and the page landed on it"
+  );
+
+  BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function test_done_refuses_when_there_is_nothing_to_finish() {
+  const tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, PAGE_A);
+  const trail = session();
+  const bar = FOSCommandBar.forWindow(window);
+
+  const finished = trail.activeTrailId;
+  Assert.equal(runVerb(bar, "done"), true);
+
+  // Said twice. The trail is archived and no longer active, so there is nothing
+  // for the second one to act on — and it must not archive whatever comes next.
+  Assert.equal(
+    runVerb(bar, "done"),
+    false,
+    "a second `done` is refused rather than reaching past the trail it ended"
+  );
+  Assert.equal(trail.activeTrailId, null);
+
+  await goTo(PAGE_B);
+  Assert.notEqual(trail.activeTrailId, finished);
+  Assert.equal(
+    trail.store.isArchived(trail.activeTrailId),
+    false,
+    "the fresh trail was not caught by the refused command"
+  );
+
+  BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function test_done_takes_the_finished_trail_off_the_field() {
+  const tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, PAGE_A);
+  const trail = session();
+  const bar = FOSCommandBar.forWindow(window);
+  const field = FOSFieldSurface.forWindow(window);
+  await goTo(PAGE_B);
+
+  const finished = trail.activeTrailId;
+  field.sync();
+  Assert.ok(
+    field.model.cardsIn(finished).length,
+    "the trail had cards before it was finished"
+  );
+
+  runVerb(bar, "done");
+  field.sync();
+
+  Assert.equal(
+    field.model.regions().some(r => r.id === finished),
+    false,
+    "a region is a trail, so finishing the trail retires the region"
+  );
+  Assert.equal(field.model.cardsIn(finished).length, 0);
+
+  // And it stays gone. `sync` runs on every session change and places a card
+  // for every live node, so without the archived check the cards would come
+  // straight back on the next navigation.
+  await goTo(PAGE_C);
+  field.sync();
+  Assert.equal(
+    field.model.regions().some(r => r.id === finished),
+    false,
+    "the finished trail did not come back on the next sync"
+  );
+
+  BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function test_hydrate_never_resumes_onto_a_finished_trail() {
+  // A fresh window, because the branch under test only runs when a session has
+  // no active trail yet — which is true exactly once, at restore.
+  const win = await BrowserTestUtils.openNewBrowserWindow();
+  const fresh = FOSTrailSession.forWindow(win);
+  Assert.equal(fresh.activeTrailId, null, "a new window starts on no trail");
+
+  // `restorable()` already filters archived trails out of the records, so this
+  // hands them over the way only a caller with its own records could. The
+  // invariant is worth holding at the door regardless: landing on a trail the
+  // user finished would undo `done` silently, and silently is the problem.
+  fresh.hydrate({
+    trails: [
+      { id: 1, name: null, created_at: 10, updated_at: 900, archived_at: 950 },
+      { id: 2, name: null, created_at: 20, updated_at: 100, archived_at: null },
+    ],
+    nodes: [
+      { id: 1, trail_id: 1, parent_id: null, url: PAGE_A, created_at: 10 },
+      { id: 2, trail_id: 2, parent_id: null, url: PAGE_B, created_at: 20 },
+    ],
+  });
+
+  Assert.equal(
+    fresh.activeTrailId,
+    2,
+    "the older open trail wins over the newer finished one, so recency does " +
+      "not quietly reopen what `done` closed"
+  );
+
+  await BrowserTestUtils.closeWindow(win);
 });

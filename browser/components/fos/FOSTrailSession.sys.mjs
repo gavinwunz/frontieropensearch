@@ -347,6 +347,14 @@ export class FOSTrailSession {
     if (this.#activeTrailId === null) {
       let newest = null;
       for (const trail of this.store.trails()) {
+        // A finished trail is exactly the one not to land on. `restorable()`
+        // already keeps it out of the records, so this only bites when
+        // something else hydrated it — but resuming onto a trail the user
+        // closed would undo the verb silently, which is worse than the cost of
+        // one check.
+        if (trail.archived_at !== null) {
+          continue;
+        }
         if (!newest || trail.updated_at > newest.updated_at) {
           newest = trail;
         }
@@ -858,8 +866,60 @@ export class FOSTrailSession {
       return true;
     });
 
+    bar.actions.register("done", () => this.finishTrail());
+
     this.#syncMarks();
     return this;
+  }
+
+  /**
+   * `done`: finish the trail the user is on.
+   *
+   * Three things happen and no more. The trail is marked archived, so
+   * `restorable()` stops offering it back. Every browser sitting on it forgets
+   * that it was, so the next page opened there starts a fresh trail rather than
+   * adding to one its owner has called finished. And the recency list drops its
+   * nodes, because `back` walks that list and a finished trail is not somewhere
+   * to be walked into.
+   *
+   * Nothing is deleted and nothing is written to a node. The tab stays open on
+   * the page it is showing — `done` is a statement about the thread, not about
+   * the window, and closing what the user is reading because they filed it away
+   * would be the verb taking a liberty nobody asked for.
+   *
+   * An empty trail is refused rather than archived. There is nothing to finish,
+   * and archiving it would spend the user's word on a no-op while leaving them
+   * on a trail that is now invisible to the thing that restores it.
+   *
+   * @returns {boolean} Whether a trail was finished.
+   */
+  finishTrail() {
+    const trailId = this.#activeTrailId;
+    if (trailId === null || this.store.isArchived(trailId)) {
+      return false;
+    }
+    const nodes = this.store.nodes(trailId);
+    if (!nodes.length) {
+      return false;
+    }
+
+    this.store.archiveTrail(trailId);
+
+    for (const tab of this.#window.gBrowser?.tabs ?? []) {
+      const browser = tab.linkedBrowser;
+      if (this.#trailByBrowser.get(browser) === trailId) {
+        this.#trailByBrowser.delete(browser);
+        this.#nodeByBrowser.delete(browser);
+      }
+    }
+
+    const finished = new Set(nodes.map(n => n.id));
+    this.#recent = this.#recent.filter(id => !finished.has(id));
+    this.#activeTrailId = null;
+
+    this.#syncMarks();
+    this.#changed();
+    return true;
   }
 
   /**

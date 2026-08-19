@@ -357,8 +357,41 @@ export class FOSFieldSurface {
     // navigation the user just made and is by definition seen; every other
     // card placed in the same pass arrived somewhere they were not looking.
     const current = this.#session.currentNodeId;
+
+    // `done` first, and before anything is placed. A finished trail's region
+    // comes off the Field, which is the visible half of the verb: §3 caps the
+    // overview at nine and nests the rest by least-recent touch, so until now
+    // the only way a slot came free was the system guessing that a trail had
+    // been abandoned. Retiring before the placement loop also means a node of a
+    // finished trail cannot be placed and retired in the same pass.
+    for (const region of model.regions()) {
+      if (this.#session.store.isArchived(region.id)) {
+        model.retireTrail(region.id);
+        changed = true;
+        if (this.#regionId === region.id) {
+          // Zoomed into the trail that just ended: the overview is the only
+          // level left that still describes something. Set rather than call
+          // `showOverview`, so the pass renders once at the end like any other.
+          this.#level = LEVEL.OVERVIEW;
+          this.#regionId = null;
+          this.#focus = null;
+        }
+      }
+    }
+    // Focus is a card id at the region level and a region id at the overview,
+    // so it has to be checked against both — clearing it by card alone would
+    // drop the selection off every tile in the overview whenever any trail was
+    // finished.
+    if (changed && !this.#focusStillExists()) {
+      this.#focus = null;
+    }
+
     for (const node of this.#session.store.nodes()) {
-      if (node.dismissed_at !== null || model.cardForNode(node.id)) {
+      if (
+        node.dismissed_at !== null ||
+        model.cardForNode(node.id) ||
+        this.#session.store.isArchived(node.trail_id)
+      ) {
         continue;
       }
       try {
@@ -388,6 +421,21 @@ export class FOSFieldSurface {
     if (arrived && !this.isOpen) {
       this.#setUnseen(true);
     }
+  }
+
+  /**
+   * Whether `#focus` still names something on the Field.
+   *
+   * @returns {boolean}
+   */
+  #focusStillExists() {
+    if (this.#focus === null || this.#focus === "nest") {
+      return true;
+    }
+    return (
+      !!this.model.getCard(this.#focus) ||
+      this.model.regions().some(r => r.id === this.#focus)
+    );
   }
 
   // ---- what arrived while you were not looking ----------------------------

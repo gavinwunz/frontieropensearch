@@ -107,7 +107,20 @@ A named, saveable, exportable research thread.
 | `name` | TEXT | User-supplied; null until named. |
 | `created_at` | INTEGER | Unix ms. |
 | `updated_at` | INTEGER | Unix ms. |
-| `archived_at` | INTEGER | Null when active. |
+| `archived_at` | INTEGER | Null when active; set by `done`. |
+
+`archived_at` is written by the `done` verb and read by `restorable()`, which is
+the whole of its meaning: **a finished trail is not offered back at the next
+start.** Nothing else changes — the tree, the scroll offsets, the nodes and the
+context all survive, and the pages stay findable through the command bar by
+subject rather than by URL.
+
+It exists because recency cannot express it. A trail finished an hour ago and a
+trail paused an hour ago have the same `updated_at`, so without a second column
+the resumption list can be *ordered* but never *shortened*, and it is the only
+list in this schema a person has to scan rather than query. `updated_at` is
+therefore deliberately left alone when a trail is archived: finishing work is a
+statement about it, not more of it.
 
 ### `trail_node`
 

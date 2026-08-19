@@ -85,6 +85,40 @@ export class TrailStore {
     return trail;
   }
 
+  /**
+   * `done`: the trail is finished, so stop offering to resume it.
+   *
+   * Deliberately not a delete, and deliberately narrow. Everything the trail
+   * holds survives — the tree, the scroll offsets, the pages in the Context
+   * Engine — and the single thing that changes is that `restorable()` stops
+   * putting it in front of the user at the next start. That is what the column
+   * has always meant; it simply had no writer until now.
+   *
+   * The distinction it records is one recency cannot: a trail finished an hour
+   * ago and a trail paused an hour ago sort identically by `updated_at`, so
+   * without a word for "finished" the resumption list can only be ordered, never
+   * shortened. Saved collections stop being retrievable once they outgrow a
+   * glance, and this is the only signal in the system that comes from the person
+   * who knows.
+   *
+   * @param {number} id
+   */
+  archiveTrail(id) {
+    const trail = this.#trails.get(id);
+    if (!trail) {
+      throw new Error(`no such trail: ${id}`);
+    }
+    if (trail.archived_at !== null) {
+      return trail;
+    }
+    trail.archived_at = this.#now();
+    return trail;
+  }
+
+  isArchived(id) {
+    return this.#trails.get(id)?.archived_at != null;
+  }
+
   trails() {
     return [...this.#trails.values()];
   }

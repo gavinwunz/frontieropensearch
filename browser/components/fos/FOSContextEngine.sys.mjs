@@ -183,6 +183,8 @@ export class FOSContextEngine {
   #written = new Map();
   /** Database trail id → the name last written for it. */
   #trailNames = new Map();
+  /** Database trail ids already written as archived, so `done` writes once. */
+  #archivedTrails = new Set();
   /** Serialises writes so they land in the order they happened. */
   #queue = Promise.resolve();
 
@@ -457,6 +459,15 @@ export class FOSContextEngine {
               await store.labelContext(contextId, trail.name);
             }
           }
+        }
+        // `done` reaches the database the same way `name` does, because it is
+        // the same kind of fact: something the user said about a trail, mirrored
+        // on the next reconciliation rather than written on the command's own
+        // path. The set is what keeps it to one write — reconciliation runs on
+        // every session change, and an archived trail stays archived forever.
+        if (trail.archived_at !== null && !this.#archivedTrails.has(trailId)) {
+          await store.archiveTrail(trailId, trail.archived_at);
+          this.#archivedTrails.add(trailId);
         }
       }
 

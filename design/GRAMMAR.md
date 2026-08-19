@@ -176,6 +176,28 @@ list is deliberately small — every action must be worth a word.
 - `up` / `back <mark>` — move within the tree, never destroying a forward branch
 - `graft <mark>` — reattach a node elsewhere in the tree
 - `name <mark> <text>` — name a node or a trail, making it a first-class object
+- `done` — finish the trail you are on: it is kept, but no longer offered back
+
+  The one verb that takes no mark by design rather than by accident. The only
+  trail a user can address is the one they are on — nodes are what get marked —
+  and a verb offering a slot it can never be given is a verb the bar would
+  advertise and then refuse.
+
+  It is the counterpart of `dismiss` one level up. `dismiss` takes a page off
+  the Field and leaves it on its trail; `done` takes a trail off the Field and
+  leaves it in the store. Both are cheap because both are non-destructive, and
+  that is what makes them usable: nobody tidies a surface where tidying loses
+  things. The Field's §3 caps the overview at nine trails and nests the overflow
+  by least-recent touch, which is the system *guessing* which trails are
+  finished; `done` is the user saying so, and the freed slot goes to a nested
+  trail rather than sitting empty.
+
+  What it does not do is delete, and the pages it holds stay in the Context
+  Engine. Arc's auto-archive is the shape to avoid here: it fires on a clock
+  rather than on a fact about the work, cannot be switched off, and drops the
+  archived tab off every surface, so getting one back means retyping its URL.
+  Here the return path is the one the fork already has — you type the subject
+  and the bar finds the pages, because the engine kept what they were about.
 
 **Context Engine (2C)**
 - `context <mark>` — switch the active context, re-ranking the bar's suggestions

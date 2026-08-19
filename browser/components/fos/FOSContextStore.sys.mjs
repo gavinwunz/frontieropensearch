@@ -179,6 +179,26 @@ export class FOSContextStore {
   }
 
   /**
+   * `done`: mark a trail finished, so `restorable()` stops offering it.
+   *
+   * `updated_at` is deliberately left alone. It records when the trail last
+   * changed as a thread of work, and finishing it is a statement *about* that
+   * work rather than more of it — moving the timestamp would make every
+   * archived trail look freshly worked on to anything that reads recency,
+   * which is the one thing archiving exists to correct.
+   *
+   * @param {number} trailId
+   * @param {number} [now] Unix ms.
+   */
+  async archiveTrail(trailId, now = Date.now()) {
+    await this.#connection.execute(
+      `UPDATE trail SET archived_at = :now
+       WHERE id = :id AND archived_at IS NULL`,
+      { id: trailId, now }
+    );
+  }
+
+  /**
    * Record a page as a node on a trail.
    *
    * @param {object} fields

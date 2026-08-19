@@ -424,3 +424,60 @@ test("a restored trail is still an ordinary trail", () => {
   assert.equal(restored.getTrail(1).name, "yesterday");
   assert.equal(restored.path(child).length, 2, "and the spine is walkable");
 });
+
+// -------------------------------------------------------------- `done`
+
+test("archiving stamps the trail and nothing else", () => {
+  const store = new TrailStore({ now: fixedClock() });
+  const trailId = store.createTrail({ name: "reading" });
+  const root = store.addNode({ trailId, url: "https://a.invalid/" });
+  const child = store.visit(root, { url: "https://b.invalid/" });
+
+  assert.equal(store.isArchived(trailId), false);
+  const trail = store.archiveTrail(trailId);
+
+  assert.ok(trail.archived_at > 0);
+  assert.equal(store.isArchived(trailId), true);
+  assert.equal(trail.name, "reading", "the trail keeps its name");
+  assert.equal(
+    store.nodes(trailId).length,
+    2,
+    "and every page it holds, because this is not a delete"
+  );
+  assert.equal(store.getNode(child).parent_id, root, "the tree is intact");
+});
+
+test("archiving twice keeps the first timestamp", () => {
+  const store = new TrailStore({ now: fixedClock() });
+  const trailId = store.createTrail();
+  store.addNode({ trailId, url: "https://a.invalid/" });
+
+  const first = store.archiveTrail(trailId).archived_at;
+  assert.equal(
+    store.archiveTrail(trailId).archived_at,
+    first,
+    "when a trail was finished is a fact about the first time it was said"
+  );
+});
+
+test("archiving an unknown trail throws, like every other id in this file", () => {
+  const store = new TrailStore({ now: fixedClock() });
+  assert.throws(() => store.archiveTrail(9999), /no such trail/);
+  assert.equal(store.isArchived(9999), false);
+});
+
+test("an archived trail survives a hydrate round trip", () => {
+  const store = new TrailStore({ now: fixedClock() });
+  const trailId = store.createTrail();
+  store.addNode({ trailId, url: "https://a.invalid/" });
+  store.archiveTrail(trailId);
+
+  const revived = new TrailStore({ now: fixedClock() });
+  revived.hydrate({ trails: store.trails(), nodes: store.nodes() });
+
+  assert.equal(
+    revived.isArchived(trailId),
+    true,
+    "or the verb would last exactly one session"
+  );
+});

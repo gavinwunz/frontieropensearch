@@ -261,6 +261,98 @@ export class FieldModel {
     return [...this.#regions.values()];
   }
 
+  /**
+   * `done`: take a finished trail's region off the Field.
+   *
+   * A region *is* the trail, so ending the trail ends the region, and the cards
+   * go with it. This is not `dismiss` applied nine times: dismissal is a
+   * statement about one page, written on the node so the page can come back
+   * with `enter`, and writing it across a whole trail would leave every page
+   * looking individually discarded by a user who said something about the
+   * thread. Nothing is written to the nodes here — the trail's own
+   * `archived_at` already records what happened, and the tree is untouched.
+   *
+   * §3 caps the overview at nine regions and nests the overflow by least-recent
+   * touch. That is the system guessing which trails are done, and §10 leaves
+   * open that a trail parked deliberately is not a trail abandoned. This is the
+   * user answering the question directly, so a freed slot must actually be
+   * freed: the most recently touched nested region takes it, and a nest that
+   * empties gives its own slot back rather than sitting there as a permanent
+   * tax paid for a crowding that has since gone away.
+   *
+   * @param {number} trailId
+   * @returns {boolean} Whether there was a region to retire.
+   */
+  retireTrail(trailId) {
+    const region = this.#regions.get(trailId);
+    if (!region) {
+      return false;
+    }
+
+    for (const card of this.#cardsIn(trailId)) {
+      this.#cards.delete(card.id);
+      this.#cardsByNode.delete(card.node_id);
+    }
+
+    this.#regions.delete(trailId);
+    if (region.nested) {
+      this.#unnest(trailId);
+    } else if (region.slot !== null) {
+      this.#slots[region.slot] = null;
+      this.#promoteIntoSlot(region.slot);
+    }
+    this.#dissolveEmptyNest();
+    return true;
+  }
+
+  /**
+   * Drop a region from the nest's membership without giving it a slot.
+   *
+   * @param {number} regionId
+   */
+  #unnest(regionId) {
+    if (!this.#nest) {
+      return;
+    }
+    const at = this.#nest.regionIds.indexOf(regionId);
+    if (at !== -1) {
+      this.#nest.regionIds.splice(at, 1);
+    }
+  }
+
+  /**
+   * Give a freed slot to the nested region most recently touched — the inverse
+   * of `#collapseCandidates`, and the same metric read the other way, so a
+   * region cannot be collapsed and promoted by two different rules.
+   *
+   * @param {number} slot
+   */
+  #promoteIntoSlot(slot) {
+    if (!this.#nest?.regionIds.length) {
+      return;
+    }
+    const candidates = this.#nest.regionIds
+      .map(id => this.#regions.get(id))
+      .filter(Boolean)
+      .sort((a, b) => b.touched_at - a.touched_at || b.id - a.id);
+    const promoted = candidates[0];
+    if (!promoted) {
+      return;
+    }
+    this.#unnest(promoted.id);
+    this.#slots[slot] = promoted.id;
+    promoted.slot = slot;
+    promoted.nested = false;
+  }
+
+  /** A nest holding nothing is a slot spent on an empty box. */
+  #dissolveEmptyNest() {
+    if (this.#nest && !this.#nest.regionIds.length) {
+      this.#slots[this.#nest.slot] = null;
+      this.#nest = null;
+    }
+  }
+
   // ------------------------------------------------------------------ cards
 
   /**

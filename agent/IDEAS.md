@@ -3018,3 +3018,125 @@ Two smaller things it cost:
 - **The positive half is untestable on this box** and the test says so out loud
   rather than passing quietly. It asserts the degradation here and the real
   behaviour on any machine with audio hardware.
+
+## Run 41 — the column that had a filter and no writer
+
+The standing list was thin and its own item 1 was marked bounded value, so this
+run went looking rather than working down it. What it found was not an idea to
+add but a feature already half-present: `archived_at` has been in `trail` since
+`001-initial.sql`, `restorable()` has always filtered on it, and **nothing in
+the product ever set it**. The only writer in the tree was a test, reaching past
+the store's API with raw SQL to manufacture a state no user could reach.
+
+That is a specific and unusual kind of gap. It is not a missing feature — the
+schema, the query and the test were all written by someone who knew what the
+state was for. It is a missing *word*.
+
+### The retrieval numbers, and what they are and are not evidence for
+
+- **Found:** 2026-08-19. Surveys of bookmark and read-later behaviour: under 10%
+  of saved bookmarks are ever accessed; ~70% of saved links are never revisited;
+  read-later apps report open rates below 5%. The one with a number worth
+  keeping: **retrieval drops sharply once a collection exceeds what can be
+  scanned in about 60 seconds.**
+- **Verdict: adopt the constraint, reject the diagnosis.** The usual explanation
+  is the collector's fallacy — saving is cheap and feels like progress, reading
+  is expensive, so the pile grows. That diagnosis does not apply to this fork at
+  all, and it is important to say why rather than to borrow the conclusion: a
+  trail is not saved, it is *captured*. There is no act of intent to be mistaken
+  for progress, because there is no act.
+- **Which makes the fork's version of the problem the inverse one.** A bookmark
+  pile is everything the user *chose* and did not read. A trail pile is
+  everything that *happened*, chosen or not. The 60-second bound still binds —
+  `restorable()` is a list a person scans rather than queries — but the pressure
+  on it does not come from over-saving, and no amount of discouraging saves will
+  relieve it. The only lever is telling the finished from the merely old.
+
+### `updated_at` cannot express "finished", and that is the whole argument
+
+A trail finished an hour ago and a trail paused an hour ago carry the same
+`updated_at`. Recency can therefore *order* the resumption list but can never
+*shorten* it, and the list is the one surface in the schema that is scanned
+rather than queried. Every candidate signal the system could compute — dwell,
+node count, time since last visit — is a proxy for the same missing fact, and
+the person who has it is sitting right there. `done` asks them.
+
+This is also the honest reason the column existed with no writer: the filter is
+obvious once you have the state, and where the state comes from is the actual
+design problem.
+
+### Arc's auto-archive — **adapt the goal, reject all three mechanics**
+
+- **Found:** 2026-08-19, Arc's help pages and the round-ups of what people
+  missed after it was discontinued.
+- **What it is:** idle unpinned tabs archive on a cadence, 12 hours by default.
+  Widely liked — repeatedly described as the single feature that made tab
+  anxiety go away.
+- **Verdict: adopt that a browser should have an answer here at all; reject the
+  clock, the compulsion and the disposal.** Three specific mechanics, three
+  specific reasons:
+  1. **It fires on a clock**, which is a fact about elapsed time and not about
+     the work. It is the same guess `FIELD.md` §3 makes with least-recent-touch
+     and §10 already flags as possibly wrong — a trail parked deliberately is
+     not a trail abandoned.
+  2. **It cannot be switched off.** A rule the user cannot decline is one they
+     have to work around.
+  3. **The archived tab leaves every surface**, so recovering one means
+     retyping its URL. This is the failure that matters, and it is the one this
+     fork is best placed to avoid: the Context Engine already knows what those
+     pages were *about*, so the return path is typing the subject into the bar
+     rather than reconstructing an address. An archive you can only get back
+     into by knowing where you put it is a graveyard with extra steps.
+
+### What it cost to build, and the one shape that had to be got right
+
+Small, because every seam had a precedent: `name`'s bare form already means "the
+trail you are on", so `done` needed no mark; reconciliation already mirrors
+`name` to the database, so it mirrors `done` the same way.
+
+The one real decision was **not** implementing it as `dismiss` applied to every
+node. Writing `dismissed_at` across a trail would have reused a working path and
+been wrong twice over — it misreports what the user did (they said one thing
+about a thread, not nine things about pages), and it would come back looking
+discarded rather than filed if the trail were ever resumed. `archived_at` on the
+trail already said it. Nothing is written to a node.
+
+### The freed slot had to actually free something — **the run's finding**
+
+`FIELD.md` §3 caps the overview at nine regions and nests the overflow; the nest
+costs a slot of its own. The first draft of `retireTrail` removed the region and
+left the slot empty, which passes every test you would think to write and
+delivers none of the point: the user says `done` precisely because the overview
+is crowded, and the crowding is *in the nest*. So a freed slot goes to the most
+recently touched nested region — the same metric `#collapseCandidates` uses,
+read the other way, so a region cannot be collapsed by one rule and promoted by
+another — and a nest that empties gives its own slot back rather than sitting
+there as a permanent tax on a crowding that has gone.
+
+**Generalises:** a removal is not finished when the thing is gone. Anything that
+was displaced to make room for it has to be given the chance to come back, or
+the removal frees an accounting entry rather than the resource. Worth checking
+wherever eviction and admission are separate code paths.
+
+### It partly answers §10, from the other end
+
+§10's open question is whether least-recent-touch is the right collapse metric,
+and it was to be settled with dwell data. `done` does not settle it, but it
+changes the population: finished trails leave the Field entirely instead of
+being nested, so the metric no longer has to guess about the case it was worst
+at. What remains open is genuinely narrower — what to do with trails nobody has
+said anything about.
+
+### Still open
+
+- **There is no way back into a finished trail as itself.** Its pages are
+  findable by subject through the bar, which is the return path this fork is
+  built for and is strictly better than Arc's retype-the-URL, but re-entering
+  one starts a fresh trail rather than resuming the old tree. That is arguably
+  correct — returning to a subject later *is* new work — and it is deliberately
+  not decided here, because deciding it needs use rather than argument.
+- **No undo.** A mistaken `done` costs exactly one thing: the trail is not
+  offered at the next start. Nothing is deleted. That cost is small enough not
+  to buy a second verb at today's prices, and the reasoning is only sound
+  because the verb was kept narrow — if `done` ever grows a destructive half,
+  this has to be revisited first.

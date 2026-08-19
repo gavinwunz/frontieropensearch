@@ -510,3 +510,122 @@ test("a refused drag leaves the region the height it was", () => {
   assert.equal(result.reason, REFUSED.PINNED);
   assert.equal(region.height, before, "the region did not grow on a refusal");
 });
+
+// -------------------------------------------------------------- `done`
+
+test("retiring a trail takes its region and its cards off the Field", () => {
+  const { trails, field } = setup();
+  const { trailId, cards } = trailWith(trails, field, 3);
+  const other = trailWith(trails, field, 2);
+
+  assert.equal(field.retireTrail(trailId), true);
+
+  assert.equal(
+    field.regions().find(r => r.id === trailId),
+    undefined,
+    "the region is gone, because a region is the trail"
+  );
+  for (const card of cards) {
+    assert.equal(field.getCard(card.id), null);
+  }
+  assert.equal(
+    field.cards().length,
+    other.cards.length,
+    "and no other trail's cards went with it"
+  );
+});
+
+test("retiring writes nothing to the nodes: the tree is untouched", () => {
+  const { trails, field } = setup();
+  const { trailId } = trailWith(trails, field, 3);
+  const nodes = trails.nodes(trailId);
+
+  field.retireTrail(trailId);
+
+  assert.equal(trails.nodes(trailId).length, nodes.length);
+  assert.deepEqual(
+    trails.nodes(trailId).map(n => n.dismissed_at),
+    nodes.map(() => null),
+    "the pages were not dismissed one by one; the trail was finished"
+  );
+});
+
+test("retiring an unknown or already-retired trail is false, not an error", () => {
+  const { trails, field } = setup();
+  const { trailId } = trailWith(trails, field, 1);
+
+  assert.equal(field.retireTrail(trailId), true);
+  assert.equal(field.retireTrail(trailId), false);
+  assert.equal(field.retireTrail(9999), false);
+});
+
+test("a slot freed by `done` is given to the most recent nested trail", () => {
+  const { trails, field } = setup();
+  const ids = [];
+  for (let i = 0; i < 12; i++) {
+    const trailId = trails.createTrail();
+    ids.push(trailId);
+    field.place(trails.addNode({ trailId, url: `https://t${i}.invalid/` }));
+  }
+
+  const nested = field.regions().filter(r => r.nested);
+  assert.ok(nested.length, "the fixture is only meaningful once nesting bites");
+  const newest = nested.sort((a, b) => b.touched_at - a.touched_at)[0].id;
+
+  const slotted = ids.find(id => !field.regionFor(id).nested);
+  const slot = field.regionFor(slotted).slot;
+  field.retireTrail(slotted);
+
+  assert.equal(
+    field.regionFor(newest).slot,
+    slot,
+    "finishing a trail buys a slot back, rather than leaving a hole"
+  );
+  assert.equal(field.regionFor(newest).nested, false);
+});
+
+test("a nest emptied by `done` gives its own slot back", () => {
+  const { trails, field } = setup();
+  const ids = [];
+  for (let i = 0; i < 11; i++) {
+    const trailId = trails.createTrail();
+    ids.push(trailId);
+    field.place(trails.addNode({ trailId, url: `https://t${i}.invalid/` }));
+  }
+  assert.ok(
+    field.overview().some(s => s.kind === "nest"),
+    "the fixture is only meaningful once a nest exists"
+  );
+
+  // Finish everything that is nested, plus enough of the rest that the nest
+  // cannot refill from the promotions.
+  for (const id of ids) {
+    if (field.regions().find(r => r.id === id)?.nested) {
+      field.retireTrail(id);
+    }
+  }
+
+  assert.equal(
+    field.overview().some(s => s.kind === "nest"),
+    false,
+    "an empty nest is a slot spent on a box with nothing in it"
+  );
+  assert.equal(
+    field.overview().filter(s => s.kind === "region").length,
+    field.regions().length,
+    "and every surviving trail is on the plane rather than in the nest"
+  );
+});
+
+test("the region a retired trail had can be built again by navigating to it", () => {
+  const { trails, field } = setup();
+  const { trailId } = trailWith(trails, field, 2);
+  field.retireTrail(trailId);
+
+  // Nothing in the model forbids it: `done` is a statement the session acts
+  // on, and the Field's job is only to stop showing what the session archived.
+  const revived = trails.visit(trails.nodes(trailId)[0].id, {
+    url: "https://example.invalid/again",
+  });
+  assert.equal(field.place(revived).region_id, trailId);
+});

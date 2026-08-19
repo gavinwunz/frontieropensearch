@@ -383,13 +383,59 @@ add_task(async function test_an_archived_trail_does_not_come_back() {
   const store = await freshStore();
   const trailId = await store.addTrail({ now: 1000 });
   await store.addNode({ trailId, url: "https://example.invalid/" });
-  await store.connection.execute(
-    "UPDATE trail SET archived_at = 5 WHERE id = :id",
-    { id: trailId }
-  );
+  // Through the verb's own writer rather than raw SQL. The filter below was
+  // tested for a long time against a state nothing in the product could reach.
+  await store.archiveTrail(trailId, 5);
 
   const { trails } = await store.restorable();
   Assert.equal(trails.length, 0, "archiving is how a trail stops being open");
+  await store.close();
+});
+
+add_task(async function test_archiving_leaves_the_trail_and_its_recency() {
+  const store = await freshStore();
+  const trailId = await store.addTrail({ name: "reading", now: 1000 });
+  await store.addNode({ trailId, url: "https://example.invalid/" });
+
+  await store.archiveTrail(trailId, 7000);
+
+  const [row] = await store.connection.execute(
+    "SELECT name, updated_at, archived_at FROM trail WHERE id = :id",
+    { id: trailId }
+  );
+  Assert.equal(row.getResultByName("name"), "reading");
+  Assert.equal(row.getResultByName("archived_at"), 7000);
+  Assert.equal(
+    row.getResultByName("updated_at"),
+    1000,
+    "finishing a trail is a statement about the work, not more of it — moving " +
+      "updated_at would make every archived trail look freshly worked on"
+  );
+  Assert.equal(
+    (
+      await store.connection.execute(
+        "SELECT COUNT(*) AS n FROM trail_node WHERE trail_id = :id",
+        { id: trailId }
+      )
+    )[0].getResultByName("n"),
+    1,
+    "and the pages are still there to be found by subject"
+  );
+  await store.close();
+});
+
+add_task(async function test_archiving_twice_keeps_the_first_time() {
+  const store = await freshStore();
+  const trailId = await store.addTrail({ now: 1000 });
+
+  await store.archiveTrail(trailId, 7000);
+  await store.archiveTrail(trailId, 9000);
+
+  const [row] = await store.connection.execute(
+    "SELECT archived_at FROM trail WHERE id = :id",
+    { id: trailId }
+  );
+  Assert.equal(row.getResultByName("archived_at"), 7000);
   await store.close();
 });
 
