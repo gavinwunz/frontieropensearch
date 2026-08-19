@@ -1054,3 +1054,72 @@ driving the real download gave 0% → 100% → 0% → done. A bar that runs back
 is worse than no bar. `totalLoaded` is the cumulative field, so the line counts
 megabytes instead. The 30MB itself is measured too — 29,836,775 plus 478,156,
 the only two files the backend requests at d256.
+
+## Run 39 — 2026-08-19 — the cross-trail merge, offered rather than applied
+
+STATE's top item since run 36, and the one it had already refused to do
+silently. Shipped as an offer: `FOSContextMerge.sys.mjs`, `context.merged_into`
+(migration 002), and a first section in the context sidebar with two answers.
+730 browser-chrome checks, 261 node tests, 135 store checks, 17 gated checks
+against a real model — all green.
+
+**The plan in STATE was wrong, and finding that out was the first hour.** An
+accepted merge was to be recorded as `context_member.source = 'manual'`. It
+cannot be: `contextsForTrails` filters on `provenance` by construction, so
+membership written under any other source changes what a context *contains*
+without changing which context a trail *is in*. That ships as a sidebar showing
+the union of two enquiries while both trails go on resolving to themselves —
+wrong in the direction that reads as working. A merge is a fact about contexts,
+so it is a column on `context`, which also leaves every provenance row exactly
+as written.
+
+**The number had to be measured again, and the reason is the run-37 lesson one
+level up.** Run 36's 0.201 is one query against one query; a context is a set,
+so a merge score is an aggregate over many pairs and aggregates have their own
+distribution. `run39.sh` scores four rules over the eight-enquiry corpus cut in
+half — 8 pairs that should merge, 112 that should not — and reads each at the
+lowest threshold reaching precision 1.0, because F1 treats a missed merge and a
+wrong merge as equally bad and this feature does not.
+
+**`max` won the table and was rejected, which is the run's real finding.** It
+is an order statistic: it asks whether two contexts share *any* one question,
+so it climbs with the number of pairs compared whether or not the contexts are
+any more alike — and the corpus scored contexts of two queries where a real one
+holds many more. Measured rather than argued, by re-scoring at double the size:
+`max`'s different-enquiry p95 rises 73% and `top3`'s 45%, while **the mean's
+falls**. Hence the mean of every cross pair, floor 0.244. Two columns are also
+why this was visible at all — at the F1 optimum `max` is the *worst* of the
+four and at precision 1.0 it is the *best*, so a table with one column would
+have picked whichever rule the objective flattered.
+
+**Horvitz supplied the shape.** *Principles of Mixed-Initiative User
+Interfaces* (CHI '99) is the canonical treatment: an agent uncertain about a
+goal has three options, not two, and the middle one is to ask — dialogue owns a
+band of probabilities between silence and action. This fork's band is open at
+the top by construction, since provenance-before-inference means no confidence
+merges anything by itself, so the only threshold needing measurement is the
+bottom one. Two of the twelve principles did real work beyond the framing:
+timing is part of an offer's cost, which is why the offer is computed when the
+sidebar opens and never while browsing; and a rejection that does not stick is
+not a rejection, which is why declining is permanent and the button says so.
+
+**Driving it against a real model found what no table could.** The floor holds
+in both directions and more widely than the arithmetic suggested — Lisbon
+halves at 0.812, baking against keyboards offered nothing. But recall 0.5 is
+not spread evenly: `memex` and `sqlite` fall *under* the floor, and those are
+exactly run 36's known weak spots. **This works on what you were shopping for
+and not on what you were reading about**, which is worth saying plainly rather
+than reporting as a fraction.
+
+**And the same trap caught this project twice.** Needing a fixture that clears
+the floor, I wrote two fresh enquiries in the corpus's style — cycling and
+coffee. Neither matched its own other half, and coffee matched cycling at
+0.267: a false positive above the floor between two topics no person would
+confuse. Run 37 recorded this exact lesson after the `related` tier's first
+fixture failed. A bag-of-tokens model's opinion of invented text cannot be
+estimated by reading it, and fixtures now come only from the scored corpus. It
+also puts the floor's margin in perspective: precision 1.0 was over 112 corpus
+negatives, and the first arbitrary pair tried produced a false positive.
+
+Five gated attempts, four failing, none a repeat of the last — each was the
+test being wrong about the product rather than the reverse.

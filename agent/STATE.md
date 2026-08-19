@@ -23,6 +23,36 @@ one.
 
 ## Done
 
+- **The cross-trail merge is offered, measured and driven.** STATE's top item
+  since run 36 and now shipped. `FOSContextMerge.sys.mjs` is the pure half —
+  `MERGE_FLOOR = 0.244`, the **mean of every cross pair** at d256 — and
+  `FOSContextEngine.mergeOffer/acceptMerge/declineMerge` is the wired half. The
+  offer renders as the first section of the context sidebar, one candidate
+  never a list, and declining is permanent.
+
+  **The plan in this file was wrong and the code says why.** An accepted merge
+  was to be `context_member.source = 'manual'`; `contextsForTrails` filters on
+  `provenance` by construction, so that changes what a context *contains*
+  without changing which context a trail *is in* — both halves keep resolving
+  to themselves while the sidebar shows the union. It is `context.merged_into`
+  instead (migration 002, with `context_merge_declined`), which also leaves
+  every provenance row untouched.
+
+  **The threshold is a new measurement, not run 36's.** 0.201 was one query
+  against one query; a context is a set, so the score is an aggregate and needs
+  its own distribution. `run39.sh` scores four aggregation rules over eight
+  enquiries cut in half. Chosen on **precision, not F1** — a merge never
+  offered costs nothing, a wrong one spends attention. `max` tops the table and
+  is rejected: it is an order statistic, so doubling the context size lifts its
+  different-enquiry p95 by 73% while the mean's *falls*. Recall is ~0.5 at
+  precision 1.0 over 112 negatives, on 8 positives — read it as "about half".
+
+  Driven against a real model (`browser_zzmergeoffer.js`, 17 checks): Lisbon
+  halves 0.812, baking against keyboards offered nothing. **The misses are
+  concentrated, not spread** — `memex` and `sqlite` fall under the floor, which
+  are run 36's known weak spots. This works on what you were shopping for and
+  not on what you were reading about.
+
 - **The embedding pass is measured, wired, and driven.** `run36.sh` scores
   `potion-retrieval-32M` against the control this fork already ships — Jaccard
   overlap on the `normaliseIntent` tokens the store keeps — on 32 queries
@@ -539,6 +569,12 @@ current with the tree. `run36` is the embedding measurement and `run37` drives
 the tier built on it; both finished green. Their numbers are in `IDEAS.md`
 rather than in a picture.
 
+`run39.sh` is this run's: it carries the aggregation measurement *and* drives
+the offer built on it. Both green — 17 gated checks, 730 browser-chrome checks,
+261 node tests, 135 store checks. It took five attempts and each failure was a
+different wrong assumption in the test rather than a repeat, which is the rule
+working.
+
 `run37.sh` now also covers the `model` verb against a real cache, and that is
 where it earns its keep: it failed three times this run on things no stub could
 see. The gated file is the only place in the tree that can ask "did the thing
@@ -563,21 +599,15 @@ pointed at it, because mochitest kills the process on a non-local connection.
 The phase plan is complete, so nothing pulls the next run in a particular
 direction. Ordered by value.
 
-1. **Offering a cross-trail context merge.** The measurement refuses to do it
-   silently — best precision 0.756, so one in four merges above the threshold
-   would be wrong — and `context_member.source` is what keeps an accepted offer
-   tellable apart from provenance. This is the second consumer of the same
-   engine and needs no new infrastructure.
-
-2. **The two narrow defects.** The active card can have no thumbnail, and
+1. **The two narrow defects.** The active card can have no thumbnail, and
    closing the rail while the Field is open leaves Escape with nowhere to go.
    Both small, both real, both cheap.
 
-3. **The bare tap for a voice turn.** `GRAMMAR.md` §9 carries it. Deliberately
+2. **The bare tap for a voice turn.** `GRAMMAR.md` §9 carries it. Deliberately
    unbuilt: a mis-tap opens the microphone for the whole thirty-second
    deadline, and how often that happens is a question about use.
 
-4. **Sustained resize of the crowded overview.** Recorded in `IDEAS.md` run 32
+3. **Sustained resize of the crowded overview.** Recorded in `IDEAS.md` run 32
    and *not* solved: the burst is fixed (53ms → 1.19ms) but one rebuild is
    18.27ms p50, longer than a frame, so continuous resizing of the worst case
    the design permits still costs ~21ms a frame over the control. The fix is to
@@ -585,21 +615,66 @@ direction. Ordered by value.
    value — it is the deliberate worst case, and dragging a window edge with the
    overview up is rare.
 
-5. **Why this build has no remote tabs.** Three upstream urlbar files fail on it
+4. **Why this build has no remote tabs.** Three upstream urlbar files fail on it
    and the fork is not what breaks them. The next step is
    `UrlbarProviderRemoteTabs.isActive` in a driven browser with
    `services.sync.username` set, not more reading.
 
-6. **The rails still overlay the page.** Run 32 took them off the *toolbar*,
+5. **The rails still overlay the page.** Run 32 took them off the *toolbar*,
    which was never a deliberate trade; covering the page still is, and STATE has
    always said it belongs with the Field's restructure rather than piecemeal.
    `--fos-chrome-block-start` makes taking layout space a smaller step than it
    was, which is worth knowing when that restructure comes.
 
-7. **The 17 timed-out urlbar files, if they are ever worth it**, and **a
+6. **The 17 timed-out urlbar files, if they are ever worth it**, and **a
    region's height is a ratchet** (`FIELD.md` §6, open rather than a defect).
 
 ## Found this run, not yet chased
+
+- **A plan recorded in STATE is not a design, and this one was wrong.** "An
+  accepted offer is told apart from provenance by `context_member.source`" sat
+  here for three runs reading like a settled decision, and it does not work:
+  `contextsForTrails` filters on `provenance`, so a merge written as membership
+  changes what a context contains and not which context a trail is in. It would
+  have shipped as a sidebar showing the union while both trails stayed in their
+  own contexts — wrong in the direction that looks like working. **Re-derive a
+  plan against the code before building it**, especially one written down
+  before the code it depends on existed.
+
+- **A fixture is a measurement, and this project has now walked into that twice.**
+  Run 37 recorded it after the `related` tier's first fixture scored 0.159
+  against a floor of 0.173. This run needed an enquiry that clears the merge
+  floor, wrote two fresh ones in the corpus's style, and got a pair that failed
+  to match itself plus **coffee matching cycling at 0.267** — a false positive
+  above the floor between topics nobody would confuse. A bag-of-tokens model's
+  opinion of invented text cannot be estimated by reading it. Draw fixtures from
+  the scored corpus or score them first.
+
+  It also says something the sweep could not: precision 1.0 was over 112
+  *corpus* negatives, and the first arbitrary pair tried produced a false
+  positive. The floor's real-world margin is thinner than the table implies.
+
+- **The ranking of aggregation rules is a property of the operating point, not
+  of the rules.** At the F1 optimum `max` was the worst of four; at precision
+  1.0 it was the best. Had the measurement reported one column it would have
+  picked whichever rule the objective flattered, and the report would have
+  looked equally confident either way. Report the curve, or at least both ends
+  of it, wherever a threshold is being chosen.
+
+- **An order statistic cannot carry a threshold across a change of size.**
+  `max` and `top3` climb with the number of pairs compared whether or not the
+  things compared are any more alike, so a floor read off two-query contexts is
+  read off the wrong context size — run 37's mistake with a different variable.
+  Measured rather than argued by re-scoring at double the size. Anything else
+  in this tree that thresholds a max, a top-k or a "best match" should be
+  checked the same way.
+
+- **Best-effort is right for a product and hostile to a test.** `mergeOffer`
+  answers "nothing" for a load that has not finished, which is correct — a
+  suggestion this fork never promised must not break a panel — and it makes a
+  test racing the engine indistinguishable from the model having an opinion.
+  Any best-effort path needs its readiness asserted in setup rather than
+  inferred from its output.
 
 - **A test double is a claim about somebody else's API, and it goes stale in
   the direction of whatever was convenient to write.** `browser_voice.js`
@@ -1278,6 +1353,15 @@ only computed style in a real window can see it, which is what
 <!-- Task name → consecutive failures. At 3, stop retrying the same way, write the
      analysis below, and change approach or task. -->
 
+Merge offer: **0 — closed green at `run39j`.** Five gated attempts, four of
+them failing, and not one was a retry of the previous shape: identical query
+text across tasks matching at 1.0; the corpus's weak enquiries falling under
+the floor; invented fixtures that did not clear it *and* produced a false
+positive; a count assertion whose premise about queries-per-navigation was
+wrong; a race against the engine load. Every one was the test being wrong about
+the product rather than the product being wrong, which is what a gated run
+against a real model is for.
+
 ASR measurement: **0 — closed green at `run29`.** It took five attempts and
 four of them failed, which is worth keeping as the record of how the rule
 behaves when it is working. `run25` died on `Cu.now`; `run26` on an unnamed
@@ -1306,6 +1390,37 @@ repeated failure even when each run has a new explanation for it.
 
 ## Decisions taken
 
+- 2026-08-19 — **A merge is a fact about contexts, never about membership.**
+  `context.merged_into`, not `context_member.source`. Provenance decides which
+  context a trail is in and the merge is a second statement layered over it, so
+  every provenance row survives untouched and "why is this page here" still
+  answers. Invariant: `merged_into` never names a merged context.
+- 2026-08-19 — **There is no confidence at which a merge happens by itself.**
+  Horvitz's three options are inaction, dialogue and action; this fork's band is
+  open at the top, so `p*D,A` is unreachable by construction and the only
+  threshold that had to be measured is the bottom one. Provenance-before-
+  inference is the reason. `IDEAS.md` run 39.
+- 2026-08-19 — **A threshold for an offer is chosen on precision, not F1.** F1
+  treats a missed merge and a wrong merge as equally bad and this feature does
+  not: a merge never offered costs the user nothing they had. So recall ~0.5 is
+  accepted deliberately in exchange for no observed false positive.
+- 2026-08-19 — **One offer, never a list.** An offer is an interruption and
+  three at once is a dialog box asking the user to do the browser's filing.
+  Horvitz's eighth principle — doing less, correctly, under uncertainty.
+- 2026-08-19 — **Declining a merge is permanent.** `context_merge_declined`
+  rather than a session flag, and the button says "and stop asking about these
+  two" rather than "not now", because there is no later. An offer that returns
+  after being refused proves the first was not listened to.
+- 2026-08-19 — **The merge offer stays at d256 although d512 is better at it.**
+  d512 reaches precision 1.0 at recall 0.75 against d256's 0.5. The weights are
+  a 30MB download this fork asks for by name and run 38 settled the consent
+  around that number; doubling it to raise an offer's recall is not a trade a
+  user would recognise as theirs. The offer is a second consumer of weights
+  already on the machine and is priced accordingly.
+- 2026-08-19 — **The offer is computed when the sidebar opens, never on the
+  navigation path.** The timing of an offer is part of its cost (Horvitz's third
+  principle); opening that panel is a voluntary glance at the same question.
+  Same argument as run 22's background-arrival signal.
 - 2026-08-19 — **A stored yes is consent to a state, never to an action.**
   `browser.fos.suggest.semanticTier` being on does not authorise a transfer
   now; it records that the weights are here and wanted. So `ensure` never
