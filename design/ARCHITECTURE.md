@@ -452,10 +452,10 @@ alternatives were rejected:
   the listener is handed.
 
 Landing on the right node needs a second thing: which node a history entry
-stands for. That mapping is exact and cheap because re-entry replaces the whole
-session history with a single entry (`enter` calls `setTabState` with one), so
-every entry above index 0 was appended by a navigation that also created a node.
-The map is per browser, keyed by index, and written from one place.
+stands for. That mapping is exact and cheap because every entry the chain holds
+was appended by a navigation that came through the same method first, so an
+index that is in range names the node that is really there. The map is per
+browser, keyed by index, and written from one place.
 
 Stale entries in it are deliberately not pruned, which reads like an oversight
 and is not: an index is only readable by traversing to it, that needs a session
@@ -467,10 +467,50 @@ new tab page — and that is safe for the same reason it is invisible: the guard
 sits above every branch, so a traversal *onto* such a page returns before the
 map is consulted, exactly as the navigation onto it did.
 
-What is still missing is the other half, and it is a §5 question rather than a
-correctness one: the gesture now moves through the tree correctly, but Back and
-Forward remain reachable only by hand. `back` is a verb and comes close; there
-is no `forward` at all.
+### 7.1 The other half: one movement, not two that agree
+
+Moving through the tree correctly left the §5 question open — Back and Forward
+were still reachable only by hand — and the obvious repair was wrong. `back`
+existed and came close, which is exactly what made "call `back` the word for
+`Browser:Back`" tempting and false: the verb stepped the pages the user had
+stood on, the gesture stepped one tab's chain, and after a branch they
+disagreed. Two movements under one name is worse than one movement with no name.
+
+**So the gesture runs the verb**, rebound on `BrowserCommands.back` and
+`.forward` rather than on the four `<key>` elements, because the buttons, the
+context menu, the mouse's side buttons, the swipe and `Backspace` all arrive
+there too. `browser.fos.trails.replacesLinearHistory` reverses it everywhere at
+once. `forward` became the seventeenth verb in the same change; `GRAMMAR.md`
+§2's trails block has the argument for why it takes no target.
+
+Making the verb fit to be the gesture took two things.
+
+**Re-entry gained a second way in.** `enter` replaced the whole session history
+with one entry, on the sound argument that traversing would truncate the forward
+branch — but that made the chain collateral on every move, and once the most
+common gesture in the browser runs this verb, every press would have rebuilt the
+tab from a stored blob: no bfcache, a fresh load of a page the user was on a
+second ago, and `history.length` stuck at 1 for content reading it. So a node
+that is still an entry of the target tab's chain is traversed to, and only a node
+the chain cannot represent — another branch, another trail — is replayed. Trails
+are a layer over session history rather than a replacement for it, and truncation
+on the *next* navigation costs nothing here because the branch it drops from the
+chain stays in the tree.
+
+**`back` gained a cursor.** It had been reading a visit log and appending its own
+move to it, so the second press found the page it had just left: two presses
+returned you to where you started. The log is now a back-stack with an index,
+one per trail, and the cursor rather than a flag is what tells a walk from a
+move — which matters because a walk lands twice, once from `enter` and once from
+the traversal's own location change.
+
+Per trail is the part a test found rather than an argument. A window-wide stack
+made `back` a move *between* trails: close a card and press it and the page you
+closed is restored over the one you are reading. And where a trail has no step to
+offer, the gesture falls through to the chain, which still knows the answer for a
+page with no node, a forgotten one, a restored window, or the first page of a
+fresh trail. That fall-through is what keeps this a replacement of a movement
+rather than a removal of one.
 
 Upstream Firefox guidance in `AGENTS.md` and `docs/` still applies to everything
 below that line.

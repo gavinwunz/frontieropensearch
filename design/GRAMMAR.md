@@ -200,10 +200,11 @@ sentences: it says prose is anything not *beginning* with an action word, so
 hit `is`, and came back a syntax error. The user asked the most natural question
 they could and got nothing.
 
-This is not a corner case, because ten of the fifteen action words are
-ordinary English. `back pain`, `field of view`, `branch prediction`, `up arrow
-unicode`, `context switching in linux`, `pack rat`, `name generator`, `model
-railway`, `enter the dragon`, `stop motion animation` — all of them collided.
+This is not a corner case, because eleven of the seventeen action words are
+ordinary English. `back pain`, `forward guidance`, `field of view`, `branch
+prediction`, `up arrow unicode`, `context switching in linux`, `pack rat`,
+`name generator`, `model railway`, `enter the dragon`, `stop motion animation` —
+all of them collided.
 
 So the test is the whole line, not the first word:
 
@@ -250,6 +251,7 @@ list is deliberately small — every action must be worth a word.
 **Trails (2B)**
 - `branch` — start a sibling from the current node
 - `up` / `back <mark>` — move within the tree, never destroying a forward branch
+- `back` / `forward` — step along the walk you actually made
 - `graft <mark>` — reattach a node elsewhere in the tree
 - `name <mark> <text>` — name a node or a trail, making it a first-class object
 - `done` — finish the trail you are on: it is kept, but no longer offered back
@@ -258,6 +260,26 @@ list is deliberately small — every action must be worth a word.
   trail a user can address is the one they are on — nodes are what get marked —
   and a verb offering a slot it can never be given is a verb the bar would
   advertise and then refuse.
+
+  **Back and forward are time; `up` is structure — and that is the whole of why
+  `forward` takes no target.** In the tree the forward direction is plural, and
+  for three runs the keyset manifest gave that as the reason `Browser:Forward`
+  could not simply be given a word. It is the right objection to a *structural*
+  forward, and this fork does not have one: `up` is the parent, which leaves
+  back and forward free to be steps along the walk the user made, and a walk has
+  one future however many children a node has. Nyxt, the one shipped browser
+  with a history tree, is the control — its backwards *is* the parent, so it
+  needs three commands to say forward and the user must know which of the three
+  they meant before they can ask.
+
+  The plural forward is `back <mark>`, which has had a word since marks landed
+  and reaches any node rather than only the ones ahead. A second spelling of it
+  would be a synonym the bar has to teach twice.
+
+  A step stays on the trail it started on. A trail is this fork's unit of place
+  — it is what the rail draws, what marks address, what `done` finishes — so
+  leaving one is `enter`, `field` and `context`, deliberate acts with their own
+  words, and never something a back gesture does by itself.
 
   It is the counterpart of `dismiss` one level up. `dismiss` takes a page off
   the Field and leaves it on its trail; `done` takes a trail off the Field and
@@ -419,6 +441,32 @@ actually been built as specified:
    user was arriving at *from* — so the tree grew a spine nobody browsed. It
    was found by counting the keyset, not by using the browser, and it had been
    there since the pillar landed. See `ARCHITECTURE.md` §7.
+
+   **Discharging it took a rebinding, not a word.** The obvious repair — say
+   that `back` is the word for `Browser:Back` — is the "declaring covered" the
+   manifest entry itself warned against, because they were two different
+   movements: the verb steps the pages the user stood on, the gesture steps one
+   tab's session history chain, and after a branch they disagree. Two movements
+   under one name is worse than one movement with no name.
+
+   So the gesture runs the verb. The rebinding is on `BrowserCommands.back` and
+   `.forward` rather than on the four `<key>` elements, because the keys are not
+   the only way to ask — the nav-bar buttons, the context menu, the mouse's side
+   buttons, the touchpad swipe and `Backspace` under `browser.backspace_action`
+   all arrive there — and rebinding the keyboard alone would have replaced one
+   unvoiced movement with two that disagree depending on which hand you used.
+   `browser.fos.trails.replacesLinearHistory` gives the chain's own back and
+   forward back on every one of those surfaces at once.
+
+   Two things keep that from being a removal rather than a replacement. Where
+   the trail has no step — a page with no node, a forgotten one, a restored
+   window, the first page of a fresh trail — the gesture falls through to the
+   chain, which still knows the answer. And where the node *is* an entry of the
+   tab's chain, re-entry traverses to it rather than replaying a stored blob, so
+   the common case is the load Firefox would have done: the bfcache still works,
+   and `history.length` stays honest for content that reads it. Trails are a
+   layer over session history, not a replacement for it, and a layer that
+   flattened the thing underneath it on every press would not be one.
 
    ### 5.1.1 The keyset manifest
 

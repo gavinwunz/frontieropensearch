@@ -143,7 +143,10 @@ add_task(async function test_the_stack_truncates_and_the_tree_does_not() {
     "and back is the page the new one was opened from, not one walked through"
   );
 
-  Assert.ok(trail.store.getNode(second), "the page walked past is still a node");
+  Assert.ok(
+    trail.store.getNode(second),
+    "the page walked past is still a node"
+  );
   Assert.ok(trail.store.getNode(third), "and so is the one past that");
   Assert.equal(
     trail.store.children(first).length,
@@ -265,7 +268,6 @@ add_task(async function test_a_traversable_node_is_traversed_to() {
   // blob: no bfcache, a fresh load, and `history.length` stuck at 1 for content
   // that reads it.
   const tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, PAGE_A);
-  const trail = session();
   await goTo(PAGE_B);
   await goTo(PAGE_C);
 
@@ -283,4 +285,44 @@ add_task(async function test_a_traversable_node_is_traversed_to() {
   Assert.equal(length, 3, "so a page reading its own history sees three");
 
   BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function test_a_walk_stays_on_the_trail_it_started_on() {
+  // The half a test found rather than an argument. One window-wide stack made
+  // `back` a move between trails: the page you closed would be restored over
+  // the one you are reading, and pressing it after a tab switch would switch
+  // back. A trail is this fork's unit of place, so it is what a step through
+  // time steps within — leaving one is `enter`, `field` and `context`, which
+  // are deliberate acts with their own words.
+  const first = await BrowserTestUtils.openNewForegroundTab(gBrowser, PAGE_A);
+  const trail = session();
+  await goTo(PAGE_B);
+  const leftBehind = trail.currentNodeId;
+
+  const second = await BrowserTestUtils.openNewForegroundTab(gBrowser, PAGE_C);
+  const started = trail.currentNodeId;
+  Assert.notEqual(
+    trail.store.getNode(started).trail_id,
+    trail.store.getNode(leftBehind).trail_id,
+    "the new tab started a trail of its own"
+  );
+
+  Assert.equal(
+    trail.canWalk("back"),
+    false,
+    "a fresh trail has nothing behind it, however much the window has done"
+  );
+  Assert.equal(
+    await trail.walk("back"),
+    false,
+    "so the walk refuses rather than reaching into the other trail"
+  );
+  Assert.equal(
+    trail.currentNodeId,
+    started,
+    "and the page the user is reading is still the page on screen"
+  );
+
+  BrowserTestUtils.removeTab(second);
+  BrowserTestUtils.removeTab(first);
 });

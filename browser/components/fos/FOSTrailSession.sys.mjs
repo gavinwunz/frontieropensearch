@@ -137,22 +137,33 @@ export class FOSTrailSession {
   // Kept so that a traversal can find the node it is landing on rather than
   // inventing one; see the `LOAD_CMD_HISTORY` branch in `onLocationChange`.
   #historyByBrowser = new WeakMap();
-  // The temporal back-stack: the nodes this window has stood on, oldest first,
-  // with `#cursor` pointing at the one it is standing on now. A back-stack and
-  // a visit log are different objects and this component had the second while
-  // reading it as the first — `back` appended its own move, so the next `back`
-  // found the page it had just left and went there, and two presses returned
-  // you to where you started. Session history has an index for this reason.
+  // One temporal back-stack per trail: `{ recent, cursor }`, where `recent` is
+  // the nodes stood on with the oldest first and `cursor` points at the one
+  // being stood on now.
   //
-  // It truncates on arrival, like every browser's, and **this is the only
-  // browser where that costs nothing**: the pages walked past are nodes in the
-  // tree, lettered and on the rail, one `back <mark>` away. The complaint that
+  // A back-stack and a visit log are different objects, and this component had
+  // the second while reading it as the first — `back` appended its own move, so
+  // the next `back` found the page it had just left and went there, and two
+  // presses returned you to where you started. Session history has an index for
+  // this reason.
+  //
+  // Per trail rather than per window, and that is the half a test found rather
+  // than an argument. One window-wide list makes `back` a move between trails:
+  // close a card and press it and the page you closed is restored *over* the
+  // one you are reading, and switching tabs and pressing it switches back. A
+  // trail is this fork's unit of place — it is what the rail draws, what marks
+  // address, what `done` finishes — so it is what a step through time steps
+  // within. Leaving one is `enter`, `field` and `context`: deliberate acts with
+  // their own words, and never something a back gesture does by itself.
+  //
+  // Each stack truncates on arrival, like every browser's, and **this is the
+  // only browser where that costs nothing**: the pages walked past are nodes in
+  // the tree, lettered and on the rail, one `back <mark>` away. The complaint
   // pillar B exists to answer is never "the stack truncated", it is "the pages
   // are gone". A log that appended instead would answer "where was I before
   // this page" with a page walked *through* rather than come *from* — a lie
   // about time, told to preserve a structure that is already preserved better.
-  #recent = [];
-  #cursor = -1;
+  #stacks = new Map();
   #activeTrailId = null;
   #attached = false;
 
@@ -1149,8 +1160,8 @@ export class FOSTrailSession {
    * Three things happen and no more. The trail is marked archived, so
    * `restorable()` stops offering it back. Every browser sitting on it forgets
    * that it was, so the next page opened there starts a fresh trail rather than
-   * adding to one its owner has called finished. And the recency list drops its
-   * nodes, because `back` walks that list and a finished trail is not somewhere
+   * adding to one its owner has called finished. And its back-stack goes with
+   * it, because `back` walks that stack and a finished trail is not somewhere
    * to be walked into.
    *
    * Nothing is deleted and nothing is written to a node. The tab stays open on
@@ -1237,15 +1248,41 @@ export class FOSTrailSession {
    * @param {number} nodeId The node now being stood on.
    */
   #arrived(nodeId) {
-    if (this.#recent[this.#cursor] === nodeId) {
+    const stack = this.#stackFor(nodeId);
+    if (!stack || stack.recent[stack.cursor] === nodeId) {
       return;
     }
-    this.#recent.length = this.#cursor + 1;
-    this.#recent.push(nodeId);
-    if (this.#recent.length > 200) {
-      this.#recent.splice(0, this.#recent.length - 200);
+    stack.recent.length = stack.cursor + 1;
+    stack.recent.push(nodeId);
+    if (stack.recent.length > 200) {
+      stack.recent.splice(0, stack.recent.length - 200);
     }
-    this.#cursor = this.#recent.length - 1;
+    stack.cursor = stack.recent.length - 1;
+  }
+
+  /**
+   * The back-stack of the trail a node is on, created on first arrival.
+   *
+   * @param {?number} nodeId A node id.
+   * @returns {?object} Its trail's stack, or null if the node is gone.
+   */
+  #stackFor(nodeId) {
+    const trailId =
+      nodeId === null ? null : this.store.getNode(nodeId)?.trail_id;
+    if (trailId === undefined || trailId === null) {
+      return null;
+    }
+    let stack = this.#stacks.get(trailId);
+    if (!stack) {
+      stack = { recent: [], cursor: -1 };
+      this.#stacks.set(trailId, stack);
+    }
+    return stack;
+  }
+
+  /** The stack the window is standing in, or null when it is nowhere. */
+  #currentStack() {
+    return this.#stackFor(this.currentNodeId);
   }
 
   /**
@@ -1259,10 +1296,16 @@ export class FOSTrailSession {
    * @param {Set<number>} gone Node ids no longer in the store.
    */
   #dropFromStack(gone) {
-    const standing = this.#recent[this.#cursor] ?? null;
-    this.#recent = this.#recent.filter(id => !gone.has(id));
-    const at = standing === null ? -1 : this.#recent.lastIndexOf(standing);
-    this.#cursor = at === -1 ? this.#recent.length - 1 : at;
+    for (const [trailId, stack] of this.#stacks) {
+      const standing = stack.recent[stack.cursor] ?? null;
+      stack.recent = stack.recent.filter(id => !gone.has(id));
+      if (!stack.recent.length) {
+        this.#stacks.delete(trailId);
+        continue;
+      }
+      const at = standing === null ? -1 : stack.recent.lastIndexOf(standing);
+      stack.cursor = at === -1 ? stack.recent.length - 1 : at;
+    }
   }
 
   /**
@@ -1277,11 +1320,13 @@ export class FOSTrailSession {
    * The fall-through is the part that makes the rebinding safe. A page the
    * store has no node for is a real page in a real tab: `isCapturable` refuses
    * `about:blank` and the new tab page, forgetting deletes nodes and leaves the
-   * tab's history untouched by design, and a window restored from a previous
-   * profile has entries older than this session's stack. In every one of those
-   * the chain knows where back goes and the trail does not, and a rebinding
-   * that answered "nowhere" would have made the browser's most basic gesture
-   * silently do nothing to keep a rule about words.
+   * tab's history untouched by design, a window restored from a previous
+   * profile has entries older than this session's stacks, and the first page of
+   * a fresh trail has nothing behind it on that trail however much the window
+   * has done elsewhere. In every one of those the chain knows where back goes
+   * and the trail does not, and a rebinding that answered "nowhere" would have
+   * made the browser's most basic gesture silently do nothing to keep a rule
+   * about words.
    *
    * @param {string} direction `"back"` or `"forward"`.
    * @returns {boolean} Whether `walk` would move.
@@ -1293,15 +1338,17 @@ export class FOSTrailSession {
     );
   }
 
-  /** The node stood on before this one, or null at the bottom of the stack. */
+  /** The node stood on before this one on this trail, or null at the bottom. */
   #previousNode() {
-    return this.#cursor > 0 ? this.#recent[this.#cursor - 1] : null;
+    const stack = this.#currentStack();
+    return stack?.cursor > 0 ? stack.recent[stack.cursor - 1] : null;
   }
 
-  /** The node walked back from, or null when already at the present. */
+  /** The node walked back from on this trail, or null at the present. */
   #nextNode() {
-    return this.#cursor >= 0 && this.#cursor < this.#recent.length - 1
-      ? this.#recent[this.#cursor + 1]
+    const stack = this.#currentStack();
+    return stack && stack.cursor >= 0 && stack.cursor < stack.recent.length - 1
+      ? stack.recent[stack.cursor + 1]
       : null;
   }
 
@@ -1331,11 +1378,12 @@ export class FOSTrailSession {
     if (target === null) {
       return false;
     }
-    const was = this.#cursor;
-    this.#cursor += delta;
+    const stack = this.#currentStack();
+    const was = stack.cursor;
+    stack.cursor += delta;
     const moved = await this.enter(target);
     if (!moved) {
-      this.#cursor = was;
+      stack.cursor = was;
     }
     return moved;
   }
