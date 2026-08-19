@@ -4761,3 +4761,44 @@ Decide from use, not from here. Record which one the count actually forces.
 `browser/components/screenshots/ScreenshotsOverlayChild.sys.mjs`,
 github.com/philc/vimium, github.com/david-tejada/rango,
 github.com/cursorless-dev/cursorless (hats), `dom/webidl/Document.webidl`.
+
+### Nyxt splits forward in two, and that is the evidence that forward is two questions
+- **Found:** 2026-08-19, Nyxt's command reference and `atlas-engineer/history-tree`;
+  https://nyxt.atlas.engineer/documentation
+- **What it is:** Nyxt ships `history-backwards` (go to the *parent* node),
+  `history-forwards` (go one step down the branch the owner came from),
+  `history-forwards-query` (pick among this node's children) and
+  `history-forwards-all-query` (pick from the whole forward subtree). Backwards is one
+  command; forwards is three.
+- **Verdict:** adopt the diagnosis, reject the shape.
+- **Why:** It confirms the keyset manifest's claim that "in a tree the forward direction is
+  plural" — the only browser that has actually shipped a history tree needed three commands
+  to say forward and one to say back. But three words for one direction fails criterion 2 on
+  its own terms: the user has to know which of the three they meant *before* they can ask.
+  Nyxt needs them because its backwards is **structural** — it goes to the parent — so its
+  forwards must also be structural, and structure branches.
+  This fork already spends a word on structure: `up` is the parent. That frees `back` to be
+  **temporal**, and time does not branch. Once back is a cursor over the visit log rather
+  than a walk up the tree, `forward` is exactly its inverse and needs no target — the plural
+  forward, "which of this node's children", is `back <mark>` and the rail, and it has had a
+  word since marks landed. So the manifest's "not merely the mirror of back" is true of a
+  structural forward and false of a temporal one, which is the whole of the decision.
+- **Phase:** trails, run 56. Built.
+
+### A truncating back-stack is affordable here and nowhere else
+- **Found:** 2026-08-19, reasoning about what a temporal cursor does when the user navigates
+  away mid-walk; checked against the HTML spec note already in this file.
+- **What it is:** Every browser's back-stack truncates: go back three, click a link, and the
+  three pages you walked back through are gone. It is the single most-complained-about
+  behaviour in the "what I hate about tabs and history" search that opened this project, and
+  it is the thing pillar B exists to fix.
+- **Verdict:** adopt truncation anyway, for the temporal cursor only.
+- **Why:** The complaint is never "the *stack* truncated", it is "the pages are gone". Here
+  they are not gone: they are nodes in the tree, with letters, on the rail, one `back <mark>`
+  away. So the linear projection is free to behave linearly, and the alternative is worse —
+  a log that appends the walk would answer "where was I before this page" with a page the
+  user walked *through* rather than the one they came *from*, which is a lie about time to
+  save a structure that is already saved somewhere better.
+  **This fork is the only browser that can truncate its back-stack without losing anything,
+  and that is worth stating in the code rather than discovering later.**
+- **Phase:** trails, run 56. Built.

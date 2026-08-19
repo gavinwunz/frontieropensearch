@@ -8,15 +8,78 @@ var kSkipCacheFlags =
   Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_PROXY |
   Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_CACHE;
 
+// Frontier OpenSearch, pillar B.
+const lazyFOS = {};
+ChromeUtils.defineESModuleGetters(lazyFOS, {
+  FOSTrailSession: "resource:///modules/FOSTrailSession.sys.mjs",
+});
+
+/**
+ * Frontier OpenSearch: run a step through the trail instead of the chain.
+ *
+ * Rebound here rather than on the four `<key>` elements, because the keys are
+ * not the only way to ask. The nav-bar buttons, the page context menu, the
+ * mouse's fourth and fifth buttons, the touchpad swipe and `Backspace` under
+ * `browser.backspace_action` all arrive at this method, and rebinding only the
+ * keyboard would have replaced "one movement with no word" — the keyset
+ * manifest's complaint — with two movements that disagree depending on which
+ * hand you used. That is the worse of the two, and it is the failure this
+ * fork's own `GRAMMAR.md` §5.1 was written to catch.
+ *
+ * The two movements really are different, which is why this is a rebinding and
+ * not a rename. The chain steps the entries of one tab; the verb steps the
+ * pages this window has stood on, across branches and across trails, and after
+ * a branch they diverge — the case pillar B exists for. The trail's is the
+ * general one, and `FOSTrailSession.enter` traverses the chain anyway whenever
+ * the node it is going to is still an entry of it, so in the linear case this
+ * is the same load Firefox would have done.
+ *
+ * Falling through when the trail has no step is not a fallback bolted on; it
+ * is what keeps this a *replacement* of a movement rather than a removal of
+ * one. The store has no node for `about:blank` or the new tab page, forgetting
+ * deletes nodes and deliberately leaves the tab's history alone, and a restored
+ * window has entries older than the session. In each of those the chain knows
+ * where back goes and the trail does not, and answering "nowhere" would have
+ * traded a working gesture for a tidy rule.
+ *
+ * @param {string} verb `"back"` or `"forward"`.
+ * @returns {boolean} Whether the trail took the step; false hands it back.
+ */
+function fosWalkTrail(verb) {
+  if (
+    !Services.prefs.getBoolPref(
+      "browser.fos.trails.replacesLinearHistory",
+      true
+    )
+  ) {
+    return false;
+  }
+  const trail = lazyFOS.FOSTrailSession.forWindow(window);
+  if (!trail.canWalk(verb)) {
+    return false;
+  }
+  trail.walk(verb);
+  return true;
+}
+
 var BrowserCommands = {
   back(aEvent) {
     const where = BrowserUtils.whereToOpenLink(aEvent, false, true);
 
     if (where == "current") {
+      if (fosWalkTrail("back")) {
+        return;
+      }
       try {
         gBrowser.goBack();
       } catch (ex) {}
     } else {
+      // Not rebound: opening the previous page in a *new tab* is a duplication
+      // of this tab's chain at an offset, and the trail has no offset to give
+      // it — the node before this one in time may be in another tab entirely,
+      // and duplicating that one here would put a copy of somebody else's
+      // trail under the cursor. `enter` is how you go to a node; this stays
+      // the chain's own affordance.
       duplicateTabIn(gBrowser.selectedTab, where, -1);
     }
   },
@@ -25,6 +88,9 @@ var BrowserCommands = {
     const where = BrowserUtils.whereToOpenLink(aEvent, false, true);
 
     if (where == "current") {
+      if (fosWalkTrail("forward")) {
+        return;
+      }
       try {
         gBrowser.goForward();
       } catch (ex) {}

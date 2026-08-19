@@ -45,6 +45,8 @@ support-files = [
 
 ["browser_zzforgetpreview.js"]
 
+["browser_zzbackstack.js"]
+
 ["browser_zzhistorygesture.js"]
 
 ["browser_zzkeymanifest.js"]

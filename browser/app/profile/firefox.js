@@ -3789,6 +3789,16 @@ pref("browser.fos.commandBar.replacesAddressBar", true);
 // to false to get the history sidebar's shortcut back.
 pref("browser.fos.trailRail.replacesHistorySidebar", true);
 
+// Frontier OpenSearch, pillar B. Navigation is a tree, so back and forward mean
+// steps along the walk the user actually made rather than steps along one tab's
+// session history chain -- the two agree until the first branch, which is the
+// case the pillar exists for. Rebound on BrowserCommands rather than on the
+// keys, so the buttons, the context menu, the mouse's side buttons and the
+// swipe all move the same way as the words `back` and `forward`. Set to false
+// to get the chain's own back and forward back, on every one of those surfaces
+// at once.
+pref("browser.fos.trails.replacesLinearHistory", true);
+
 // Frontier OpenSearch, pillar C. The command bar's "Close to what you typed"
 // tier needs a local embedding model, and the model's weights are a ~30MB
 // download from Mozilla's model hub. This fork does not make network requests

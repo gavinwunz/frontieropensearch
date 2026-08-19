@@ -19,9 +19,18 @@
  * WHAT MAKES THIS PILLAR B AND NOT A HISTORY TREE. Nothing here ever removes a
  * node. Session history truncates the forward entries the moment you go back
  * and navigate somewhere else; that is the destruction the phase plan is
- * against, and it is why re-entry does not simply call `gotoIndex`. Re-entering
- * a node and navigating again adds a *sibling*, and the branch that session
- * history would have thrown away is still in the tree and still reachable.
+ * against. Re-entering a node and navigating again adds a *sibling*, and the
+ * branch that session history would have thrown away is still in the tree and
+ * still reachable.
+ *
+ * That makes the tree the memory and the chain a cache of it, which is why
+ * re-entry uses `gotoIndex` when it can and a stored blob when it cannot. The
+ * traversal is cheaper, keeps the bfcache, and leaves `history.length` honest
+ * for content that reads it; what it cannot do is reach a node that is not an
+ * entry of this tab's chain, which is every node on another branch or another
+ * trail. Truncation is survivable *because* the tree does not truncate — the
+ * fork can afford Firefox's own linear behaviour underneath precisely because
+ * nothing depends on it any more.
  *
  * VIEW STATE IS SESSION STORE'S, NOT OURS. Scroll offsets and form values are
  * already collected per entry by SessionStore, which is what restores them
@@ -119,13 +128,31 @@ export class FOSTrailSession {
   #restoring = new WeakMap();
   // Which node each of a browser's session history entries stands for, keyed
   // by index. Session history is Gecko's linear record of the same walk this
-  // component records as a tree, and the two stay one-to-one because re-entry
-  // replaces the whole history with a single entry (see `enter`) — so every
-  // entry above index 0 was appended by a navigation that also added a node.
+  // component records as a tree, and every entry it holds was appended by a
+  // navigation that came through `#recordHistoryEntry` first — so an index that
+  // is in range names the node that is really there. Re-entry through a blob
+  // resets the chain to one entry and rewrites index 0; re-entry through a
+  // traversal leaves it alone, which is what lets a second `back` traverse
+  // again rather than reload.
   // Kept so that a traversal can find the node it is landing on rather than
   // inventing one; see the `LOAD_CMD_HISTORY` branch in `onLocationChange`.
   #historyByBrowser = new WeakMap();
+  // The temporal back-stack: the nodes this window has stood on, oldest first,
+  // with `#cursor` pointing at the one it is standing on now. A back-stack and
+  // a visit log are different objects and this component had the second while
+  // reading it as the first — `back` appended its own move, so the next `back`
+  // found the page it had just left and went there, and two presses returned
+  // you to where you started. Session history has an index for this reason.
+  //
+  // It truncates on arrival, like every browser's, and **this is the only
+  // browser where that costs nothing**: the pages walked past are nodes in the
+  // tree, lettered and on the rail, one `back <mark>` away. The complaint that
+  // pillar B exists to answer is never "the stack truncated", it is "the pages
+  // are gone". A log that appended instead would answer "where was I before
+  // this page" with a page walked *through* rather than come *from* — a lie
+  // about time, told to preserve a structure that is already preserved better.
   #recent = [];
+  #cursor = -1;
   #activeTrailId = null;
   #attached = false;
 
@@ -424,7 +451,7 @@ export class FOSTrailSession {
 
     // `back` walks this, and a forgotten id in it is a page `enter` would
     // throw on.
-    this.#recent = this.#recent.filter(id => !nodes.has(id));
+    this.#dropFromStack(nodes);
     if (trails.has(this.#activeTrailId)) {
       this.#activeTrailId = null;
     }
@@ -647,6 +674,35 @@ export class FOSTrailSession {
   }
 
   /**
+   * The live session history index a node can be traversed to, if any.
+   *
+   * Three things have to hold, and the third is the one that is easy to miss.
+   * The map has to name an index for this node; the index has to still be in
+   * range, because navigating away from a mid-history position drops every
+   * entry above it and `#recordHistoryEntry` deliberately leaves those map
+   * rows alone; and it must not be where the browser already is, since
+   * traversing to the current index is a no-op that would report success and
+   * move nothing.
+   *
+   * @param {object} browser The browser element.
+   * @param {number} nodeId The node being entered.
+   * @returns {?number} An index to traverse to, or null to restore instead.
+   */
+  #historyIndexFor(browser, nodeId) {
+    const history = browser.browsingContext?.sessionHistory;
+    const entries = this.#historyByBrowser.get(browser);
+    if (!history || !entries || typeof history.index !== "number") {
+      return null;
+    }
+    for (const [index, id] of entries) {
+      if (id === nodeId && index !== history.index && index < history.count) {
+        return index;
+      }
+    }
+    return null;
+  }
+
+  /**
    * The node the browser's current session history entry stands for.
    *
    * @param {object} browser The browser element.
@@ -858,11 +914,13 @@ export class FOSTrailSession {
   /**
    * Re-enter a node: restore its page, its scroll offset and its form values.
    *
-   * Deliberately not `nsISHistory.gotoIndex`. Session history is linear and
-   * truncates on the next navigation, so restoring through it would destroy
-   * exactly the forward branch pillar B exists to keep. Instead the node's
-   * stored SessionStore blob is replayed as a one-entry tab state, and the
-   * branch stays in the tree where the rail can still show it.
+   * Two ways in, chosen by whether the node is still an entry of the target
+   * tab's own session history. If it is, the load is a traversal to that index
+   * — see the comment at the branch. If it is not, and that is every node on
+   * another branch or another trail, the node's stored SessionStore blob is
+   * replayed as a one-entry tab state. The chain cannot represent a tree, so
+   * reaching the rest of the tree costs the chain; the branch stays in the tree
+   * where the rail can still show it either way.
    *
    * @param {number} nodeId The node to enter.
    * @returns {Promise<boolean>} Whether the node was entered.
@@ -912,6 +970,37 @@ export class FOSTrailSession {
         this.#captureFlushed(leaving, browser),
         this.#departed(leaving, browser),
       ]);
+    }
+
+    // A node that is still an entry of this tab's own session history is
+    // reached by traversing to it, not by replacing the history with it.
+    //
+    // The comment below says session history is not used because it truncates
+    // on the next navigation and would destroy the forward branch. That is true
+    // and it is why the *general* path exists — but it makes the tab's chain
+    // collateral on every re-entry, and once `Browser:Back` runs this verb the
+    // most common gesture in the browser would rebuild the tab from a blob on
+    // every press: no bfcache, a fresh load of a page the user was on a second
+    // ago, and `history.length` stuck at 1 for content that reads it. Trails
+    // are a layer over session history, not a replacement for it — `IDEAS.md`
+    // makes that the standards-compliance argument for the whole pillar — and a
+    // layer that flattened the thing underneath it on every move would not be
+    // one. Truncation on the *next* navigation is Firefox's own behaviour and
+    // costs nothing here, because the branch it drops from the chain stays in
+    // the tree, which is the entire point of pillar B.
+    const index = this.#historyIndexFor(browser, nodeId);
+    if (index !== null) {
+      this.store.resumeTrail(node.trail_id);
+      this.#trailByBrowser.set(browser, node.trail_id);
+      this.#setCurrent(browser, nodeId);
+      // No `#restoring`: this load is a traversal and announces itself as one.
+      // `onLocationChange`'s `LOAD_CMD_HISTORY` branch resolves the same node
+      // from the same map and lands on it, which is why a gesture and this verb
+      // are now one movement rather than two that agree most of the time.
+      browser.gotoIndex(index);
+      this.store.restore(nodeId);
+      this.#changed();
+      return true;
     }
 
     let restored = null;
@@ -975,10 +1064,24 @@ export class FOSTrailSession {
     // ago and going to the node above you in the tree are different questions,
     // and after a branch they have different answers; collapsing them onto one
     // word would make one of the two unreachable.
+    //
+    // The bare form walks the back-stack; a mark is a move to a named node and
+    // therefore a new present, which is why it does not go through `walk`.
     bar.actions.register("back", cmd => {
-      const target = this.#targetNode(cmd) ?? this.#previousNode();
-      return target ? this.enter(target) : false;
+      const target = this.#targetNode(cmd);
+      return target === null ? this.walk("back") : this.enter(target);
     });
+
+    // The mirror, and it is only the mirror because `back` is temporal. Nyxt —
+    // the one shipped browser with a history tree — needs three commands to say
+    // forward, because its backwards goes to the *parent* and structure
+    // branches. This fork spends `up` on the parent, so back and forward are
+    // both moves along the walk the user actually made, and a walk has one
+    // future however many children the node has. The plural forward, "which of
+    // these children", is `back <mark>` and the rail, and it has had a word
+    // since marks landed; a second spelling of it would be a synonym the
+    // command bar has to teach twice. Hence no target.
+    bar.actions.register("forward", () => this.walk("forward"));
 
     bar.actions.register("branch", () => {
       const node = this.#requireCurrent();
@@ -1089,7 +1192,7 @@ export class FOSTrailSession {
     }
 
     const finished = new Set(nodes.map(n => n.id));
-    this.#recent = this.#recent.filter(id => !finished.has(id));
+    this.#dropFromStack(finished);
     this.#activeTrailId = null;
 
     this.#syncMarks();
@@ -1115,14 +1218,126 @@ export class FOSTrailSession {
     return id === null ? null : this.store.getNode(id);
   }
 
-  /** The node visited before the current one, skipping repeats. */
-  #previousNode() {
-    for (let i = this.#recent.length - 2; i >= 0; i--) {
-      if (this.#recent[i] !== this.currentNodeId) {
-        return this.#recent[i];
-      }
+  /**
+   * Record standing on a node, and decide whether that was a walk or a move.
+   *
+   * The cursor is the authority, not a flag on the call: an arrival at the node
+   * the cursor already points to *is* the walk that put it there, and changes
+   * nothing. Everything else is a new present, which truncates whatever the
+   * user had walked back through and appends.
+   *
+   * Deriving it this way rather than from an "I am walking" flag is what makes
+   * it survive the second arrival. A walk into the current tab's own chain is
+   * performed by `enter` as a session history traversal, which notifies
+   * `onLocationChange` a moment later and lands here a second time for the same
+   * node; a flag would have been cleared by then and the second arrival would
+   * have reset the cursor to the top, so `back` twice would have oscillated
+   * exactly as it did before — through a different mechanism.
+   *
+   * @param {number} nodeId The node now being stood on.
+   */
+  #arrived(nodeId) {
+    if (this.#recent[this.#cursor] === nodeId) {
+      return;
     }
-    return null;
+    this.#recent.length = this.#cursor + 1;
+    this.#recent.push(nodeId);
+    if (this.#recent.length > 200) {
+      this.#recent.splice(0, this.#recent.length - 200);
+    }
+    this.#cursor = this.#recent.length - 1;
+  }
+
+  /**
+   * Drop nodes from the back-stack and keep the cursor pointing at the present.
+   *
+   * Filtering an indexed list moves every index above the first removal, and a
+   * cursor left behind by that is not merely stale — it points at some other
+   * page, so the next `back` goes somewhere the user has never been. The
+   * current node is looked up again afterwards rather than adjusted by a count.
+   *
+   * @param {Set<number>} gone Node ids no longer in the store.
+   */
+  #dropFromStack(gone) {
+    const standing = this.#recent[this.#cursor] ?? null;
+    this.#recent = this.#recent.filter(id => !gone.has(id));
+    const at = standing === null ? -1 : this.#recent.lastIndexOf(standing);
+    this.#cursor = at === -1 ? this.#recent.length - 1 : at;
+  }
+
+  /**
+   * Whether the back-stack has a step in this direction, answered now.
+   *
+   * Synchronous on purpose. `BrowserCommands.back` has to decide, before it
+   * returns, whether the trail is taking this gesture or whether the tab's own
+   * chain still should — and `walk` cannot tell it, because entering a node is
+   * asynchronous and the answer would arrive after the chance to fall through
+   * had gone.
+   *
+   * The fall-through is the part that makes the rebinding safe. A page the
+   * store has no node for is a real page in a real tab: `isCapturable` refuses
+   * `about:blank` and the new tab page, forgetting deletes nodes and leaves the
+   * tab's history untouched by design, and a window restored from a previous
+   * profile has entries older than this session's stack. In every one of those
+   * the chain knows where back goes and the trail does not, and a rebinding
+   * that answered "nowhere" would have made the browser's most basic gesture
+   * silently do nothing to keep a rule about words.
+   *
+   * @param {string} direction `"back"` or `"forward"`.
+   * @returns {boolean} Whether `walk` would move.
+   */
+  canWalk(direction) {
+    return (
+      (direction === "forward" ? this.#nextNode() : this.#previousNode()) !==
+      null
+    );
+  }
+
+  /** The node stood on before this one, or null at the bottom of the stack. */
+  #previousNode() {
+    return this.#cursor > 0 ? this.#recent[this.#cursor - 1] : null;
+  }
+
+  /** The node walked back from, or null when already at the present. */
+  #nextNode() {
+    return this.#cursor >= 0 && this.#cursor < this.#recent.length - 1
+      ? this.#recent[this.#cursor + 1]
+      : null;
+  }
+
+  /**
+   * Walk the back-stack by one step, and point the cursor before moving.
+   *
+   * Order matters: `enter` arrives synchronously in `#setCurrent`, and
+   * `#arrived` reads the cursor to tell a walk from a move. Setting it after
+   * would make every walk look like a fresh visit and truncate the stack it
+   * was walking.
+   *
+   * The cursor is put back if the move does not happen, so a refused step is
+   * not silently charged to the stack: the alternative is a `back` that reports
+   * failure and still leaves the next `forward` pointing at a page nobody
+   * reached.
+   *
+   * Public because the browser's own back and forward gestures run it — see
+   * `BrowserCommands.back` — and they have to be the same movement as the word
+   * rather than a second one that agrees most of the time.
+   *
+   * @param {string} direction `"back"` or `"forward"`.
+   * @returns {Promise<boolean>} Whether a step was taken.
+   */
+  async walk(direction) {
+    const delta = direction === "forward" ? 1 : -1;
+    const target = delta < 0 ? this.#previousNode() : this.#nextNode();
+    if (target === null) {
+      return false;
+    }
+    const was = this.#cursor;
+    this.#cursor += delta;
+    const moved = await this.enter(target);
+    if (!moved) {
+      this.#cursor = was;
+    }
+    return moved;
   }
 
   // ---- internal -----------------------------------------------------------
@@ -1153,12 +1368,9 @@ export class FOSTrailSession {
     if (node && node.trail_id !== this.#activeTrailId) {
       this.#activeTrailId = node.trail_id;
     }
-    // Only pages the user was on join the recency list, since it is what `back`
+    // Only pages the user was on join the back-stack, since it is what `back`
     // walks: a background arrival in it would send `back` to a page nobody read.
-    this.#recent.push(nodeId);
-    if (this.#recent.length > 200) {
-      this.#recent.splice(0, this.#recent.length - 200);
-    }
+    this.#arrived(nodeId);
     this.#syncMarks();
   }
 

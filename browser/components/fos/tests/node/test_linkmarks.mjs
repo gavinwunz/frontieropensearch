@@ -186,7 +186,7 @@ test("both forms of follow parse as complete commands", () => {
 });
 
 test("follow is an ordinary English word and does not steal the line", () => {
-  // Eleven of the sixteen action words are ordinary English, and this is the
+  // Twelve of the seventeen action words are ordinary English, and this is the
   // rule that keeps them usable as search terms.
   assert.equal(parse("follow the money").type, "query");
   assert.equal(parse("follow up on that").type, "query");

@@ -120,6 +120,45 @@ const KEYSET_MANIFEST = Object.freeze({
       "overview. This is the one command in the window where the gesture was " +
       "added after the word rather than the other way round.",
   },
+  // Run 53 found these bound to four keys, three buttons, a context menu and a
+  // swipe, and to no word at all. Run 56 decided them together, as their own
+  // reasons demanded, and the decision was that they are *time* verbs: the
+  // structural move up the tree already has `up`, which frees back and forward
+  // to be the walk the user actually made, and a walk has one future however
+  // many children a node has. That is what dissolves "in a tree the forward
+  // direction is plural" — it is true of a structural forward, which this fork
+  // does not have and does not need, because "which of these children" is
+  // `back <mark>` and has had a word since marks landed.
+  //
+  // They are `verb` and not `replaced` because nothing was taken away: the
+  // command still means go back, still updates the same disabled state, and
+  // still runs on every surface that ran it before. What changed is which
+  // history it steps.
+  "Browser:Back": {
+    class: "verb",
+    verb: "back",
+    reason:
+      "The gesture and the word are one movement, rebound on " +
+      "BrowserCommands.back so the nav-bar button, the context menu, the " +
+      "mouse's side buttons and the swipe move the same way as the word. " +
+      "`enter` traverses the tab's chain whenever the node it is going to is " +
+      "still an entry of it, so the linear case is the load Firefox would " +
+      "have done; past the first branch it is the node, which the chain " +
+      'cannot represent. Only the `where == "current"` path is rebound: a ' +
+      "middle-click on the button still duplicates the tab at an offset in " +
+      "its own chain, because the trail has no offset to give it and the node " +
+      "before this one in time may be in another tab.",
+  },
+  "Browser:Forward": {
+    class: "verb",
+    verb: "forward",
+    reason:
+      "The seventeenth verb, and the mirror of `back` only because `back` is " +
+      "temporal. Bare, with no target: naming a node to move to is " +
+      "`back <mark>`, which reaches any node in the trail rather than only " +
+      "the ones ahead, and a second spelling of it would be a synonym the " +
+      "command bar has to teach twice.",
+  },
   "Browser:Stop": {
     class: "verb",
     verb: "stop",
@@ -490,34 +529,19 @@ const KEYSET_MANIFEST = Object.freeze({
   // reclassified, because a class that absorbed them would make this whole
   // file a way of agreeing with yourself.
 
-  "Browser:Back": {
-    class: "debt",
-    reason:
-      "The verb `back` is not this. `back` moves to the node visited before " +
-      "this one in time; the gesture steps the session history chain. They " +
-      "agree on a linear walk and diverge the moment there is a branch, which " +
-      "is the case pillar B exists for. Two movements under one name is worse " +
-      "than one movement with no name, so this wants deciding rather than " +
-      "declaring covered.",
-  },
-  "Browser:Forward": {
-    class: "debt",
-    reason:
-      "No verb at all, and not merely the mirror of back: in a tree the " +
-      "forward direction is plural, and the rail already shows the siblings " +
-      "a linear forward would have to pick between. Deciding this and " +
-      "Browser:Back is one question, not two.",
-  },
   cmd_handleBackspace: {
-    class: "debt",
+    class: "verb",
+    verb: "back",
     reason:
       "Backspace, which does nothing under this build's default " +
-      "`browser.backspace_action`, goes back when it is set to 0 and scrolls " +
-      "a page up when set to 1. Inherits Browser:Back's problem behind a pref, " +
-      "which makes it worse rather than smaller.",
+      "`browser.backspace_action`, scrolls a page up when it is set to 1 and " +
+      "calls BrowserCommands.back when it is set to 0. It inherited " +
+      "Browser:Back's problem and it inherited the fix in the same way, " +
+      "because the rebinding is on the method rather than on the four keys.",
   },
   cmd_handleShiftBackspace: {
-    class: "debt",
+    class: "verb",
+    verb: "forward",
     reason: "Shift+Backspace: forward, or page down, on the same pref.",
   },
   "Browser:Reload": {

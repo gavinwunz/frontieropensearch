@@ -68,9 +68,9 @@ export function parse(input, { marks = null } = {}) {
   // token cannot continue the parse, the line was never a command and is
   // prose — so it becomes a query rather than an error.
   //
-  // This matters far more than it looks. Eleven of the sixteen action words are
-  // ordinary English (`what`, `back`, `up`, `name`, `field`, `context`,
-  // `branch`, `pack`, `model`, `stop`), so the queries that collide with them
+  // This matters far more than it looks. Twelve of the seventeen action words
+  // are ordinary English (`what`, `back`, `forward`, `up`, `name`, `field`,
+  // `context`, `branch`, `pack`, `model`, `stop`), so the queries that collide
   // are not exotic: "what is a memex", "back pain", "field of view",
   // "branch prediction", "stop motion animation".
   // Reporting those as a syntax error would hand the user nothing at all for

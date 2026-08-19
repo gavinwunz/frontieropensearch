@@ -367,3 +367,30 @@ test("every action parses from a bare utterance", () => {
     assert.equal(r.commands[0].action, word);
   }
 });
+
+test("forward is temporal, so it takes no target and back keeps the marks", () => {
+  // The decision run 56 made, in the one place it is checkable cheaply. Nyxt —
+  // the only shipped browser with a history tree — needs three commands to say
+  // forward, because its backwards goes to the *parent* and structure branches.
+  // Here `up` owns the parent, which frees back and forward to be steps along
+  // the walk the user made, and a walk has one future however many children a
+  // node has. So `forward` is bare, and the plural form is `back <mark>`.
+  assert.equal(ACTIONS.forward.target, "none");
+  assert.deepEqual(ACTIONS.forward.accepts, []);
+  assert.equal(ACTIONS.up.target, "none", "the structural move is still `up`");
+  assert.deepEqual(
+    ACTIONS.back.accepts,
+    ["node"],
+    "and naming a node to move to is still `back`, in either direction"
+  );
+
+  const bare = parse("forward");
+  assert.equal(bare.type, COMMANDS);
+  assert.equal(bare.commands[0].action, "forward");
+  assert.equal(bare.commands[0].target, null);
+
+  // Not an error: an unknown trailing word makes the whole line a search, which
+  // is how every other targetless verb behaves and is what stops the bar from
+  // refusing a sentence that merely starts with a verb.
+  assert.equal(parse("forward cap").type, QUERY);
+});

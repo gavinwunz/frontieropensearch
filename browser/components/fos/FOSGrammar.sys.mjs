@@ -82,6 +82,19 @@ export const ACTIONS = Object.freeze({
     text: false,
     summary: "Move to a node without destroying any forward branch",
   },
+  // No target, and the omission is the decision rather than an oversight. In
+  // the tree the forward direction is plural, which is why `Browser:Forward`
+  // sat in the keyset manifest's debt list for three runs; in time it is not,
+  // and back and forward are both temporal here because `up` already owns the
+  // structural move. Naming a node to go forward to is `back <mark>`, which
+  // reaches any node in the trail and is not restricted to the ones ahead.
+  forward: {
+    pillar: "trails",
+    target: "none",
+    accepts: [],
+    text: false,
+    summary: "Return along the walk `back` just took",
+  },
   graft: {
     pillar: "trails",
     target: "required",
