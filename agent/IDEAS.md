@@ -3178,3 +3178,99 @@ claim is worth taking literally before it is worth patching over.
   any future way of reaching a node that does not go through `enter` would
   reintroduce exactly the bug above. Worth a check if a new re-entry surface is
   ever added.
+
+## Run 42 — the schema audit, and a table with neither a reader nor a writer
+
+### Every column in the schema, checked for a reader and a writer
+
+Not a search — a mechanical pass, which run 41 put on the list after `archived_at`
+turned out to be a column with a filter and no verb. The method: every column in
+`001-initial.sql` and `002-merged-contexts.sql` against the product code, with
+tests excluded, because a column whose only writer is a test is exactly the thing
+being looked for.
+
+Five hits, in descending order of how much they matter.
+
+**1. `field_placement` has neither a reader nor a writer.** The whole table. The
+store's `placeCard` is called by nothing but its own unit test; no SQL anywhere
+reads the table back. This is the run's work and it is written up below.
+
+**2. `query.source_node_id` is written and never read.** Recorded on every query
+— "where it was issued from" — and nothing has ever asked. It is the provenance
+edge between a page and the question that was typed *while looking at it*, which
+is not the same edge as `trail_node_id` (the page the question opened). Worth
+keeping, because the writer is free and the datum is unrecoverable after the
+fact; worth noting, because "queries asked from this page" is a sidebar row
+nobody has built.
+
+**3. `visit.started_at` is written and never read.** Dwell is computed and stored
+as `dwell_ms`, so the raw start time is only ever an input to a subtraction that
+has already happened. Harmless, and it is the one hit here that is genuinely
+just a record.
+
+**4. `context.centroid` is defined and never touched.** `FOSContextMerge` already
+says so in a comment — run 39 measured `mean` against `centroid` and `mean` won —
+so this is a decision that has been taken and not yet reflected in the schema
+doc. No code change; `SCHEMA.md` now says the column is vestigial rather than
+pending.
+
+**5. The `embedding` table, likewise, is deliberately dead.** `FOSEmbeddings`
+states it plainly: nothing is persisted, because embedding a candidate on demand
+(1.27ms) is cheaper than the read that would avoid it. The table predates that
+measurement. Recorded so the next audit does not re-litigate it.
+
+**The method is worth keeping.** Two runs, two real findings, and both were the
+same shape: a schema that had been designed by someone who knew what the feature
+was for, and product code that never caught up. The audit costs one `grep` per
+column and it is now run to completion, so the next one only has to cover columns
+added since.
+
+### The Field's layout does not survive a restart, and the design says twice that it must
+
+Not a research finding — a defect the audit turned up, and the reason it survived
+this long is worth as much as the fix. Everything needed was present and nothing
+was joined: the schema has `field_placement` with `moved_by_user_at` documented
+as "the whole point of the table", the store has `placeCard` with a COALESCE that
+protects a human timestamp from an automatic one, and `FieldModel` has a `pinned`
+flag and an invariant built around it. Three parties each did their half.
+
+What the design promises, in two places and in the strongest terms it uses
+anywhere:
+
+  > Not to make room, not to rebalance a region, **not on restart**, not when the
+  > window resizes. A pinned card holds its position relative to its region for
+  > as long as it exists. (`FIELD.md` §4)
+
+  > 2. The system never moves a pinned card. Resize the window, **restart the**
+  > browser, ... (`FIELD.md` §9, the acceptance properties)
+
+And §9 is the list the module header says is testable without a build. The
+restart half was never tested, because the model is in-memory and the test that
+would have caught it would have had to reach through the store — which is exactly
+the reach the `archived_at` test made, and the tell run 41 already named.
+
+**What persists is only what a human chose.** Auto-placed cards are not written
+and do not need to be: `#seed` is deterministic and its own comment says so —
+"the same input always seeds the same layout, which is what lets a restored
+session look like the one that was saved". A restored session re-seeds to the
+identical arrangement for free. Persisting auto placements would write a row per
+page for no recoverable information, and worse, would freeze an arrangement the
+system is still allowed to revise. So `moved_by_user_at IS NOT NULL` is both the
+filter and the meaning, which is what the schema comment said in the first place.
+
+**Order of restoration follows from the invariant rather than from taste.** Pinned
+positions are applied first, at their saved coordinates, and unpinned cards seed
+around them afterwards. Seeding never displaces, so this cannot move a pinned
+card; the reverse order could. The one case the literature does not answer —
+searched, and spatial hypertext systems persist layouts without saying what
+happens when the world changes underneath one (spatialBrowser writes a dotfile
+per directory; VIKI and Aquanet do not address it) — is a pinned card whose saved
+position is outside the region it comes back into, because region height is a
+ratchet that grows during a drag and is not itself persisted. Growing the region
+to fit is the answer consistent with §6's capacity ladder, which already ends in
+growth; refusing and re-seeding would silently destroy a chosen position, which
+§4 calls the thing never to do.
+
+**Sources:** spatialBrowser (Toronto DGP) for per-directory layout persistence;
+`dl.acm.org/doi/10.1145/1995966.1995983` for the spatial-hypertext survey that
+frames arrangement as user-authored structure.
