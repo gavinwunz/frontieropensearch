@@ -326,3 +326,43 @@ add_task(async function test_a_walk_stays_on_the_trail_it_started_on() {
   BrowserTestUtils.removeTab(second);
   BrowserTestUtils.removeTab(first);
 });
+
+add_task(async function test_the_pref_gives_the_chain_back() {
+  // `browser.fos.trails.replacesLinearHistory` is a promise to somebody who is
+  // not this project, so it is checked by pressing the gesture rather than by
+  // reading the module that honours it.
+  //
+  // The discriminator is whether there is a forward afterwards, which is
+  // exactly the difference between a walk and an arrival. The verb moves the
+  // cursor and leaves the future in place; a chain step arrives at a node the
+  // cursor is not pointing at, which truncates it — so with the pref off the
+  // trail has nothing ahead, and with it on it has the page just left.
+  const tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, PAGE_A);
+  const trail = session();
+  await goTo(PAGE_B);
+  await goTo(PAGE_C);
+
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.fos.trails.replacesLinearHistory", false]],
+  });
+  const stepped = BrowserTestUtils.waitForLocationChange(gBrowser, PAGE_B);
+  window.document.getElementById("Browser:Back").doCommand();
+  await stepped;
+  Assert.equal(
+    trail.canWalk("forward"),
+    false,
+    "the chain took the gesture, and the trail read it as an arrival"
+  );
+  await SpecialPowers.popPrefEnv();
+
+  const walked = BrowserTestUtils.waitForLocationChange(gBrowser, PAGE_A);
+  window.document.getElementById("Browser:Back").doCommand();
+  await walked;
+  Assert.equal(
+    trail.canWalk("forward"),
+    true,
+    "and with the pref back on it is a walk, which leaves a way forward"
+  );
+
+  BrowserTestUtils.removeTab(tab);
+});

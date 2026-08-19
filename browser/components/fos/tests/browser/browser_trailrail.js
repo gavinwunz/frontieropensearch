@@ -222,8 +222,12 @@ add_task(async function test_re_entry_restores_the_page_and_its_scroll() {
     "including the scroll offset, which is the part that makes going back free"
   );
 
+  // Not `browserLoaded`: the root is still an entry of this tab's chain, so
+  // re-entry traverses to it rather than replaying a stored blob, and a page
+  // out of the bfcache fires no load event.
+  const landed = BrowserTestUtils.waitForLocationChange(gBrowser, PAGE_A);
   await trail.enter(rootId);
-  await BrowserTestUtils.browserLoaded(tab.linkedBrowser, false, PAGE_A);
+  await landed;
 
   Assert.equal(
     tab.linkedBrowser.currentURI.spec,

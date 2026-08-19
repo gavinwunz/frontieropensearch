@@ -37,6 +37,8 @@ support-files = [
 
 ["browser_zdemoflow.js"]
 
+["browser_zzbackstack.js"]
+
 ["browser_zzembedquality.js"]
 
 ["browser_zzfieldperf.js"]
@@ -44,8 +46,6 @@ support-files = [
 ["browser_zzforget.js"]
 
 ["browser_zzforgetpreview.js"]
-
-["browser_zzbackstack.js"]
 
 ["browser_zzhistorygesture.js"]
 

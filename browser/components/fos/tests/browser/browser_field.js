@@ -254,18 +254,17 @@ add_task(async function test_enter_by_mark_from_the_command_bar() {
   const mark = bar().marks.markOf(`node:${nodeA.id}`);
   Assert.ok(mark, "the page has a mark to be addressed by");
 
-  const loaded = BrowserTestUtils.browserLoaded(
-    gBrowser.selectedBrowser,
-    false,
-    PAGE_A
-  );
+  // Not `browserLoaded`: the card's page is still an entry of this tab's own
+  // chain, so `enter` traverses to it rather than replaying a stored blob —
+  // and a page coming back out of the bfcache fires no load event.
+  const landed = BrowserTestUtils.waitForLocationChange(gBrowser, PAGE_A);
   const outcome = bar().actions.run({
     action: "enter",
     target: mark,
     text: null,
   });
   Assert.ok(outcome.ok, "the verb ran");
-  await loaded;
+  await landed;
   Assert.equal(
     gBrowser.selectedBrowser.currentURI.spec,
     PAGE_A,

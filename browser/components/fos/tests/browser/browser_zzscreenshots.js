@@ -216,8 +216,9 @@ add_task(async function take_the_screenshots() {
   // 1. The trail rail: the branch a linear history would have destroyed.
   //    Opened through its own command rather than a verb — the rail is a view,
   //    and `GRAMMAR.md` gives verbs to actions.
+  const atRoot = BrowserTestUtils.waitForLocationChange(win.gBrowser);
   await session().enter(rootId);
-  await BrowserTestUtils.browserLoaded(win.gBrowser.selectedBrowser);
+  await atRoot;
   await new Promise(resolve => win.setTimeout(resolve, SETTLED_MS));
   rail().open();
   await shoot("shot-trails");
@@ -267,8 +268,9 @@ add_task(async function take_the_screenshots() {
   await BrowserTestUtils.browserLoaded(win.gBrowser.selectedBrowser);
   await new Promise(resolve => win.setTimeout(resolve, SETTLED_MS));
   await engine().settled;
+  const backAtAsker = BrowserTestUtils.waitForLocationChange(win.gBrowser);
   await session().enter(askedFrom);
-  await BrowserTestUtils.browserLoaded(win.gBrowser.selectedBrowser);
+  await backAtAsker;
   await new Promise(resolve => win.setTimeout(resolve, SETTLED_MS));
   await engine().settled;
 
