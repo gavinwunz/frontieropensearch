@@ -123,8 +123,8 @@ carries strictly more than a row reading "cap — Downloads", and is why every t
 that has solved this — Vimium, Rango, Cursorless's hats — draws hints rather than
 listing them.
 
-Four rules decide what gets a letter, and the last two are bounds rather than
-decisions:
+Four rules decide what gets a letter. The last is a bound rather than a
+decision, and the third is a decision whose cost is paid out loud:
 
 - **What is on screen**, as §2 requires: a link scrolled out of the viewport, or
   hidden by CSS, gets nothing. Scrolling does not reassign — `follow` again does.

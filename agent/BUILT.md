@@ -10,6 +10,38 @@ this, and what was decided when it was built" — the reasoning in full is in
 `design/` and `context-engine/`. Nothing here is waiting on anybody; what is,
 is in `STATE.md`.
 
+- **`follow` — a mark for a link on the page.** The sixteenth verb, and the
+  first that addresses anything *inside* a page. Fifteen verbs addressed the
+  browser's own objects; `GRAMMAR.md` §2 had listed in-page links among the
+  addressable kinds since marks landed and nothing had ever registered one, so
+  the fork had a complete spoken grammar for every surface around a page and no
+  hands-free way at all to click a link in one. Run 54's keyset manifest is what
+  exposed it, by enumerating the chrome and thereby showing where the chrome
+  ends.
+
+  `follow` alone marks the links; `follow cap` follows one. **The optional
+  target is forced rather than chosen**: a required target would raise the marks
+  only while a slot is pending, and §8's "voice writes the whole line" means a
+  voice turn cannot sit in one. **The page gets its own alphabet** — trail nodes
+  hold most of the twenty-six letters in any real session and a page has
+  hundreds of links that turn over on every navigation, so one registry either
+  starves the links or evicts the marks the user has learned. `ScopedMarks`
+  resolves a letter by what the pending verb accepts, so `enter cap` and
+  `follow cap` are never a choice; stickiness is not excepted, because a link's
+  object goes away when the page view does. The parser hands `accepts` *into*
+  the lookup rather than comparing after, which would reject a `follow` the user
+  could see was correct.
+
+  Letters are drawn in **anonymous content**, as `FinderHighlighter` draws its
+  own: the page cannot see them, style them, or be reflowed by them — the three
+  failures every extension that injects hints into the page DOM has had. Four
+  rules choose what gets one: what is on screen, one mark per destination (the
+  thumbnail and its headline share a letter and both carry a badge), the first
+  twenty-six in document order **with the count said out loud when it
+  truncates**, and the top document only. Past twenty-six is deliberately left
+  open with two named candidates in `IDEAS.md`, neither built. `FOSLinkSurface`,
+  `FOSLinkMarks`, `actors/FOSLinks{Child,Parent}`, `fos-links.css`.
+
 - **`stop` — giving up on a page that is not coming.** The fifteenth verb, and
   the exit from the state the entry above created. A request that has been made
   and not answered is named by the address bar and reissued by session restore;
