@@ -45,6 +45,16 @@ one.
   `FOSVoiceTranscript`'s own `MIN_RMS` — via an `AnalyserNode` polled at 10Hz,
   not the per-frame worklet run 30 rejected.
 
+  **The bounds are gated on the signal being alive**, and that is not a detail.
+  Web Audio needs an *output* device before it will run a graph, so a machine
+  without one leaves the context `suspended` reading a flat zero — identical to
+  a quiet room — and the bound would have ended a turn six seconds into
+  somebody's sentence. `armed({monitored})` is how the turn asks, and a graph
+  that has not started within 500ms reports speech once and stops looking.
+  Either route lands the turn back on the key and the model's window: **it
+  degrades to the previous design rather than past it**, which is the property
+  to preserve if these are ever changed.
+
 - **STATE's two narrow defects are fixed, and one of them was two.** Three of
   the Field's four cards were grey, with opposite causes: a page branched *to*
   was never photographed because `#restoring` suppresses the departure re-entry
@@ -635,9 +645,17 @@ pointed at it, because mochitest kills the process on a non-local connection.
 
 This run needed no gated job either: the voice path's shell decisions are
 covered by doubles in `browser_voice.js`, and nothing it touched needs weights.
-The suite is 757 browser-chrome checks, 271 node tests and 2 xpcshell files,
+The suite is 781 browser-chrome checks, 273 node tests and 2 xpcshell files,
 all green, plus seven mutation checks confirming each part of the fix is pinned
 by a test that fails without it.
+
+**One thing is deliberately unverified and should stay flagged**: the positive
+half of `test_the_level_monitor_runs_against_a_real_capture` cannot run on this
+machine, because there is no audio output device for Web Audio to start a graph
+against. The test asserts the degradation here and says so in its output. The
+real level path — an analyser actually reading a microphone — has never been
+observed working, only reasoned about; the first machine with audio hardware
+should run that file and check the positive branch is taken.
 
 `main` is at `phase-3`. `agent/dev` is pushed through this run's commits.
 
@@ -706,6 +724,21 @@ has become a log; most of it is recoverable from the journal.
   — it says *which* test pins *which* line. All seven mutations here were caught
   by exactly the test that should have caught them, which is the first time this
   suite has been checked that way rather than assumed.
+
+- **A sensor that cannot read returns the same value as a sensor reading
+  nothing.** The sharper version of run 39's "a capture that reports success is
+  not a capture of the right thing". Any bound driven by a measurement needs to
+  know the measurement is alive, and the direction it degrades in has to be
+  chosen deliberately — the default is whichever way the arithmetic happens to
+  fall, and here that default would have cut off the user the bound was
+  protecting. **Testing the mechanism, not the logic, is what found it**: every
+  browser test in the voice file replaces the microphone, so none of them
+  touched the code that listens to one.
+
+- **`AudioContext.state` at construction is meaningless** — it reaches `running`
+  asynchronously. The first draft checked it synchronously and would have
+  reported "no monitor" on a healthy machine, disabling the feature everywhere
+  while every test still passed.
 
 - **Two bounds made each other tunable, and neither would have alone.** 400ms
   sits inside the band where a real one-word utterance lives (`MIN_UTTERANCE_MS`
@@ -949,6 +982,14 @@ only computed style in a real window can see it, which is what
 `browser_designsystem.js` now does for every `--fos-*` token.
 
 
+
+- **This box has no audio output device**, no `/dev/snd` and no sound cards, so
+  `AudioContext` never leaves `suspended` and `destination.maxChannelCount` is
+  0. Anything needing a running Web Audio graph cannot be tested here, and the
+  failure looks like silence rather than like an error. `resume()` never settles
+  on such a context, so do not await it. Autoplay is *not* the cause and was an
+  hour's wrong suspect: `media.autoplay.default` is 0 in this profile and the
+  context stays suspended with an active capture and user activation both set.
 
 - **A test double is only as good as the wiring it copies.** The front end
   assigns `recorder.onLevel` to whatever recorder it currently holds, including

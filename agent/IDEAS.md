@@ -2971,3 +2971,50 @@ Nothing about the gesture. The one number with no measurement behind it is the
 and the thing that would set it is how long a deliberate latch-then-think pause
 actually runs. That is a real question about use, unlike the one this section
 closed, and it costs a user six seconds rather than thirty to get wrong.
+
+### The bound had no signal under it on this machine — **the run's second finding**
+
+Written after the section above, because testing the mechanism rather than the
+logic is what found it.
+
+Every browser test in the voice file replaces the microphone, so none of them
+touch the code that listens to one. A test against a *real* captured stream —
+Gecko's own fake device, `media.navigator.streams.fake` — showed the
+`AudioContext` stuck in `suspended`, reading a flat zero, with `resume()` never
+settling.
+
+Autoplay was the obvious suspect and is not the cause. `IsAllowedToPlay` returns
+early here (`media.autoplay.default` is 0, `block-webaudio` false), and the
+context stays suspended with an active capture *and* user activation both in
+place — so neither `IsActivelyCapturingOrHasAPermission` nor
+`IsWindowAllowedToPlayByUserGesture` is what is missing. The actual cause is
+`destination.maxChannelCount === 0`: **this box has no audio output device**, no
+`/dev/snd` and no sound cards, and Web Audio will not run a graph without one.
+Needing an output device in order to measure an input one is a Web Audio fact,
+not a fault.
+
+**The failure was pointed the wrong way, and that is the part worth keeping.** A
+suspended context reads exactly what a silent room reads, so the initial-silence
+bound would have fired at six seconds *into an utterance* and reported "nothing
+heard". A safety bound that cuts off the person it is protecting is worse than
+no bound. The turn now asks whether anything is reporting the level at all
+before it treats silence as meaning anything, and both failure routes — no
+monitor, or a graph that never starts — land it back on the key and the model's
+window, which is the design that shipped before the bounds existed.
+
+**Generalises, and it is a sharper version of run 39's lesson.** That run learned
+that a capture reporting success is not a capture of the right thing. This one:
+**a sensor that cannot read returns the same value as a sensor reading nothing,
+so any bound driven by a sensor needs to know the sensor is alive** — and the
+degradation has to be chosen deliberately, because the default is whichever
+direction the arithmetic happens to fall.
+
+Two smaller things it cost:
+
+- **`AudioContext.state` at construction is meaningless.** It reaches `running`
+  asynchronously, so the first draft's synchronous check would have reported "no
+  monitor" on a *healthy* machine and quietly disabled the feature everywhere.
+  The poll decides instead, after a grace well inside the bound it protects.
+- **The positive half is untestable on this box** and the test says so out loud
+  rather than passing quietly. It asserts the degradation here and the real
+  behaviour on any machine with audio hardware.

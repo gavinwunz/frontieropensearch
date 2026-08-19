@@ -1247,3 +1247,35 @@ end a turn the gate would have accepted.
 lesson was to revert the fix before believing a test pins anything. Doing it as
 targeted mutations rather than one wholesale revert says *which* test pins
 *which* line, and it is cheap enough to be routine from here.
+
+**And then testing the mechanism rather than the logic found the real bug.**
+Every browser test in this file replaces the microphone, so none of them touch
+the code that listens to one. Driving a real captured stream through Gecko's
+fake device showed the `AudioContext` stuck in `suspended`, reading a flat zero,
+with `resume()` never settling. Autoplay was the obvious suspect and cost an
+hour of being wrong — `IsAllowedToPlay` returns early in this profile, and the
+context stays suspended with an active capture and user activation both in
+place. The cause is `destination.maxChannelCount === 0`: **this box has no audio
+output device**, and Web Audio will not run a graph without one, even to measure
+an input.
+
+**The failure was pointed the wrong way, which is the part worth keeping.** A
+suspended context reads exactly what a silent room reads, so the initial-silence
+bound would have fired six seconds *into an utterance* and reported "nothing
+heard" — a safety bound cutting off the person it protects, which is worse than
+no bound. The turn now asks whether anything is reporting the level before it
+treats silence as meaning anything, and both failure routes land it back on the
+key and the model's window: it degrades to the previous design rather than past
+it. A sharper version of run 39's lesson — **a sensor that cannot read returns
+the same value as a sensor reading nothing**, so the degradation has to be
+chosen rather than left to whichever way the arithmetic falls.
+
+The first draft also read `AudioContext.state` at construction, which is
+meaningless — it reaches `running` asynchronously — and would have reported "no
+monitor" on a *healthy* machine, disabling the feature everywhere with every
+test still green. The poll decides now.
+
+**Left unverified on purpose:** the positive half of the mechanism test cannot
+run here. It asserts the degradation instead and says so in its output. The real
+level path has been reasoned about, not observed; the first machine with audio
+hardware should run that file and confirm the positive branch is taken.

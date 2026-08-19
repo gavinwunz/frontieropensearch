@@ -658,4 +658,17 @@ down and coming up — under load a handler runs some way after its event — an
 the difference lands exactly on the 400ms boundary being decided, turning a
 deliberate hold on a busy machine into a tap.
 
+**A bound is only as good as the signal under it, and this one has no signal on
+some machines.** The level monitor is an `AnalyserNode`, and Web Audio needs an
+*output* device before it will run a graph at all — so a machine with no audio
+output never leaves `suspended` and reads a flat zero, which is exactly what a
+quiet room reads. A turn that trusted that would end six seconds into somebody's
+sentence and tell them nothing was heard, which is worse than having no bound.
+So the turn asks whether anything is reporting the level before it treats
+silence as meaning anything, and a graph that has not started within half a
+second reports speech once and stops looking. Both routes land the turn back on
+the key and the model's window — the design that shipped before these bounds
+existed. **The failure degrades to the previous behaviour rather than past it**,
+which is the property to preserve if either bound is ever changed.
+
 `IDEAS.md` (run 40) has the sources and what driving it found.
