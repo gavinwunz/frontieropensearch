@@ -20,7 +20,9 @@ import {
   RELATED_FLOOR,
   TIER_LABELS,
   TIER_ORDER,
+  cosine,
   pageMatches,
+  relatedCandidates,
   suggestionsFor,
 } from "../../FOSSuggest.sys.mjs";
 
@@ -363,5 +365,72 @@ describe("the related tier", () => {
       near(`https://a.test/${i}`, `Page ${i}`, 0.9 - i / 100)
     );
     assert.equal(suggestionsFor("memex", { related }).length, DEFAULT_LIMIT);
+  });
+});
+
+describe("cosine", () => {
+  // Floating point: two vectors pointing the same way come out at
+  // 0.9999999999999998 as often as at 1, and a similarity compared against a
+  // threshold does not care about the difference.
+  const close = (actual, expected) =>
+    assert.ok(
+      Math.abs(actual - expected) < 1e-12,
+      `${actual} is not within 1e-12 of ${expected}`
+    );
+
+  it("is 1 for a vector against itself", () => {
+    close(cosine([1, 2, 3], [1, 2, 3]), 1);
+  });
+
+  it("is 0 for orthogonal vectors", () => {
+    assert.equal(cosine([1, 0], [0, 1]), 0);
+  });
+
+  it("is -1 for opposites", () => {
+    close(cosine([1, 0], [-1, 0]), -1);
+  });
+
+  it("ignores magnitude, which is what makes it a similarity", () => {
+    close(cosine([1, 1], [5, 5]), 1);
+  });
+
+  it("reads a Float32Array, which is what the engine returns", () => {
+    const a = new Float32Array([0.5, 0.5]);
+    close(cosine(a, [0.5, 0.5]), 1);
+  });
+
+  it("refuses rather than throws on nothing, or on a length mismatch", () => {
+    assert.equal(cosine(null, [1]), 0);
+    assert.equal(cosine([1, 2], [1]), 0);
+    assert.equal(cosine([0, 0], [1, 1]), 0);
+  });
+});
+
+describe("relatedCandidates", () => {
+  it("keeps only pages the words did not already answer", () => {
+    const kept = page("https://a.test/", "As We May Think");
+    const matched = page("https://b.test/", "The memex explained");
+    assert.deepEqual(relatedCandidates("memex", [kept, matched]), [kept]);
+  });
+
+  it("drops a page with no title, since a URL is not prose", () => {
+    // The measurement scored query→title. A slug is not a sentence and the
+    // model has no useful row for a hostname.
+    const untitled = page("https://memex.test/x", "");
+    assert.deepEqual(relatedCandidates("associative trails", [untitled]), []);
+  });
+
+  it("is empty for an empty query rather than everything", () => {
+    assert.deepEqual(relatedCandidates("", [page("https://a.test/", "A")]), []);
+    assert.deepEqual(relatedCandidates("x", []), []);
+    assert.deepEqual(relatedCandidates("x"), []);
+  });
+
+  it("preserves the order it was given", () => {
+    const pages = [
+      page("https://a.test/", "First"),
+      page("https://b.test/", "Second"),
+    ];
+    assert.deepEqual(relatedCandidates("memex", pages), pages);
   });
 });

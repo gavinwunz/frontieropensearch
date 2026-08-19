@@ -34,16 +34,37 @@
  *   3. pages on the **active trail** the context has not claimed;
  *   4. **crossings** — pages another trail reached that this context also
  *      reached, which is the memex's compounding effect made rankable;
- *   5. everything else, by **Places frecency**, which stays as the floor.
+ *   5. pages **close in meaning** to what was typed, which is the one tier
+ *      that is a score rather than a fact — see below;
+ *   6. everything else, by **Places frecency**, which stays as the floor.
  *
  * Two properties follow, and both are the point:
  *
  * - Every tier is explainable to the user in one line, and the bar prints that
  *   line as the group heading. Frecency has never been explainable.
  * - Every tier boundary is falsifiable. Either the page is in the context or
- *   it is not; there is no threshold to argue about. The only score in the
- *   whole ranking is in the last tier, and it is one this project did not
- *   invent.
+ *   it is not.
+ *
+ * WHY ONE TIER HAS A THRESHOLD AFTER ALL
+ *
+ * This file used to be able to say there was no threshold anywhere but the
+ * floor. Tier 5 spends that, and it is worth being plain about why rather than
+ * quietly widening the claim.
+ *
+ * The rest of the ranking rests on `pageMatches`, which requires every typed
+ * term to appear in the title or the URL. Measuring that predicate against
+ * real queries found it does not merely rank those pages badly — for **11 of
+ * 32** queries it scores every candidate identically at zero, so a third of
+ * what a user types produces no ordering at all and whatever the store
+ * returned first wins. A tier that recovers those queries is worth one
+ * threshold.
+ *
+ * What keeps it honest is that the threshold is *measured* rather than tuned:
+ * `RELATED_FLOOR` is where the same experiment found "same enquiry" best
+ * separates from "not", and re-running `agent/jobs/run36.sh` re-derives it. It
+ * is one number with a stated precision and recall, which is a different kind
+ * of object from twenty-two coefficients nobody can account for — and it buys
+ * a tier that only ever offers, never acts.
  *
  * WHY THE FLOOR STAYS
  *
@@ -242,6 +263,64 @@ function rowFor(tier, page, index) {
     mark: letter,
     spoken: letter ? markWord(letter) : null,
   };
+}
+
+/**
+ * Cosine similarity between two equal-length vectors.
+ *
+ * Kept here rather than beside the engine that produces the vectors because
+ * this module is where a tier's meaning lives, and it is pure, so the arithmetic
+ * is tested in node without Gecko. Vectors arrive normalised from the static
+ * backend, so the magnitudes below are usually 1 — they are computed anyway
+ * because a caller passing an unnormalised vector should get the right answer
+ * rather than a plausible one.
+ *
+ * @param {ArrayLike<number>} a
+ * @param {ArrayLike<number>} b
+ * @returns {number} -1 to 1, or 0 when either side has no magnitude or the
+ *   lengths disagree.
+ */
+export function cosine(a, b) {
+  if (!a || !b || a.length !== b.length) {
+    return 0;
+  }
+  let dot = 0;
+  let leftSquares = 0;
+  let rightSquares = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    leftSquares += a[i] * a[i];
+    rightSquares += b[i] * b[i];
+  }
+  const magnitude = Math.sqrt(leftSquares) * Math.sqrt(rightSquares);
+  return magnitude === 0 ? 0 : dot / magnitude;
+}
+
+/**
+ * The `related` source, built from vectors.
+ *
+ * A page is a candidate only when it *failed* `pageMatches`: the tiers above
+ * have already offered everything that answered the words, so anything this
+ * would re-offer is a duplicate the dedup would drop anyway, and embedding it
+ * is work with no possible outcome.
+ *
+ * The text compared is the title, not the URL. The measurement that set
+ * `RELATED_FLOOR` scored query→title at p@1 0.938, and a URL is not prose —
+ * its tokens are hostnames and slugs, which a bag-of-tokens model has no
+ * useful row for. A page with no title is therefore not a candidate.
+ *
+ * @param {string} query What the user has typed.
+ * @param {object[]} pages Candidates from any tier.
+ * @returns {object[]} The subset worth embedding, in the order given.
+ */
+export function relatedCandidates(query, pages) {
+  const text = String(query ?? "").trim();
+  if (!text) {
+    return [];
+  }
+  return (pages ?? []).filter(
+    page => page?.title?.trim() && !pageMatches(text, page)
+  );
 }
 
 /**

@@ -41,7 +41,11 @@ import {
 import { buildContextPack } from "./FOSContextPack.sys.mjs";
 import { summariseContents } from "./FOSContextSidebarView.sys.mjs";
 import { FOSContextStore } from "./FOSContextStore.sys.mjs";
-import { suggestionsFor } from "./FOSSuggest.sys.mjs";
+import {
+  cosine,
+  relatedCandidates,
+  suggestionsFor,
+} from "./FOSSuggest.sys.mjs";
 import { resolveMarkToken } from "./FOSMarks.sys.mjs";
 import { nodeKey, nodeIdFromKey } from "./FOSTrailSession.sys.mjs";
 
@@ -52,6 +56,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
   // rather than with the engine, which is imported on the navigation path and
   // has no business pulling Places in behind it.
   frecencyMatches: "resource:///modules/FOSPlacesFloor.sys.mjs",
+  // The `related` tier only, and it may never load: the weights are an
+  // optional download, so this is deferred for the same reason the floor is —
+  // a navigation must not pull an ML engine in behind it.
+  FOSEmbeddings: "resource:///modules/FOSEmbeddings.sys.mjs",
 });
 
 /** One database per profile, shared by every window. */
@@ -750,17 +758,73 @@ export class FOSContextEngine {
       }),
     ]);
 
+    const sources = {
+      marked: this.#markedFor(text),
+      context: this.#withMarks(contents?.pages ?? []),
+      trail: this.#withMarks(trail),
+      crossings: this.#withMarks(crossings),
+      history,
+    };
+
     return suggestionsFor(
       text,
-      {
-        marked: this.#markedFor(text),
-        context: this.#withMarks(contents?.pages ?? []),
-        trail: this.#withMarks(trail),
-        crossings: this.#withMarks(crossings),
-        history,
-      },
+      { ...sources, related: await this.#related(text, sources) },
       { limit }
     );
+  }
+
+  /**
+   * The `related` tier: pages that answer the query by meaning after the other
+   * tiers have taken everything that answers it by spelling.
+   *
+   * Candidates are drawn from the tiers already read rather than from a wider
+   * query, which is the honest scope: this tier recovers pages the strict
+   * predicate dropped, it does not go looking for new ones. The floor is
+   * included because it is where a page the user visited once last year lives,
+   * and that is exactly the page a lexical match cannot find.
+   *
+   * Everything here is best-effort. A machine without the weights gets no
+   * engine, `embed` returns null, and the tier is absent — which is a shorter
+   * list, not a failure. See `FOSEmbeddings` for why that differs from the
+   * voice path.
+   *
+   * @param {string} text What the user has typed.
+   * @param {object} sources The tiers already gathered.
+   * @returns {Promise<object[]>} Candidates carrying a `similarity`.
+   */
+  async #related(text, sources) {
+    const seen = new Set();
+    const candidates = [];
+    for (const tier of ["context", "trail", "crossings", "history"]) {
+      for (const page of relatedCandidates(text, sources[tier])) {
+        const url = String(page.url ?? "");
+        if (url && !seen.has(url)) {
+          seen.add(url);
+          candidates.push(page);
+        }
+      }
+    }
+    if (!candidates.length) {
+      return [];
+    }
+
+    try {
+      const vectors = await lazy.FOSEmbeddings.embed([
+        text,
+        ...candidates.map(page => page.title),
+      ]);
+      if (!vectors) {
+        return [];
+      }
+      const [query, ...titles] = vectors;
+      return candidates.map((page, index) => ({
+        ...page,
+        similarity: cosine(query, titles[index]),
+      }));
+    } catch (error) {
+      console.error(error);
+      return [];
+    }
   }
 
   /**

@@ -19,6 +19,7 @@ EXTRA_JS_MODULES += [
     "FOSContextSidebarView.sys.mjs",
     "FOSContextSignals.sys.mjs",
     "FOSContextStore.sys.mjs",
+    "FOSEmbeddings.sys.mjs",
     "FOSField.sys.mjs",
     "FOSFieldSurface.sys.mjs",
     "FOSFieldView.sys.mjs",
