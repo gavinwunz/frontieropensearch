@@ -2516,3 +2516,64 @@ needs.
 Sources: [potion-retrieval-32M](https://huggingface.co/minishlab/potion-retrieval-32M),
 [Model2Vec results](https://github.com/MinishLab/model2vec/blob/main/results/README.md),
 [Identifying Task-based Sessions in Search Engine Query Logs, Lucchese et al., WSDM 2011](https://dl.acm.org/doi/pdf/10.1145/1935826.1935875)
+
+## Run 37 — the threshold was measured over the wrong pairs
+
+Not a search: a correction, found by driving the thing that was built on run
+36's numbers.
+
+`RELATED_FLOOR` was 0.169, taken from the **query→query** distribution. The
+tier it guards only ever compares a **query to a title**. Those are different
+distributions out of the same model, and nothing in the code said which one it
+was standing on. The tier refused a page at 0.159 that it existed to offer,
+and the refusal was correct — the constant was not.
+
+Measured properly, at the dimension this fork ships:
+
+| comparison | best threshold | precision | recall |
+| --- | --- | --- | --- |
+| query→query | 0.201 | 0.778 | 0.583 |
+| **query→title** | **0.173** | 0.708 | 0.656 |
+
+The lesson is not "check your constants" — it is that **a threshold is only
+measured if you can say what it was measured over**. 0.169 and 0.173 are close
+enough that the mistake could not be seen in the number; it could only be seen
+in the pairs. The comment on the constant now names the comparison, and
+`pairs()` in the measurement takes an explicit second set so a within-type and
+a cross-type sweep cannot be confused again.
+
+**The fixture had to be measured too.** A bag-of-tokens model's similarity
+between two texts with *no* overlapping words is not something a person can
+estimate by reading them, which is exactly why the first attempt at a test
+fixture failed. Eight candidate pairs, all with zero shared terms, at d256:
+
+| query | title | cosine |
+| --- | --- | --- |
+| cheap airfare to portugal | Lisbon Travel Guide: Where to Stay | **0.36** |
+| storing hierarchies in a database | SQLite: Write-Ahead Logging | 0.355 |
+| clicky switches for typing | The Best Mechanical Keyboards of the Year | 0.257 |
+| run a language model on my own machine | ONNX Runtime Performance Tuning | 0.217 |
+| my loaf came out flat and gummy | Troubleshooting Your Sourdough Starter | 0.183 |
+| hypertext research trails linking | As We May Think: The Memex… | 0.159 |
+| what did vannevar bush propose | As We May Think: The Memex… | 0.091 |
+| cheap airfare to portugal | Baking Sourdough Bread in a Dutch Oven | 0.014 |
+
+The bottom two are the same finding as run 36's `rust` result, and it is worth
+stating as a limit of the model rather than as a curiosity: **proper nouns and
+abstractions are where it is weakest**. "vannevar bush" scores 0.091 against a
+page that is literally about Vannevar Bush, because a static table has no row
+that connects a name to the thing the name is known for. Common-noun topical
+language — flights and travel, switches and keyboards — is where it is strong.
+For this fork that is the right way round, since the shallow extractor already
+handles capitalised names well and it is lower-case topical queries that were
+silent.
+
+**A scope this run tried to widen and could not.** The `related` tier draws
+candidates from the context, the trail and its crossings, and *not* from the
+Places floor. The floor's rows arrive from `frecencyMatches(text)`, which is
+itself a lexical query — so a page sharing no word with what was typed is not
+in that array to be recovered, and the tier cannot reach it however good the
+model is. Reaching it means embedding all of Places, which at 1.27ms a page is
+a vector store with persistence and staleness rules: the thing Firefox's own
+semantic history search built, and a different feature from this one. Recorded
+as the honest boundary rather than left as an implied capability.
