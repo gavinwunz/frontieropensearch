@@ -332,37 +332,34 @@ add_task(async function test_the_pref_gives_the_chain_back() {
   // not this project, so it is checked by pressing the gesture rather than by
   // reading the module that honours it.
   //
-  // The discriminator is whether there is a forward afterwards, which is
+  // The discriminator is whether there is a way forward afterwards, which is
   // exactly the difference between a walk and an arrival. The verb moves the
   // cursor and leaves the future in place; a chain step arrives at a node the
-  // cursor is not pointing at, which truncates it — so with the pref off the
-  // trail has nothing ahead, and with it on it has the page just left.
-  const tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, PAGE_A);
+  // cursor is not pointing at, which truncates it. Both land on the same page
+  // here — they diverge past a branch, which `test_the_gesture_runs_the_verb`
+  // covers — so the state they leave behind is what tells them apart.
   const trail = session();
-  await goTo(PAGE_B);
-  await goTo(PAGE_C);
+  for (const replaces of [false, true]) {
+    const tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, PAGE_A);
+    await goTo(PAGE_B);
+    await goTo(PAGE_C);
 
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.fos.trails.replacesLinearHistory", false]],
-  });
-  const stepped = BrowserTestUtils.waitForLocationChange(gBrowser, PAGE_B);
-  window.document.getElementById("Browser:Back").doCommand();
-  await stepped;
-  Assert.equal(
-    trail.canWalk("forward"),
-    false,
-    "the chain took the gesture, and the trail read it as an arrival"
-  );
-  await SpecialPowers.popPrefEnv();
+    await SpecialPowers.pushPrefEnv({
+      set: [["browser.fos.trails.replacesLinearHistory", replaces]],
+    });
+    const stepped = BrowserTestUtils.waitForLocationChange(gBrowser, PAGE_B);
+    window.document.getElementById("Browser:Back").doCommand();
+    await stepped;
+    await SpecialPowers.popPrefEnv();
 
-  const walked = BrowserTestUtils.waitForLocationChange(gBrowser, PAGE_A);
-  window.document.getElementById("Browser:Back").doCommand();
-  await walked;
-  Assert.equal(
-    trail.canWalk("forward"),
-    true,
-    "and with the pref back on it is a walk, which leaves a way forward"
-  );
+    Assert.equal(
+      trail.canWalk("forward"),
+      replaces,
+      replaces
+        ? "the verb took the gesture, and a walk leaves a way forward"
+        : "the chain took the gesture, and the trail read it as an arrival"
+    );
 
-  BrowserTestUtils.removeTab(tab);
+    BrowserTestUtils.removeTab(tab);
+  }
 });
