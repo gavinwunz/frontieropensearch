@@ -519,8 +519,9 @@ Nothing waits on a person. **Nothing is running — the harness is free.**
 
 `run32` (the smoke run plus the Field's perf file), `run33`, `run34` and `run35`
 all finished green. The last of them left the pictures in `agent/reports/`
-current with the tree. `run36` is the embedding measurement and also finished
-green; its numbers are in `IDEAS.md` rather than in a picture.
+current with the tree. `run36` is the embedding measurement and `run37` drives
+the tier built on it; both finished green. Their numbers are in `IDEAS.md`
+rather than in a picture.
 
 The static embedding weights live beside the speech ones at
 `/data/ml-models/onnx-models/mozilla/static-embeddings/`, put there by
