@@ -1119,6 +1119,13 @@ add_task(async function test_forgetting_a_host_reparents_rather_than_orphans() {
 
   const summary = await store.forgetHost("forget.example");
   Assert.equal(summary.nodes, 1, "one node went");
+  Assert.deepEqual(
+    summary.nodeIds,
+    [middle],
+    "and the summary names it, because a window holding the same tree in " +
+      "memory has to prune it by id"
+  );
+  Assert.equal(summary.all, false);
 
   const [row] = await store.connection.execute(
     `SELECT parent_id FROM trail_node WHERE id = :leaf`,
@@ -1321,6 +1328,12 @@ add_task(async function test_an_emptied_context_and_trail_are_deleted() {
     1,
     "the trail that emptied, not the one that did not"
   );
+  Assert.deepEqual(
+    summary.contextIds,
+    [doomed],
+    "and the emptied context is named, so a window can stop offering it as " +
+      "somewhere to file the next page"
+  );
   await store.close();
 });
 
@@ -1400,6 +1413,13 @@ add_task(
 
     const summary = await store.forgetAll();
     Assert.greater(summary.nodes, 0, "the summary reports what went");
+    Assert.ok(
+      summary.all,
+      "and says it was everything, which is what a live window needs to know: " +
+        "a list of every id in the database would say no more and be the " +
+        "longest message the fork ever sends"
+    );
+    Assert.deepEqual(summary.nodeIds, [], "so no ids are enumerated");
 
     for (const table of [
       "trail",
@@ -1431,7 +1451,15 @@ add_task(async function test_forgetting_nothing_is_not_an_error() {
 
   Assert.deepEqual(
     await store.forgetHost("absent.example"),
-    { nodes: 0, queries: 0, contexts: 0, trails: 0 },
+    {
+      nodes: 0,
+      queries: 0,
+      contexts: 0,
+      trails: 0,
+      nodeIds: [],
+      contextIds: [],
+      all: false,
+    },
     "a host with nothing recorded about it forgets nothing and says so"
   );
   Assert.equal(await rowCount(store, "trail_node"), 1, "and touches nothing");

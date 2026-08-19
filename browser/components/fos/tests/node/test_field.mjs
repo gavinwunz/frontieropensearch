@@ -726,3 +726,40 @@ test("restoring two saved positions cannot make them fight", () => {
   );
   assert.equal(field.overlaps().length, 0);
 });
+
+// -------------------------------------------------- a page whose record is gone
+
+test("a forgotten page's card is dropped without being dismissed", () => {
+  const { trails, field } = setup();
+  const { cards } = trailWith(trails, field, 2);
+  const doomed = cards[0];
+  const kept = cards[1];
+  trails.forget([doomed.node_id]);
+
+  assert.equal(field.drop(doomed.id), doomed.node_id);
+
+  assert.equal(field.getCard(doomed.id), null, "the card left the Field");
+  assert.equal(field.cardForNode(doomed.node_id), null, "and its node index");
+  assert.equal(
+    field.getCard(kept.id).id,
+    kept.id,
+    "and took nothing else with it"
+  );
+});
+
+test("dropping a card writes nothing to the tree, because there is nothing to write to", () => {
+  const { trails, field } = setup();
+  const { cards } = trailWith(trails, field, 2);
+  const nodeId = cards[0].node_id;
+  trails.forget([nodeId]);
+
+  field.drop(cards[0].id);
+
+  assert.equal(
+    trails.getNode(nodeId),
+    null,
+    "the page is gone rather than dismissed: `restore` has nothing to find, " +
+      "which is what makes this not a dismissal"
+  );
+  assert.throws(() => field.drop(cards[0].id), /no such card/);
+});

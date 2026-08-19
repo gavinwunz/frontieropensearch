@@ -368,6 +368,74 @@ export class FOSTrailSession {
     return ids;
   }
 
+  /**
+   * Take pages out of this window's live tree, because their record has gone.
+   *
+   * The other half of `FOSForget`. The store's delete is what the privacy
+   * claim rests on, but the tree the rail draws and the cards on the Field are
+   * in-memory objects built during the session: without this a page forgotten
+   * while it was on screen stayed on screen until the browser was restarted,
+   * and every later navigation from it wrote rows pointing at a node that no
+   * longer existed.
+   *
+   * **The tab is not closed.** A page open when its site is forgotten keeps
+   * its document, its scroll position and anything typed into it; what goes is
+   * the *record* of it. That is Firefox's own answer rather than an invention
+   * — `SessionStore.onPurgeDomainData` drops every closed tab and every tab of
+   * a closed window matching the domain and does not touch an open one — and
+   * it is the right one twice over: closing a tab is a data-loss surprise from
+   * a menu item that promised to delete data, and the user may well be reading
+   * the page they have just decided not to keep a record of.
+   *
+   * The tab is left **unrecorded** instead. Its browser loses its node, so no
+   * dwell accrues and no scroll offset is written for what is still on screen.
+   * Navigating onward from it starts recording again — forgetting is a delete,
+   * not a blocklist, and Forget About This Site is not one either; a user who
+   * wants a session that records nothing has a private window.
+   *
+   * @param {Iterable<number>} nodeIds Nodes to remove, by in-memory id.
+   * @returns {{nodes: number[], trails: number[]}} What actually went.
+   */
+  forget(nodeIds) {
+    const gone = this.store.forget(nodeIds);
+    if (!gone.nodes.length) {
+      return gone;
+    }
+    const nodes = new Set(gone.nodes);
+    const trails = new Set(gone.trails);
+
+    for (const tab of this.#window.gBrowser?.tabs ?? []) {
+      const browser = tab.linkedBrowser;
+      if (nodes.has(this.#nodeByBrowser.get(browser))) {
+        this.#nodeByBrowser.delete(browser);
+      }
+      if (trails.has(this.#trailByBrowser.get(browser))) {
+        this.#trailByBrowser.delete(browser);
+      }
+    }
+
+    // `back` walks this, and a forgotten id in it is a page `enter` would
+    // throw on.
+    this.#recent = this.#recent.filter(id => !nodes.has(id));
+    if (trails.has(this.#activeTrailId)) {
+      this.#activeTrailId = null;
+    }
+
+    // Released here rather than left to `#syncMarks`, which returns early when
+    // there is no active trail — which is exactly the case where a whole trail
+    // has just been forgotten, and exactly when the stale letters would be
+    // most confusing. The sync that follows hands the freed letters out again.
+    for (const id of nodes) {
+      const key = nodeKey(id);
+      if (this.#markedNodes.delete(key)) {
+        this.#marks?.release(key);
+      }
+    }
+    this.#syncMarks();
+    this.#changed();
+    return gone;
+  }
+
   // ---- capture ------------------------------------------------------------
 
   /**

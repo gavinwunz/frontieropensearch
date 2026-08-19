@@ -375,7 +375,14 @@ export class FOSFieldSurface {
     // been abandoned. Retiring before the placement loop also means a node of a
     // finished trail cannot be placed and retired in the same pass.
     for (const region of model.regions()) {
-      if (this.#session.store.isArchived(region.id)) {
+      // A trail that has gone rather than ended: forgetting deletes the tree
+      // it was drawn from, and a region outliving its trail would be a set of
+      // cards for pages the browser has just said it no longer has a record
+      // of. Checked before `isArchived`, which needs the trail to exist.
+      if (
+        !this.#session.store.getTrail(region.id) ||
+        this.#session.store.isArchived(region.id)
+      ) {
         model.retireTrail(region.id);
         changed = true;
         if (this.#regionId === region.id) {
@@ -388,6 +395,17 @@ export class FOSFieldSurface {
         }
       }
     }
+    // Then cards whose page has gone while its trail stayed — forgetting a
+    // host takes pages out of the middle of a trail the rest of which is still
+    // there. Dropped rather than dismissed: dismissal is a statement about a
+    // page that is still on its trail, and this page is not.
+    for (const card of model.cards()) {
+      if (!this.#session.store.getNode(card.node_id)) {
+        model.drop(card.id);
+        changed = true;
+      }
+    }
+
     // Focus is a card id at the region level and a region id at the overview,
     // so it has to be checked against both — clearing it by card alone would
     // drop the selection off every tile in the overview whenever any trail was

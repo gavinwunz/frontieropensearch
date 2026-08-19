@@ -362,6 +362,108 @@ export class TrailStore {
   }
 
   /**
+   * `forget`: take pages out of the tree because their record has gone.
+   *
+   * The one path here that removes anything, and it exists only because the
+   * user asked for it somewhere else — Clear Recent History or Forget About
+   * This Site, arriving through `FOSForget`. Navigation never reaches this;
+   * pillar B's promise that going back cannot destroy a branch is unaffected,
+   * because the branch is destroyed by the user's own instruction to destroy
+   * it and by nothing else.
+   *
+   * The rules are `FOSContextStore`'s, deliberately and to the letter, because
+   * two trees that disagree are worse than either: a surviving child is
+   * reparented onto its nearest surviving ancestor rather than deleted with
+   * its parent, and a trail with nothing left on it goes too. See SCHEMA.md
+   * §Forgetting for why each of those is the right trade — this is the same
+   * decision, applied to the copy of the tree that is on screen.
+   *
+   * @param {Iterable<number>} nodeIds Ids to remove. Unknown ids are ignored
+   *   rather than thrown on: the caller is naming rows deleted from a database
+   *   this window may never have seen every one of.
+   * @returns {{nodes: number[], trails: number[]}} What actually went.
+   */
+  forget(nodeIds) {
+    const doomed = new Set();
+    for (const id of nodeIds ?? []) {
+      if (this.#nodes.has(id)) {
+        doomed.add(id);
+      }
+    }
+    if (!doomed.size) {
+      return { nodes: [], trails: [] };
+    }
+
+    // Reparent first, while the forgotten nodes are all still present: the
+    // climb reads `parent_id` on nodes that are themselves about to go.
+    for (const id of doomed) {
+      const survivors = (this.#childIds.get(id) ?? []).filter(
+        childId => !doomed.has(childId)
+      );
+      if (!survivors.length) {
+        continue;
+      }
+      const ancestorId = this.#survivingAncestor(id, doomed);
+      for (const childId of survivors) {
+        const child = this.#nodes.get(childId);
+        this.#detach(child);
+        child.parent_id = ancestorId;
+        if (ancestorId !== null) {
+          this.#childIds.get(ancestorId).push(childId);
+        }
+      }
+    }
+
+    const touched = new Set();
+    for (const id of doomed) {
+      const node = this.#nodes.get(id);
+      touched.add(node.trail_id);
+      // Only off a parent that is staying: a doomed parent's child list is
+      // deleted whole a line below, and reaching into one already deleted in
+      // this loop would throw on a chain of forgotten pages — the ordinary
+      // case, since a site is usually navigated through more than once.
+      if (node.parent_id !== null && !doomed.has(node.parent_id)) {
+        this.#detach(node);
+      }
+      this.#childIds.delete(id);
+      this.#nodes.delete(id);
+    }
+
+    const trails = [];
+    for (const trailId of touched) {
+      if (this.nodes(trailId).length) {
+        this.#touchTrail(trailId);
+      } else {
+        this.#trails.delete(trailId);
+        trails.push(trailId);
+      }
+    }
+    return { nodes: [...doomed], trails };
+  }
+
+  /**
+   * The nearest ancestor of a node that is not itself being forgotten.
+   *
+   * @param {number} id A node being forgotten.
+   * @param {Set<number>} doomed Every node being forgotten in this pass.
+   * @returns {?number} A node id, or null for "make it a root".
+   */
+  #survivingAncestor(id, doomed) {
+    let ancestorId = this.#nodes.get(id).parent_id;
+    const seen = new Set([id]);
+    while (ancestorId !== null && doomed.has(ancestorId)) {
+      if (seen.has(ancestorId)) {
+        // Unreachable from the recorder, which only ever parents a new node
+        // onto an existing one. A corrupt tree must not hang a delete.
+        return null;
+      }
+      seen.add(ancestorId);
+      ancestorId = this.#nodes.get(ancestorId).parent_id;
+    }
+    return ancestorId;
+  }
+
+  /**
    * Record where the user was on the page.
    *
    * The live `nsISHEntry` is authoritative while the node still has one; these

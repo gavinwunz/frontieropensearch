@@ -41,12 +41,16 @@ ChromeUtils.defineESModuleGetters(lazy, {
 /**
  * Notified after anything is forgotten, with the summary as its data.
  *
- * The live surfaces do not yet act on it. A card on the Field and a node in
- * the rail are in-memory objects built during the session, and taking a page
- * out from under them mid-session is a separate piece of work with its own
- * question to answer — what happens to the tab you are looking at when you
- * forget the site it is on. The notification exists so that work has something
- * to attach to, and so a test can observe that clearing happened at all.
+ * Every window's engine listens, and prunes its own tree, cards and id maps to
+ * match — a card on the Field and a node in the rail are in-memory objects
+ * built during the session, so a store that has forgotten a page and a window
+ * that has not is a browser still showing a record it says it has deleted.
+ * The summary carries the row ids rather than only counts for exactly that
+ * reason; see `FOSContextEngine`'s `#forgotten`.
+ *
+ * An observer topic rather than a direct call because forgetting is about the
+ * profile and a session is about a window: there may be no windows open, or
+ * five, and the store must not have to know which.
  */
 export const FORGOTTEN_TOPIC = "fos-context-forgotten";
 
@@ -104,6 +108,10 @@ async function forget(work) {
     return;
   }
   try {
+    // Before the delete, not after: a write already queued in some window
+    // would otherwise land on the other side of it and put back a row the user
+    // has just asked to be rid of. See `settledEverywhere`.
+    await lazy.FOSContextEngine.settledEverywhere();
     const summary = await work(store);
     Services.obs.notifyObservers(
       null,

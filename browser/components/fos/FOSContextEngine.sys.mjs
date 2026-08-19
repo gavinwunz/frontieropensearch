@@ -68,6 +68,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
   // optional download, so this is deferred for the same reason the floor is —
   // a navigation must not pull an ML engine in behind it.
   FOSEmbeddings: "resource:///modules/FOSEmbeddings.sys.mjs",
+  // Only for the topic it names, and only from `attach` — which runs once as a
+  // window opens and already awaits the disk, so it is not the navigation path
+  // this file is otherwise careful about.
+  FOSForget: "resource:///modules/FOSForget.sys.mjs",
 });
 
 /** One database per profile, shared by every window. */
@@ -75,6 +79,17 @@ let storePromise = null;
 
 /** Windows to their engine. */
 const byWindow = new WeakMap();
+
+/**
+ * Every engine currently recording, in every window.
+ *
+ * `byWindow` is a `WeakMap` and cannot be walked, and forgetting is the one
+ * operation that is about the profile rather than about a window: the store is
+ * shared, so a delete has to reach the live tree of every window at once.
+ * Membership is `attach` to `detach`, which is the interval in which an engine
+ * has a session to prune and a queue worth waiting for.
+ */
+const recording = new Set();
 
 /**
  * A `MarkRegistry` key for a context, namespaced like the trail session's.
@@ -137,6 +152,22 @@ export class FOSContextEngine {
    */
   static get storeIsOpen() {
     return storePromise !== null;
+  }
+
+  /**
+   * Wait for every window's outstanding writes to land.
+   *
+   * Forgetting deletes rows; a write already queued when the delete runs would
+   * land after it and put back a page the user just asked to be rid of. The
+   * queue is short and drains in milliseconds, and this is a user-initiated
+   * clear, so waiting is affordable where it would not be on the navigation
+   * path. It does not — and cannot — cover a page loaded *during* the delete:
+   * that is a visit made after the instruction, and recording it is right.
+   *
+   * @returns {Promise<void>}
+   */
+  static async settledEverywhere() {
+    await Promise.allSettled([...recording].map(engine => engine.settled));
   }
 
   /** Drop the shared store, so a test can open a fresh one. */
@@ -288,6 +319,9 @@ export class FOSContextEngine {
     this.#window.addEventListener("activate", this);
     this.#window.addEventListener("deactivate", this);
 
+    Services.obs.addObserver(this, lazy.FOSForget.FORGOTTEN_TOPIC);
+    recording.add(this);
+
     this.#reconcile();
     return this;
   }
@@ -298,7 +332,105 @@ export class FOSContextEngine {
     }
     this.#window.removeEventListener("activate", this);
     this.#window.removeEventListener("deactivate", this);
+    recording.delete(this);
+    try {
+      Services.obs.removeObserver(this, lazy.FOSForget.FORGOTTEN_TOPIC);
+    } catch (e) {
+      // Detaching an engine that never attached is not an error.
+    }
     this.#closeVisit(null);
+  }
+
+  observe(subject, topic, data) {
+    if (topic !== lazy.FOSForget.FORGOTTEN_TOPIC) {
+      return;
+    }
+    let summary;
+    try {
+      summary = JSON.parse(data);
+    } catch (e) {
+      console.error("FOSContextEngine: unreadable forget summary", e);
+      return;
+    }
+    this.#forgotten(summary);
+  }
+
+  /**
+   * Take what has just been deleted out of this window's live state.
+   *
+   * The tree the rail draws, the cards on the Field and this engine's own id
+   * maps are all in-memory and all built during the session, so a store that
+   * has forgotten a page and a window that has not is a browser showing a
+   * record it says it no longer has — and worse, one that goes on writing
+   * visits and scroll offsets against a row that is gone.
+   *
+   * The order matters and is the reverse of what looks natural. The session is
+   * pruned *first* and the id map is cleaned to match it, never the other way
+   * round: a node missing from `#nodeIds` is precisely what makes
+   * `#reconcile` decide the node has never been written and add it, so
+   * emptying the map while the tree still held the nodes would write every
+   * forgotten page straight back on the next settle. The map is a record of
+   * what is on disk; the tree is what the map is about.
+   *
+   * @param {ForgetSummary} summary As `FOSForget` broadcasts it.
+   */
+  #forgotten({ all = false, nodeIds = [], contextIds = [] }) {
+    if (!this.#session) {
+      return;
+    }
+    const rows = new Set(nodeIds);
+    const memNodeIds = [];
+    for (const [memId, rowId] of this.#nodeIds) {
+      if (all || rows.has(rowId)) {
+        memNodeIds.push(memId);
+      }
+    }
+    if (!all && !memNodeIds.length && !contextIds.length) {
+      return;
+    }
+
+    const gone = this.#session.forget(memNodeIds);
+
+    for (const memId of memNodeIds) {
+      this.#nodeIds.delete(memId);
+      this.#written.delete(memId);
+    }
+    for (const memTrailId of gone.trails) {
+      const trailId = this.#trailIds.get(memTrailId);
+      this.#trailIds.delete(memTrailId);
+      if (trailId !== undefined) {
+        this.#contextByTrail.delete(trailId);
+        this.#trailNames.delete(trailId);
+        this.#archivedTrails.delete(trailId);
+      }
+    }
+    // A context can go while its trail stays — every member forgotten by range
+    // while the trail keeps a node recorded outside it. Dropping the mapping
+    // is enough: reconciliation already heals a trail with no context by
+    // making one, which is the same repair a restored trail needs.
+    const deadContexts = new Set(contextIds);
+    for (const [trailId, contextId] of this.#contextByTrail) {
+      if (all || deadContexts.has(contextId)) {
+        this.#contextByTrail.delete(trailId);
+        // `#syncContextMarks` only ever assigns, because a context is not
+        // deleted in the ordinary course of a session. This is the one path
+        // that deletes one, so it is the one path that has to hand the letter
+        // back.
+        this.#marks?.release(contextKey(contextId));
+      }
+    }
+    if (all || deadContexts.has(this.#pinnedContextId)) {
+      this.#pinnedContextId = null;
+    }
+    // The visit's row has gone, so there is nothing left to close it against
+    // and the dwell it accrued is exactly what was asked to be forgotten.
+    if (this.#visit && memNodeIds.includes(this.#visit.memNodeId)) {
+      this.#visit = null;
+    }
+    if (all) {
+      this.#pendingQuery = null;
+    }
+    this.#syncContextMarks();
   }
 
   handleEvent(event) {

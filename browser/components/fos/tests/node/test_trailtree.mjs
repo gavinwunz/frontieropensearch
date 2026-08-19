@@ -524,3 +524,92 @@ test("a trail can be finished, resumed and finished again", () => {
   );
   assert.equal(store.isArchived(trailId), true);
 });
+
+/* ------------------------------------------------------------------ forget */
+
+/**
+ * A → B → C on one trail, plus a second root D under A's trail.
+ *
+ * @returns {object} The store and the five ids.
+ */
+function chain() {
+  const store = new TrailStore({ now: fixedClock() });
+  const trailId = store.createTrail();
+  const a = store.addNode({ trailId, url: "https://a.invalid/" });
+  const b = store.addNode({ trailId, parentId: a, url: "https://b.invalid/" });
+  const c = store.addNode({ trailId, parentId: b, url: "https://c.invalid/" });
+  const d = store.addNode({ trailId, parentId: a, url: "https://d.invalid/" });
+  return { store, trailId, a, b, c, d };
+}
+
+test("forgetting a node keeps what was found from it", () => {
+  const { store, b, c, a } = chain();
+
+  const gone = store.forget([b]);
+
+  assert.deepEqual(gone.nodes, [b]);
+  assert.deepEqual(gone.trails, [], "the trail still has nodes on it");
+  assert.equal(store.getNode(b), null, "the forgotten page is gone");
+  assert.equal(
+    store.getNode(c).parent_id,
+    a,
+    "its child is reparented onto the nearest survivor, not deleted with it"
+  );
+  assert.deepEqual(
+    store.children(a).map(n => n.url),
+    ["https://d.invalid/", "https://c.invalid/"],
+    "and is a child of that survivor, not merely pointing at it — joining " +
+      "its new siblings last, which is the order the rail draws branches in"
+  );
+});
+
+test("forgetting climbs past a parent that is also forgotten", () => {
+  const { store, a, b, c } = chain();
+
+  store.forget([a, b]);
+
+  assert.equal(
+    store.getNode(c).parent_id,
+    null,
+    "a node whose whole ancestry went becomes a root rather than an orphan"
+  );
+  assert.deepEqual(
+    store.roots(store.getNode(c).trail_id).map(n => n.id),
+    [c, 4],
+    "both survivors are roots and both are still on the trail"
+  );
+});
+
+test("forgetting every node on a trail takes the trail", () => {
+  const { store, trailId, a, b, c, d } = chain();
+
+  const gone = store.forget([a, b, c, d]);
+
+  assert.deepEqual(gone.trails, [trailId]);
+  assert.equal(store.getTrail(trailId), null);
+  assert.deepEqual(store.trails(), []);
+});
+
+test("forgetting ignores ids it has never seen", () => {
+  const { store, a } = chain();
+
+  assert.deepEqual(
+    store.forget([9999]),
+    { nodes: [], trails: [] },
+    "a window is told about rows, and need not hold every one of them"
+  );
+  assert.deepEqual(store.forget([]), { nodes: [], trails: [] });
+  assert.deepEqual(store.forget([a, 9999, a]).nodes, [a], "deduped");
+});
+
+test("forgetting a whole subtree deletes it without reparenting", () => {
+  const { store, b, c, a, d } = chain();
+
+  store.forget([b, c]);
+
+  assert.deepEqual(
+    store.nodes().map(n => n.id),
+    [a, d],
+    "nothing survived under b, so nothing was moved"
+  );
+});

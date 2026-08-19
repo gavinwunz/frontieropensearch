@@ -810,18 +810,46 @@ export class FieldModel {
    * @returns {number} The node the card was showing.
    */
   dismiss(cardId) {
+    const card = this.#take(cardId);
+    this.#trails.dismiss(card.node_id);
+    return card.node_id;
+  }
+
+  /**
+   * Take a card off the Field because its page has been forgotten.
+   *
+   * `dismiss` without the statement dismissal makes. Dismissal writes
+   * `dismissed_at` on the node so the page can be brought back by `enter`, and
+   * this page cannot: the node is already gone from the tree and the row is
+   * already gone from the store. Writing anything to the tree here would fail,
+   * and a card that could not be restored but looked dismissed would be the
+   * one thing §8 promises never happens.
+   *
+   * @param {number} cardId
+   * @returns {number} The node the card was showing.
+   */
+  drop(cardId) {
+    return this.#take(cardId).node_id;
+  }
+
+  /**
+   * Remove a card and touch its region, without saying why.
+   *
+   * @param {number} cardId
+   * @returns {object} The card that was removed.
+   */
+  #take(cardId) {
     const card = this.#cards.get(cardId);
     if (!card) {
       throw new Error(`no such card: ${cardId}`);
     }
-    this.#trails.dismiss(card.node_id);
     this.#cards.delete(cardId);
     this.#cardsByNode.delete(card.node_id);
     const region = this.#regions.get(card.region_id);
     if (region) {
       region.touched_at = this.#now();
     }
-    return card.node_id;
+    return card;
   }
 
   /**

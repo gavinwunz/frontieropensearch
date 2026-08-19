@@ -1216,7 +1216,7 @@ export class FOSContextStore {
    * @returns {Promise<ForgetSummary>}
    */
   async forgetAll() {
-    const summary = await this.#forgetCounts();
+    const summary = { ...(await this.#forgetCounts()), all: true };
     await this.#connection.executeTransaction(async () => {
       for (const table of [
         "field_placement",
@@ -1245,7 +1245,10 @@ export class FOSContextStore {
               (SELECT COUNT(*) FROM context) AS contexts,
               (SELECT COUNT(*) FROM trail) AS trails`
     );
-    return plain(row, ["nodes", "queries", "contexts", "trails"]);
+    return {
+      ...emptyForgetSummary(),
+      ...plain(row, ["nodes", "queries", "contexts", "trails"]),
+    };
   }
 
   /**
@@ -1328,9 +1331,16 @@ export class FOSContextStore {
             AND id NOT IN (SELECT id FROM fos_forget_query)`
       );
 
-      summary.nodes = await this.#count(
-        `SELECT COUNT(*) AS n FROM fos_forget_node`
-      );
+      // The rows that exist, not the ids that were asked for. Both callers
+      // select from `trail_node` so the two agree today, but a summary the
+      // live session prunes itself by must never name a node that was not
+      // there — it would look to a window like a page it had failed to drop.
+      summary.nodeIds = (
+        await this.#connection.execute(
+          `SELECT id FROM trail_node WHERE id IN (SELECT id FROM fos_forget_node)`
+        )
+      ).map(row => row.getResultByName("id"));
+      summary.nodes = summary.nodeIds.length;
       summary.queries = await this.#count(
         `SELECT COUNT(*) AS n FROM fos_forget_query`
       );
@@ -1356,7 +1366,8 @@ export class FOSContextStore {
         await this.#connection.execute(sql);
       }
 
-      summary.contexts = await this.#deleteEmptyContexts();
+      summary.contextIds = await this.#deleteEmptyContexts();
+      summary.contexts = summary.contextIds.length;
       summary.trails = await this.#count(
         `SELECT COUNT(*) AS n FROM trail
           WHERE id NOT IN (SELECT trail_id FROM trail_node)`
@@ -1414,7 +1425,7 @@ export class FOSContextStore {
   /**
    * Delete every context whose merge family has no members left.
    *
-   * @returns {Promise<number>} How many `context` rows went.
+   * @returns {Promise<number[]>} The `context` rows that went.
    */
   async #deleteEmptyContexts() {
     const roots = await this.mergeRoots();
@@ -1442,7 +1453,7 @@ export class FOSContextStore {
       }
     }
     if (!doomed.length) {
-      return 0;
+      return doomed;
     }
     const { names, params } = bindList(doomed, "c");
     for (const sql of [
@@ -1454,7 +1465,7 @@ export class FOSContextStore {
     ]) {
       await this.#connection.execute(sql, params);
     }
-    return doomed.length;
+    return doomed;
   }
 
   /**
@@ -1555,16 +1566,38 @@ function bindList(values, prefix) {
 }
 
 /**
+ * The ids are here for the live session rather than for the caller that asked
+ * for the delete. A window holds its own copy of the tree and its own cards,
+ * built during the session and keyed by these row ids, and a delete it cannot
+ * see is a page that stays on screen after the record of it has gone. See
+ * `FOSForget.FORGOTTEN_TOPIC`.
+ *
+ * `all` carries what a list of every id in the database would carry and costs
+ * nothing to send: forgetting everything is the one case where the ids say
+ * nothing a boolean does not, and it is also the case where the list would be
+ * longest.
+ *
  * @typedef {object} ForgetSummary
  * @property {number} nodes Trail nodes deleted.
  * @property {number} queries Queries deleted.
  * @property {number} contexts Contexts deleted.
  * @property {number} trails Trails deleted.
+ * @property {number[]} nodeIds The `trail_node` rows deleted. Empty when `all`.
+ * @property {number[]} contextIds The `context` rows deleted. Empty when `all`.
+ * @property {boolean} all Whether everything went.
  */
 
 /** @returns {ForgetSummary} */
 function emptyForgetSummary() {
-  return { nodes: 0, queries: 0, contexts: 0, trails: 0 };
+  return {
+    nodes: 0,
+    queries: 0,
+    contexts: 0,
+    trails: 0,
+    nodeIds: [],
+    contextIds: [],
+    all: false,
+  };
 }
 
 /**
