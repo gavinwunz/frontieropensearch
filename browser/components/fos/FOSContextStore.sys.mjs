@@ -66,10 +66,51 @@ export const SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1][0];
 const STATEMENT_SEPARATOR = /^--@$/m;
 
 /**
+ * A connection to a database that is never a file.
+ *
+ * `Sqlite.openConnection` takes a path and only a path, so the memory database
+ * has to be opened through `mozIStorageService` and then wrapped — which gives
+ * back exactly the same `Sqlite.sys.mjs` handle the file case produces, so
+ * every query, migration and transaction in this file runs unchanged against
+ * it. That is the point: a private session must not get a second, simpler
+ * implementation of the store that could drift from this one.
+ *
+ * The wrapper and the connection under it are closed separately, and both have
+ * to be: `Sqlite.sys.mjs` treats a wrapped connection as somebody else's to
+ * shut down, so closing only the wrapper drops the shutdown blocker and leaves
+ * the database open for the life of the process. For a private session that is
+ * the whole point missed — the pages would still be in memory after the window
+ * that made them has gone. Hence the raw handle comes back too.
+ *
+ * @returns {Promise<object>} `{connection, raw}`, both open.
+ */
+async function openMemoryConnection() {
+  const raw = await new Promise((resolve, reject) => {
+    Services.storage.openAsyncDatabase("memory", 0, 0, {
+      complete(status, opened) {
+        if (Components.isSuccessCode(status)) {
+          resolve(opened);
+        } else {
+          reject(
+            new Components.Exception("cannot open a memory database", status)
+          );
+        }
+      },
+    });
+  });
+  const connection = await lazy.Sqlite.wrapStorageConnection({
+    connection: raw,
+  });
+  return { connection, raw };
+}
+
+/**
  *
  */
 export class FOSContextStore {
   #connection;
+  /** The mozStorage connection under a memory database, which this owns. */
+  #raw = null;
   #restorationClaimed = false;
 
   /**
@@ -92,21 +133,28 @@ export class FOSContextStore {
    *
    * @param {object} [options]
    * @param {string} [options.path] Database path; defaults to the profile.
+   * @param {boolean} [options.memory] Open a memory database instead of a file.
+   *   For private browsing: same schema, same queries, nothing on disk.
    * @returns {Promise<FOSContextStore>}
    */
-  static async open({ path } = {}) {
-    const target =
-      path ?? PathUtils.join(PathUtils.profileDir, DATABASE_FILENAME);
-    const connection = await lazy.Sqlite.openConnection({
-      path: target,
-      // The tables are small and the writes are on the navigation path, so
-      // durability matters more than throughput; the defaults are right.
-    });
+  static async open({ path, memory = false } = {}) {
+    let connection;
+    let raw = null;
+    if (memory) {
+      ({ connection, raw } = await openMemoryConnection());
+    } else {
+      connection = await lazy.Sqlite.openConnection({
+        path: path ?? PathUtils.join(PathUtils.profileDir, DATABASE_FILENAME),
+        // The tables are small and the writes are on the navigation path, so
+        // durability matters more than throughput; the defaults are right.
+      });
+    }
     const store = new FOSContextStore(connection);
+    store.#raw = raw;
     try {
       await store.#migrate();
     } catch (e) {
-      await connection.close();
+      await store.close();
       throw e;
     }
     return store;
@@ -147,6 +195,11 @@ export class FOSContextStore {
   /** Close the connection. Idempotent from the caller's point of view. */
   async close() {
     await this.#connection.close();
+    if (this.#raw) {
+      const raw = this.#raw;
+      this.#raw = null;
+      await new Promise(resolve => raw.asyncClose({ complete: resolve }));
+    }
   }
 
   // ---- trails and nodes ---------------------------------------------------

@@ -40,6 +40,8 @@ support-files = [
 
 ["browser_zzmergeoffer.js"]
 
+["browser_zzprivate.js"]
+
 ["browser_zzrelated.js"]
 
 ["browser_zzscreenshots.js"]

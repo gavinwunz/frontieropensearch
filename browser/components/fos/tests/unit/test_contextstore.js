@@ -1465,3 +1465,82 @@ add_task(async function test_forgetting_nothing_is_not_an_error() {
   Assert.equal(await rowCount(store, "trail_node"), 1, "and touches nothing");
   await store.close();
 });
+
+/**
+ * The private-browsing store, which is the same store without a file.
+ *
+ * Covered here rather than only in a browser test because the property that
+ * matters is that `memory: true` changes *nothing* except where the pages live:
+ * same migrations, same schema version, same queries, same deletes. A private
+ * session getting a second, simpler implementation of the store is the shape of
+ * bug that would show up months later as a query that works in one mode and
+ * not the other.
+ */
+add_task(async function test_a_memory_store_is_the_same_store() {
+  const store = await FOSContextStore.open({ memory: true });
+
+  Assert.equal(
+    await store.connection.getSchemaVersion(),
+    SCHEMA_VERSION,
+    "the migrations ran against a database that is not a file"
+  );
+
+  const trailId = await store.addTrail({ name: "in memory only" });
+  const parent = await store.addNode({
+    trailId,
+    url: "https://memory.example/a",
+  });
+  await store.addNode({
+    trailId,
+    parentId: parent,
+    url: "https://memory.example/b",
+  });
+  await store.recordQuery({
+    raw: "typed in a private window",
+    trailNodeId: parent,
+  });
+
+  Assert.equal(
+    await rowCount(store, "trail_node"),
+    2,
+    "writes land, including the foreign key onto the parent node"
+  );
+
+  // The delete graph is the most schema-dependent thing in the file, so if a
+  // memory database were subtly not the same database this is where it would
+  // show.
+  const summary = await store.forgetHost("memory.example");
+  Assert.equal(summary.nodes, 2, "and forgetting walks the same graph");
+  Assert.equal(summary.queries, 1, "taking the query with it");
+
+  await store.close();
+});
+
+add_task(async function test_memory_stores_do_not_share_a_database() {
+  // `openSpecialDatabase` will hand two connections the *same* in-memory
+  // database if they are opened under a shared name, which for two private
+  // sessions would be the whole bug this store exists to avoid. They must be
+  // separate databases, not two views of one.
+  const first = await FOSContextStore.open({ memory: true });
+  const second = await FOSContextStore.open({ memory: true });
+
+  await first.addTrail({ name: "only in the first" });
+  Assert.equal(
+    await rowCount(first, "trail"),
+    1,
+    "the first store has a trail"
+  );
+  Assert.equal(
+    await rowCount(second, "trail"),
+    0,
+    "and the second cannot see it"
+  );
+
+  await first.close();
+  Assert.equal(
+    await rowCount(second, "trail"),
+    0,
+    "closing one does not disturb the other"
+  );
+  await second.close();
+});

@@ -122,6 +122,11 @@ function logScriptError(message) {
  *        A database file string name.
  * @return the connection identifier.
  */
+// Stands in for the file name of a connection to a memory database, which has
+// no file. Connections are still counted per name, so two of them are
+// distinguishable in a log.
+const MEMORY_DATABASE_NAME = ":memory:";
+
 function getIdentifierByFileName(fileName) {
   let number = connectionCounters.get(fileName) || 0;
   connectionCounters.set(fileName, number + 1);
@@ -1709,11 +1714,16 @@ function wrapStorageConnection(options) {
   if (isClosed()) {
     throw new Error(
       "Sqlite.sys.mjs has been shutdown. Cannot wrap connection to: " +
-        connection.databaseFile.path
+        (connection.databaseFile?.path ?? MEMORY_DATABASE_NAME)
     );
   }
 
-  let identifier = getIdentifierByFileName(connection.databaseFile.leafName);
+  // A memory database has no file behind it. `openAsyncDatabase("memory", ...)`
+  // is a documented way to get an async connection, and the only thing that
+  // stopped one being wrapped was reading a name off a null `databaseFile`.
+  let identifier = getIdentifierByFileName(
+    connection.databaseFile?.leafName ?? MEMORY_DATABASE_NAME
+  );
 
   logger.debug("Wrapping database: " + identifier);
   return new Promise(resolve => {

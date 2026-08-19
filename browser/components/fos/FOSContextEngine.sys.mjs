@@ -74,10 +74,37 @@ ChromeUtils.defineESModuleGetters(lazy, {
   // own name because `defineESModuleGetters` resolves each key to the export of
   // that name, not to the module namespace.
   FORGOTTEN_TOPIC: "resource:///modules/FOSForget.sys.mjs",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
 });
 
 /** One database per profile, shared by every window. */
 let storePromise = null;
+
+/**
+ * One memory database per private session, shared by every private window.
+ *
+ * A private window records exactly as a normal one does — the rail fills, the
+ * Field clusters, the sidebar answers `what`, suggestions rank by the context
+ * you are in — and none of it is ever a file. Recording nothing at all was the
+ * other option and is the wrong one: the browser this forks keeps full session
+ * history, working downloads and a working address bar in a private window, and
+ * only ever declines to *persist* them. A private window whose rail was empty
+ * and whose Field had no cards would not be a private browser, it would be a
+ * broken one.
+ *
+ * It is null between private sessions, and that is the load-bearing part: the
+ * store is dropped at `last-pb-context-exited`, so a second private session
+ * cannot see the first one's browsing. Cross-session bleed of exactly this kind
+ * is what the private-browsing literature calls out as the recurring real
+ * failure, and it is a failure of lifetime rather than of storage.
+ */
+let privateStorePromise = null;
+
+/** Whether the `last-pb-context-exited` observer is registered. */
+let watchingPrivateSession = false;
+
+/** The last private window in the process has closed. */
+const PRIVATE_SESSION_ENDED_TOPIC = "last-pb-context-exited";
 
 /** Windows to their engine. */
 const byWindow = new WeakMap();
@@ -92,6 +119,96 @@ const byWindow = new WeakMap();
  * has a session to prune and a queue worth waiting for.
  */
 const recording = new Set();
+
+/**
+ * Whether any private browser window is still open.
+ *
+ * @returns {boolean}
+ */
+function aPrivateWindowIsOpen() {
+  for (const win of Services.wm.getEnumerator("navigator:browser")) {
+    if (!win.closed && lazy.PrivateBrowsingUtils.isWindowPrivate(win)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Destroy the private session's store.
+ *
+ * The wrapper and the connection under it both close — see the store's
+ * `close()` — so the pages go with them, and the next private session opens a
+ * database that has never held anything.
+ *
+ * Writes still in flight are not waited for. They are writes to a database
+ * whose whole purpose has just ended, and `#enqueue` already logs and drops a
+ * failed write rather than propagating it; waiting would only slow down the one
+ * operation that must not be skippable.
+ *
+ * @returns {Promise<void>}
+ */
+async function dropPrivateStore() {
+  if (aPrivateWindowIsOpen()) {
+    // `last-pb-context-exited` is not reliably the end of private browsing. It
+    // arrives after the last private window has gone, and if the user has
+    // opened another one by then — closing one and starting a fresh one is an
+    // ordinary thing to do — the notification lands on a session that is very
+    // much alive. Observed here rather than reasoned about: the second private
+    // window of the test file was still on screen when the topic fired for the
+    // first. Dropping the store there would take the rail, the Field and the
+    // sidebar out from under a window the user is looking at.
+    return;
+  }
+  const opened = privateStorePromise;
+  privateStorePromise = null;
+  if (!opened) {
+    return;
+  }
+  try {
+    await (await opened).close();
+  } catch (e) {
+    console.error("FOSContextEngine: closing the private store failed", e);
+  }
+}
+
+/**
+ * Drop the private store when the last private window closes.
+ *
+ * Registered when the private store is first opened rather than at startup,
+ * because a profile whose user never opens a private window should not carry an
+ * observer for one.
+ *
+ * The cleanup is registered with the subject's `nsIPBMCleanupCollector` when
+ * there is one, which is what makes the teardown *awaited* instead of merely
+ * started: `ClearDataService.clearPrivateBrowsingData` collects those pending
+ * cleanups, so without one a caller could be told private data was gone while
+ * this was still closing. `DownloadIntegration` does the same thing with the
+ * private download list, which is the closest thing in the tree to this store.
+ */
+function watchPrivateSession() {
+  if (watchingPrivateSession) {
+    return;
+  }
+  watchingPrivateSession = true;
+  Services.obs.addObserver(
+    {
+      observe(subject) {
+        let done;
+        try {
+          done = subject
+            ?.QueryInterface(Ci.nsIPBMCleanupCollector)
+            ?.addPendingCleanup();
+        } catch (e) {}
+        dropPrivateStore().then(
+          () => done?.complete(Cr.NS_OK),
+          () => done?.complete(Cr.NS_ERROR_FAILURE)
+        );
+      },
+    },
+    PRIVATE_SESSION_ENDED_TOPIC
+  );
+}
 
 /**
  * A `MarkRegistry` key for a context, namespaced like the trail session's.
@@ -144,6 +261,23 @@ export class FOSContextEngine {
   }
 
   /**
+   * The private session's store, opened once per private session.
+   *
+   * Never awaited by `FOSForget`: clearing history is about what is on the
+   * disk, and Firefox's own sanitizer does not reach into a live private
+   * session either. The private session's delete is its own ending.
+   *
+   * @returns {Promise<FOSContextStore>}
+   */
+  static privateStore() {
+    if (!privateStorePromise) {
+      privateStorePromise = FOSContextStore.open({ memory: true });
+      watchPrivateSession();
+    }
+    return privateStorePromise;
+  }
+
+  /**
    * Whether the shared store has already been opened in this process.
    *
    * `store()` opens on demand, so asking for it is not a way to find out. A
@@ -154,6 +288,20 @@ export class FOSContextEngine {
    */
   static get storeIsOpen() {
     return storePromise !== null;
+  }
+
+  /**
+   * Whether a private session's store is currently open.
+   *
+   * The counterpart of `storeIsOpen`, and the honest way to ask whether
+   * anything of a private session is still held: the store is the only place a
+   * private window's browsing is kept, so this going false is that browsing
+   * ceasing to exist.
+   *
+   * @returns {boolean}
+   */
+  static get privateStoreIsOpen() {
+    return privateStorePromise !== null;
   }
 
   /**
@@ -179,9 +327,12 @@ export class FOSContextEngine {
     if (opened) {
       await (await opened).close();
     }
+    await dropPrivateStore();
   }
 
   #window;
+  /** Whether this window is private, and so recording only to memory. */
+  #private = false;
   #bar = null;
   #session = null;
   #marks = null;
@@ -266,6 +417,20 @@ export class FOSContextEngine {
   }
 
   /** The queue, so a test can await everything outstanding. */
+  /**
+   * The store this window is recording to.
+   *
+   * Worth exposing now that there are two of them: which database a window
+   * writes to is the difference between a private session and a recorded one,
+   * and it is a property of the engine rather than of the profile. Null until
+   * `attach` has resolved.
+   *
+   * @returns {?object}
+   */
+  get store() {
+    return this.#store;
+  }
+
   get settled() {
     return this.#queue;
   }
@@ -298,7 +463,17 @@ export class FOSContextEngine {
   async attach({ session, store = null, marks = null, field = null }) {
     this.#session = session;
     this.#marks = marks ?? session.marks;
-    this.#store = store ?? (await FOSContextEngine.store());
+    // The one line that decides whether this window's browsing reaches a disk.
+    // It is here, at the single point where an engine acquires its store,
+    // rather than spread across the write paths, because a rule enforced in
+    // fifty places is a rule with forty-nine chances to be forgotten — and the
+    // one that was forgotten would be silent, and would be a file.
+    this.#private = lazy.PrivateBrowsingUtils.isWindowPrivate(this.#window);
+    this.#store =
+      store ??
+      (this.#private
+        ? await FOSContextEngine.privateStore()
+        : await FOSContextEngine.store());
     this.#field = field;
 
     // Before subscribing, so the first reconciliation already knows which rows
@@ -347,14 +522,27 @@ export class FOSContextEngine {
     this.#window.removeEventListener("activate", this);
     this.#window.removeEventListener("deactivate", this);
     this.#window.removeEventListener("unload", this);
+    // The visit closes *before* this engine leaves `recording`, and the order
+    // is the point: `settledEverywhere` waits on the queues of the engines in
+    // that set, so a write enqueued after leaving it is a write nothing waits
+    // for — and this one is enqueued while a window is being torn down, which
+    // is exactly when a forget is most likely to be running beside it.
+    this.#closeVisit(null);
     if (recording.delete(this)) {
       Services.obs.removeObserver(this, lazy.FORGOTTEN_TOPIC);
     }
-    this.#closeVisit(null);
   }
 
   observe(subject, topic, data) {
     if (topic !== lazy.FORGOTTEN_TOPIC) {
+      return;
+    }
+    // A private window's ids are its own store's ids, and they start at 1 just
+    // as the disk store's do. Acting on a summary from the other database would
+    // therefore not merely be unnecessary — it would drop whichever private
+    // page happened to share a number with a forgotten one. Clearing history is
+    // about what is on the disk; nothing this window has recorded is.
+    if (this.#private) {
       return;
     }
     let summary;
