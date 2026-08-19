@@ -614,40 +614,24 @@ one.
 
 Nothing waits on a person. **Nothing is running — the harness is free.**
 
-`run32` (the smoke run plus the Field's perf file), `run33`, `run34` and `run35`
-all finished green. The last of them left the pictures in `agent/reports/`
-current with the tree. `run36` is the embedding measurement and `run37` drives
-the tier built on it; both finished green. Their numbers are in `IDEAS.md`
-rather than in a picture.
+Run 41 built the `done` verb and the re-entry resume it forced. `run41.sh` is
+the focused job (node, the store's xpcshell file, `browser_trailrail.js` and
+`browser_field.js`); `run41full.sh` is the whole FOS suite. Both green:
+**286 node checks, xpcshell clean, 807 browser-chrome checks, 0 failures.**
 
-`run39.sh` is this run's: it carries the aggregation measurement *and* drives
-the offer built on it. Both green — 17 gated checks, 730 browser-chrome checks,
-261 node tests, 135 store checks. It took five attempts and each failure was a
-different wrong assumption in the test rather than a repeat, which is the rule
-working.
+Seventeen mutations were run across two passes and every one is now caught by
+the test that should catch it. The pass is what found the run's second bug —
+see the journal — so treat it as part of building a feature rather than as a
+audit afterwards.
 
-`run37.sh` now also covers the `model` verb against a real cache, and that is
-where it earns its keep: it failed three times this run on things no stub could
-see. The gated file is the only place in the tree that can ask "did the thing
-we just downloaded end up somewhere we can find it again".
-
-The static embedding weights live beside the speech ones at
-`/data/ml-models/onnx-models/mozilla/static-embeddings/`, put there by
-`agent/jobs/fetch-static-embeddings.sh` (~86MB for both dimensions; a shipped
-build needs only d256's 30MB). Same local-hub requirement as every other
-measurement here.
-
-Model weights live at `/data/ml-models/onnx-models`, outside the repo, put there
-by `agent/jobs/fetch-whisper.sh` (~43MB). `agent/jobs/run30.sh` is the template
-for anything that needs the engine; `run29.sh` remains the latency measurement.
-Both need `agent/jobs/local-hub.py` serving the weights with `MOZ_MODELS_HUB`
-pointed at it, because mochitest kills the process on a non-local connection.
-
-This run needed no gated job either: the voice path's shell decisions are
-covered by doubles in `browser_voice.js`, and nothing it touched needs weights.
-The suite is 781 browser-chrome checks, 273 node tests and 2 xpcshell files,
-all green, plus seven mutation checks confirming each part of the fix is pinned
-by a test that fails without it.
+Older gated jobs, unchanged and not needed this run: `run36`/`run37` (embedding
+measurement and the tier on it), `run39` (the merge offer), `run29`/`run30` (the
+speech latency measurement and the voice path in a real browser). All of them
+need `agent/jobs/local-hub.py` serving weights from
+`/data/ml-models/onnx-models` with `MOZ_MODELS_HUB` pointed at it, because
+mochitest kills the process on a non-local weight fetch. Static embedding
+weights are at `.../mozilla/static-embeddings/` (~86MB for both dimensions; a
+shipped build needs only d256's 30MB).
 
 **One thing is deliberately unverified and should stay flagged**: the positive
 half of `test_the_level_monitor_runs_against_a_real_capture` cannot run on this
@@ -662,16 +646,17 @@ should run that file and check the positive branch is taken.
 ## Next task
 
 The phase plan is complete, so nothing pulls the next run in a particular
-direction. Ordered by value. Item 1 for the last three runs — the bare tap —
-is built and closed; what is left below is genuinely lower-value than it was,
-so a run that finds something better in `IDEAS.md` should take that instead.
+direction. Run 41's lesson is worth repeating as method: the standing list was
+thin and going *looking* found more than working down it would have. A state
+the schema defines and no code writes is a specific, findable kind of gap.
 
-Also worth a run of its own at some point: **this file is 110KB and its own
-header says to keep it short.** Every run reads it, `IDEAS.md` (179KB) and
-`JOURNAL.md` (126KB) before doing anything. The Done section is the part that
-has become a log; most of it is recoverable from the journal.
+1. **Read the tree for other states with a reader and no writer.** `done` was
+   found by noticing `archived_at` had a filter and no writer. That is a
+   mechanical search and it has not been run over the rest of the schema:
+   `context-engine/SCHEMA.md` against `grep` for each column. Cheap, and the
+   one hit it produced this run was worth a whole run.
 
-1. **Sustained resize of the crowded overview.** Recorded in `IDEAS.md` run 32
+2. **Sustained resize of the crowded overview.** Recorded in `IDEAS.md` run 32
    and *not* solved: the burst is fixed (53ms → 1.19ms) but one rebuild is
    18.27ms p50, longer than a frame, so continuous resizing of the worst case
    the design permits still costs ~21ms a frame over the control. The fix is to
@@ -679,74 +664,64 @@ has become a log; most of it is recoverable from the journal.
    value — it is the deliberate worst case, and dragging a window edge with the
    overview up is rare.
 
-2. **Why this build has no remote tabs.** Three upstream urlbar files fail on it
+3. **Why this build has no remote tabs.** Three upstream urlbar files fail on it
    and the fork is not what breaks them. The next step is
    `UrlbarProviderRemoteTabs.isActive` in a driven browser with
    `services.sync.username` set, not more reading.
 
-3. **The rails still overlay the page.** Run 32 took them off the *toolbar*,
+4. **The rails still overlay the page.** Run 32 took them off the *toolbar*,
    which was never a deliberate trade; covering the page still is, and STATE has
    always said it belongs with the Field's restructure rather than piecemeal.
    `--fos-chrome-block-start` makes taking layout space a smaller step than it
    was, which is worth knowing when that restructure comes.
 
-4. **The 17 timed-out urlbar files, if they are ever worth it**, and **a
+5. **The 17 timed-out urlbar files, if they are ever worth it**, and **a
    region's height is a ratchet** (`FIELD.md` §6, open rather than a defect).
+
+Still true and still deferred: **this file is 110KB and its own header says to
+keep it short.** Every run reads it, `IDEAS.md` (190KB) and `JOURNAL.md` (130KB)
+before doing anything. The Done section is the part that has become a log; most
+of it is recoverable from the journal.
 
 ## Found this run, not yet chased
 
-- **A feature blocked on a risk: check whether the shipped alternative carries
-  the same risk.** The bare tap sat unbuilt for three runs behind "a mis-tap
-  opens the microphone for thirty seconds", which is equally true of the
-  shift latch that had already shipped. When the risk is shared, it is not an
-  argument against the new thing — it is an unbuilt safeguard, and the feature
-  is only waiting on it by accident. Nothing about *use* would ever have
-  resolved it, which is why three runs of deferring bought nothing.
+- **A state with a reader and no writer is a missing word, not a missing
+  feature.** `archived_at` had a column, a migration, a filter in `restorable()`
+  and a test — and no way for a user to reach it. Everything around it had been
+  designed by someone who knew what it was for. What was missing was the verb.
+  Worth running as a mechanical search over the rest of the schema; it is item 1
+  above.
 
-- **Adding a real-time threshold changes the meaning of every existing test.**
-  Six browser tests failed for one cause: the helpers synthesise a keydown and
-  keyup faster than any hand can, so every "hold" in the suite became a tap, the
-  first turn latched by accident, and the *next* test's press closed that turn
-  instead of starting its own. The cascade made it look like the module was
-  broken. Any threshold expressed in wall-clock time needs the fixtures audited
-  before the failures are read.
+- **An unreachable guard is sometimes evidence of a missing behaviour rather
+  than of over-caution.** A mutation that survives is a claim that a line does
+  nothing, and it is worth taking that claim literally before patching over it.
+  Here the branch was unreachable only because re-entry was silently leaving the
+  user on an archived trail; the branch was written when the state *was*
+  reachable, and what was supposed to prevent it was an accident rather than a
+  decision. Ask what would have to be true for the branch to fire, and check
+  what prevents it. Both answers are useful; only one is a deletion.
 
-- **Measure a gesture from the events, not from the handlers.** Two clock reads
-  inside a keydown and a keyup handler measure handler-to-handler, which under
-  load is not key-down-to-key-up, and the gap lands exactly on the 400ms
-  boundary being decided. `event.timeStamp` on both halves is the interval the
-  user actually performed. The first draft read a clock inside the session and
-  would have turned a deliberate hold on a busy machine into a tap.
+- **A removal is not finished when the thing is gone.** Whatever was displaced
+  to make room for it has to get the chance to come back, or the removal frees
+  an accounting entry rather than the resource. `retireTrail`'s first draft took
+  the region off the Field and left its overview slot empty, while the crowding
+  the user was complaining about sat in the nest. Check this wherever eviction
+  and admission are separate code paths.
 
-- **The mutation check is cheap and it should be routine now.** Run 39's lesson
-  was "revert the fix and re-run before believing a test pins anything". Doing
-  it as five targeted mutations rather than one wholesale revert is better still
-  — it says *which* test pins *which* line. All seven mutations here were caught
-  by exactly the test that should have caught them, which is the first time this
-  suite has been checked that way rather than assumed.
+- **Borrow a constraint without borrowing its diagnosis.** The bookmark-graveyard
+  literature supplies a real bound (retrieval falls off past a 60-second scan)
+  and an explanation that does not apply here at all: the collector's fallacy is
+  about the cheapness of *saving*, and a trail is captured rather than saved.
+  Same symptom, opposite cause, so every remedy aimed at discouraging saves is
+  useless to this fork. Check whether the mechanism transfers, not just the
+  finding.
 
-- **A sensor that cannot read returns the same value as a sensor reading
-  nothing.** The sharper version of run 39's "a capture that reports success is
-  not a capture of the right thing". Any bound driven by a measurement needs to
-  know the measurement is alive, and the direction it degrades in has to be
-  chosen deliberately — the default is whichever way the arithmetic happens to
-  fall, and here that default would have cut off the user the bound was
-  protecting. **Testing the mechanism, not the logic, is what found it**: every
-  browser test in the voice file replaces the microphone, so none of them
-  touched the code that listens to one.
-
-- **`AudioContext.state` at construction is meaningless** — it reaches `running`
-  asynchronously. The first draft checked it synchronously and would have
-  reported "no monitor" on a healthy machine, disabling the feature everywhere
-  while every test still passed.
-
-- **Two bounds made each other tunable, and neither would have alone.** 400ms
-  sits inside the band where a real one-word utterance lives (`MIN_UTTERANCE_MS`
-  is 250ms), so the tap/hold call is genuinely ambiguous there. It stopped
-  mattering only because end silence exists: a hold misread as a tap latches,
-  the user keeps talking, and the turn ends 1.5s after they stop. Worth
-  remembering when a threshold looks impossible to pick — the fix may be
-  elsewhere.
+- **The undo that costs no word.** `done` was argued not to need one, and then
+  turned out to need one for correctness rather than for comfort. The answer was
+  a gesture the user already had — walking back into the trail — rather than a
+  verb. Worth reaching for first whenever a reversal seems to need vocabulary:
+  a verb can be forgotten, and the table in `GRAMMAR.md` §4 is meant to stay
+  small enough to teach entire.
 
 ## Background jobs
 
@@ -1235,6 +1210,30 @@ repeated failure even when each run has a new explanation for it.
 
 ## Decisions taken
 
+- 2026-08-19 — **`done` takes no mark, by design rather than by omission.** The
+  only trail a user can address is the one they are on; nodes are what get
+  marked. A verb offering a slot it can never be given is one the bar would
+  advertise and then refuse. It grows an optional target on the day trails
+  become markable, and not before.
+- 2026-08-19 — **Finishing a trail writes nothing to its nodes.** `archived_at`
+  on the trail already says it. Reusing `dismiss` across a trail's pages would
+  have misreported what the user did — one statement about a thread, not nine
+  about pages — and they would come back looking discarded rather than filed.
+- 2026-08-19 — **`updated_at` does not move when a trail is archived, and does
+  move when it is resumed.** Finishing work is a statement about it; going back
+  to it is working on it again. Moving it on the way out would make every
+  archived trail look freshly worked on to anything reading recency, which is
+  the one thing archiving exists to correct.
+- 2026-08-19 — **The undo for `done` is re-entry, not a verb.** Walking back
+  into a trail is the plainest way of saying it was not finished after all. It
+  costs no word out of `GRAMMAR.md` §4's table, cannot be forgotten the way a
+  verb could, and it had to exist anyway: without it, re-entering a page from
+  the context sidebar left the user extending a trail that would never be
+  offered back.
+- 2026-08-19 — **A slot freed by `done` is given to the most recently touched
+  nested region**, the same metric `#collapseCandidates` uses read the other
+  way, so no region is collapsed by one rule and promoted by another. An
+  emptied nest gives its own slot back.
 - 2026-08-19 — **A merge is a fact about contexts, never about membership.**
   `context.merged_into`, not `context_member.source`. Provenance decides which
   context a trail is in and the merge is a second statement layered over it, so

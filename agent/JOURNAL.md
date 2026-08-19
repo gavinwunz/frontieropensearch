@@ -1279,3 +1279,55 @@ test still green. The poll decides now.
 run here. It asserts the degradation instead and says so in its output. The real
 level path has been reasoned about, not observed; the first machine with audio
 hardware should run that file and confirm the positive branch is taken.
+
+## Run 41 — 2026-08-19 — `done`, and a guard that could not be made to fail
+
+Standing-list item 1 was marked bounded value by the run that wrote it, so this
+run went looking instead. What it found was not a new idea but a half-built one:
+**`archived_at` has been in `trail` since `001-initial.sql`, `restorable()` has
+always filtered on it, and nothing in the product ever set it.** The only writer
+in the tree was a test, reaching past the store's API with raw SQL to manufacture
+a state no user could reach. Not a missing feature — a missing word.
+
+Built `done`, pillar B's twelfth verb and the counterpart of `dismiss` one level
+up. `dismiss` takes a page off the Field and leaves it on its trail; `done` takes
+a trail off the Field and leaves it in the store. It takes no mark, because the
+only trail a user can address is the one they are on. Nothing is written to the
+nodes: a trail's worth of pages marked individually dismissed would misreport
+what the user said, and would come back looking discarded rather than filed.
+
+The research is in `IDEAS.md`. The retrieval numbers on bookmark graveyards
+(under 10% ever accessed; retrieval falls off past a 60-second scan) supply the
+constraint but not the diagnosis — a trail is captured, not saved, so the
+collector's fallacy does not apply and the fork's version of the problem is the
+inverse one. Arc's auto-archive gave the goal and three mechanics to reject: a
+clock instead of a fact about the work, no way to decline, and an archive you can
+only re-enter by retyping a URL.
+
+The Field had to give the slot back properly. §3 caps the overview at nine
+regions and nests the overflow, and the nest costs a slot of its own — so a
+first draft that removed the region and left the slot empty would have passed
+every obvious test and delivered none of the point, since the crowding `done` is
+said about is *in the nest*. A freed slot now goes to the most recently touched
+nested region, and an emptied nest gives its own slot back.
+
+**Then the mutation pass earned its keep.** Fourteen mutations, thirteen caught
+by the test that should have caught them. The one that survived was
+`finishTrail`'s `isArchived` guard, and the reason nothing reached it was a bug:
+`session.enter` is how the context sidebar and the bar's rows re-enter a page,
+an archived trail's nodes are still in the session's tree, so picking one off a
+list put the user back on a finished trail — rail showing it, next navigation
+extending it, still archived, nothing on screen saying so. Re-entry now resumes
+the trail, which is also the undo the design had argued it did not need and is
+better than a verb would have been. The guard then really was dead and was
+deleted. **An unreachable guard is sometimes evidence of a missing behaviour
+rather than of over-caution** — the generalisation is in `IDEAS.md`.
+
+Tests: 286 node, xpcshell clean, **807 browser-chrome checks, 0 failures** —
+the whole FOS suite, not just the touched files. Seventeen mutations run in
+total across two passes, every one now caught. Docs updated in `GRAMMAR.md` §4,
+`SCHEMA.md` and `FIELD.md` §8/§10 — `done` partly answers §10's open question
+about the collapse metric by taking finished trails out of the population it has
+to guess over.
+
+No gated job needed: nothing here wants weights.
