@@ -243,6 +243,15 @@ add_task(async function test_a_page_reports_the_questions_it_provoked() {
   await engine().settled;
 
   const panel = await openSettled();
+  const dbg = await engine().questionsFrom(PAGE_A);
+  info("DIAG questionsFrom: " + JSON.stringify(dbg));
+  info("DIAG activeContextId: " + engine().activeContextId);
+  const dbgContents = await engine().contents();
+  info(
+    "DIAG contextQueries: " +
+      JSON.stringify(dbgContents?.queries?.map(q => [q.id, q.raw]))
+  );
+  info("DIAG currentURL: " + gBrowser.selectedBrowser.currentURI.spec);
   const provoked = rowsOf(panel, "provoked");
   Assert.greaterOrEqual(
     provoked.length,
@@ -290,38 +299,43 @@ add_task(async function test_a_page_reports_the_questions_it_provoked() {
   BrowserTestUtils.removeTab(tab);
 });
 
-add_task(
-  async function test_a_question_asked_here_and_now_is_not_shown_twice() {
-    // The exclusion, from the other side: a question in this context is a few
-    // rows further down the same panel, and a surface that says a thing twice in
-    // one screen is a surface the user stops reading.
-    await goTo(PAGE_A);
-    await engine().settled;
+add_task(async function test_one_tab_is_enough_for_a_page_to_report_back() {
+  // The case the first build of this got wrong. Within one tab there is one
+  // trail and so one enquiry, so every question a page provokes is also a
+  // question of the active context — and a section that dropped those, by
+  // analogy with the crossings dropping the current trail, was empty in
+  // exactly the sustained work it is for. Asserted here rather than only in
+  // node, because it took a real session to notice.
+  await goTo(PAGE_A);
+  await engine().settled;
 
-    const raw = "hypertext and transclusion";
-    engine().recordQuery(raw);
-    await goTo(PAGE_B);
-    await engine().settled;
-    await goTo(PAGE_A);
-    await engine().settled;
+  const raw = "hypertext and transclusion";
+  engine().recordQuery(raw);
+  await goTo(PAGE_B);
+  await engine().settled;
+  // Back to the page that provoked it, on the same trail throughout.
+  await goTo(PAGE_A);
+  await engine().settled;
 
-    const panel = await openSettled();
-    const provoked = rowsOf(panel, "provoked").map(
-      row => row.querySelector(".fos-sidebar-label").textContent
-    );
-    ok(
-      !provoked.includes(raw),
-      "the question is not repeated above the section that already lists it"
-    );
+  const panel = await openSettled();
+  const provoked = rowsOf(panel, "provoked").map(
+    row => row.querySelector(".fos-sidebar-label").textContent
+  );
+  ok(
+    provoked.includes(raw),
+    "the page reports the question without needing a second trail"
+  );
 
-    const asked = rowsOf(panel, "questions").map(
-      row => row.querySelector(".fos-sidebar-label").textContent
-    );
-    ok(asked.includes(raw), "and it is still listed there");
+  const asked = rowsOf(panel, "questions").map(
+    row => row.querySelector(".fos-sidebar-label").textContent
+  );
+  ok(
+    asked.includes(raw),
+    "and the enquiry still lists it, because the two index one fact two ways"
+  );
 
-    panel.close();
-  }
-);
+  panel.close();
+});
 
 add_task(async function test_the_panel_opens_on_the_page_you_are_on() {
   // The rail opens with the current node selected; this panel opening with

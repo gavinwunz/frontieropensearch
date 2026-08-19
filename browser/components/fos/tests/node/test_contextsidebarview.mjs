@@ -205,18 +205,22 @@ test("questionRows reads the edge out of a page, not the edge in", () => {
   assert.equal(rows[0].enterable, true);
 });
 
-test("questionRows leaves out what the panel already shows below", () => {
+test("questionRows keeps a question the context also lists", () => {
+  // Measured, not assumed: excluding these emptied the section outright under
+  // one pinned enquiry, which is the case it exists for. The two sections
+  // index one set of facts along the enquiry and along the page.
   const { rows, total } = questionRows(
-    [asked({ id: 1, raw: "here too" }), asked({ id: 2, raw: "only here" })],
-    { exclude: new Set([1]), now: NOW }
+    [
+      asked({ id: 1, raw: "here too", normalised_intent: "here too" }),
+      asked({ id: 2, raw: "only here", normalised_intent: "only here" }),
+    ],
+    { now: NOW }
   );
   assert.deepEqual(
     rows.map(row => row.label),
-    ["only here"]
+    ["here too", "only here"]
   );
-  // The total counts what is left after the exclusion, so the note it feeds
-  // cannot claim questions the section is deliberately not showing.
-  assert.equal(total, 1);
+  assert.equal(total, 2);
 });
 
 test("questionRows reports one question once, at its first asking", () => {
@@ -478,7 +482,13 @@ test("the provoked section follows the crossings, and both precede the rest", ()
       crossings: [
         { node_id: 5, trail_id: 9, trail_name: "Other", created_at: NOW - DAY },
       ],
-      questions: [asked({ id: 2, raw: "asked from here" })],
+      questions: [
+        asked({
+          id: 2,
+          raw: "asked from here",
+          normalised_intent: "asked from here",
+        }),
+      ],
       currentTrailId: 1,
       now: NOW,
     }
@@ -500,17 +510,20 @@ test("the provoked section is absent when this page has provoked nothing", () =>
   );
 });
 
-test("a question already listed under the context is not shown twice", () => {
+test("a question the context also lists still appears against its page", () => {
   const shared = { id: 7, raw: "shared", created_at: NOW - HOUR };
   const view = sidebarFor(contents({ queries: [shared] }), {
     questions: [asked({ ...shared, normalised_intent: "shared" })],
     now: NOW,
   });
-  assert.equal(
-    view.sections.find(section => section.id === "provoked"),
-    undefined
+  assert.deepEqual(
+    view.sections.map(section => section.id),
+    ["provoked", "questions"]
   );
-  assert.equal(view.sections[0].id, "questions");
+  assert.deepEqual(
+    view.sections[0].rows.map(row => row.label),
+    ["shared"]
+  );
 });
 
 test("the provoked note says so when the limit has hidden some", () => {
@@ -535,7 +548,7 @@ test("the provoked note is a plain count when nothing is hidden", () => {
     now: NOW,
   });
   const section = view.sections.find(s => s.id === "provoked");
-  assert.match(section.note, /^1 question asked here/);
+  assert.match(section.note, /1 question while on this page\.$/);
   assert.doesNotMatch(section.note, /most recent/);
 });
 

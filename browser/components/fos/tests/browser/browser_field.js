@@ -435,7 +435,11 @@ add_task(async function test_a_drop_announces_the_position_once() {
     window
   );
 
-  Assert.equal(seen.length, 1, "two pointer moves and one drop is one placement");
+  Assert.equal(
+    seen.length,
+    1,
+    "two pointer moves and one drop is one placement"
+  );
   const card = model.getCard(cardId);
   Assert.deepEqual(
     seen[0],

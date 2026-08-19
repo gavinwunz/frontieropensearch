@@ -3278,3 +3278,108 @@ growth; refusing and re-seeding would silently destroy a chosen position, which
 **Sources:** spatialBrowser (Toronto DGP) for per-directory layout persistence;
 `dl.acm.org/doi/10.1145/1995966.1995983` for the spatial-hypertext survey that
 frames arrangement as user-authored structure.
+
+## Run 43 — the backlink whose other end is a question
+
+### Bi-directional links: the memex's one idea the web threw away, and why a browser can have it back
+
+- **Found:** looking for prior art on "questions asked from this page" before
+  building a reader for `query.source_node_id`. Maggie Appleton, *A Short
+  History of Bi-Directional Links*, https://maggieappleton.com/bidirectionals;
+  Nelson on HTML being "precisely what we were trying to PREVENT — ever-breaking
+  links, links going outward only"; Lanier on two-way links preserving context.
+- **What it is:** the property that if A links to B, B knows about it. Bush's
+  associative indexing, Xanadu's second pillar, and the single most celebrated
+  feature of Roam and Obsidian, where it is called the linked reference.
+- **Verdict:** **adopt**, in the one form a browser can actually deliver.
+- **Phase:** built this run as the sidebar's "This page made you ask".
+
+The history has a specific and useful failure in it. Bi-directional links did
+not lose on merit; they lost on **moderation**. Appleton puts it plainly: if
+every site that linked to yours appeared on your page and you had no say in who
+could link to you, "it is not hard to imagine the Trollish implications". They
+work today exactly where that risk is zero — a single author's own notes — and
+the open-web version is still unsolved thirty years on, WebMentions being an
+opt-in compromise rather than an answer.
+
+**A browser's own record is that closed system.** The fork holds both ends of
+the edge, nobody else can write to it, and it never leaves the machine. So the
+condition that killed the idea on the web is absent here by construction, and
+what is left is the useful half.
+
+**The other end is not a document, which is why this is not just backlinks.**
+Roam's linked reference answers "who else mentioned this note". A page's
+outgoing links are the *author's* associations — they were there before you
+arrived and they are the same for everyone. `source_node_id` records an
+association that is yours and exists nowhere else: the question you typed while
+reading that page. Nothing in a browser has ever kept it. Bush's "associative
+indexing" is usually read as linking two documents; the record of *what a
+document made you want to know* is closer to what a trail actually was, and it
+is cheaper, because one end is already a row in the query table.
+
+**It clears all four criteria.** Novel — no browser records which page a search
+was issued from, and no notes tool has a question as a link endpoint. Useful —
+it answers "why am I here again" on return to a hub page, and it names the task
+it replaces: re-deriving, from a page you have read before, what you wanted from
+it. Implementable — one JOIN on a column written since `001-initial.sql`.
+Coherent — it is pillar C reading pillar B's edges, on the surface pillar C
+already owns, and it strengthens the same claim `crossings` makes.
+
+**Keyed by URL, not by node, and that follows from SearchBar.** The pane rated
+3.5 in week one and 5.0 a week later: the value is at resumption. A question
+asked during the visit you are in the middle of is one you still remember, so
+node-keying would show only the worthless half. The valuable rows are months old
+and sit on other nodes for the same document — which is the same reason
+`crossings` is keyed by URL, and the two are now the two directions of one edge.
+
+**Nothing is excluded for appearing elsewhere — and that was the run's one real
+mistake, caught by running it.** The first build left out any question already
+listed under "Questions asked" below, reasoning by analogy with the crossings
+dropping the current trail. It was wrong, and the full suite said so: with a
+context pinned the section was empty, because every question in the session
+belonged to the active context. The ordinary case is worse than the test case —
+one tab is one trail is one enquiry, so a user who never opens a second tab
+would have seen this section literally never.
+
+The analogy fails on what the excluded row *carries*. "This page is on the trail
+you are looking at" is true of every page by construction and so carries nothing;
+"this question came from this page" is a fact about the page that the enquiry's
+own list does not state. The two sections index one set of facts twice, along
+the enquiry and along the page — and indexing something twice is the whole point
+of a backlink, not a redundancy to be optimised away. The instinct to dedupe a
+surface is a good one and it was applied to the wrong axis.
+
+Worth generalising: **an exclusion rule copied from a neighbouring section needs
+its own argument.** The test that distinguishes them is whether the excluded row
+could ever have been false. The crossings' could not; this one's could.
+
+### A written-and-never-read column is a feature nobody has noticed yet
+
+- **Found:** run 42's schema audit listed `query.source_node_id` as hit 2 and
+  filed it as a note rather than as work. It was the run's work this time.
+- **Verdict:** adopt as a reading of the audit, not as a new method.
+
+Run 42 concluded that the audit's finding was "the gap is where two correct
+halves were never joined". This run says something narrower and more useful
+about the *shape* of the gap. `field_placement` was a **defect** — the design
+promised the behaviour in two places and it was false. `source_node_id` is not
+a defect: nothing ever promised it, everything about it is correct, and the
+browser is not lying to anyone. It is a **feature the schema already paid for**.
+
+The two want opposite handling. A defect is found by checking claims against
+behaviour and is urgent. A feature latent in the schema is found by asking what
+a column would be *for*, and its value is that the data is already accumulating
+— `source_node_id` has been recorded on every query since the first migration,
+so this run shipped a feature with months of backfill that could never have been
+recovered had the column not been written. That is the argument for writing a
+column before its reader exists, and it is the only such argument: an unread
+column is worth its storage exactly when the datum is unrecoverable after the
+fact.
+
+The remaining hit, `visit.started_at`, fails that test — `dwell_ms` is derived
+from it as it goes and nothing is lost — so it stays a record. `SCHEMA.md` now
+says so, which is what stops the next audit re-finding it.
+
+**Sources:** https://maggieappleton.com/bidirectionals;
+https://en.wikipedia.org/wiki/Project_Xanadu;
+SearchBar (Morris, Morris & Venolia, CHI 2008), already logged above.

@@ -245,6 +245,8 @@ export class FOSContextEngine {
    * @param {object} options.session An `FOSTrailSession`.
    * @param {object} [options.store] An open store; defaults to the profile's.
    * @param {?object} [options.marks] A `MarkRegistry`.
+   * @param {?object} [options.field] An `FOSField`, whose placements are
+   *   restored on attach and persisted as the user makes them.
    * @returns {Promise<FOSContextEngine>}
    */
   async attach({ session, store = null, marks = null, field = null }) {

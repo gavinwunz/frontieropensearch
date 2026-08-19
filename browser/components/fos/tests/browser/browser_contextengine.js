@@ -463,7 +463,12 @@ add_task(async function test_a_restart_brings_back_where_the_user_put_things() {
   });
   // One card the user moved, one the system seeded. Only the first is a fact
   // about what the user thinks; the second re-seeds to the same seat anyway.
-  await store.placeCard(child, { x: 64, y: 32, pinned: true, movedByUserAt: 5 });
+  await store.placeCard(child, {
+    x: 64,
+    y: 32,
+    pinned: true,
+    movedByUserAt: 5,
+  });
   await store.placeCard(root, { x: 1, y: 1 });
 
   let handed = null;
@@ -515,15 +520,16 @@ add_task(async function test_a_placement_is_written_to_the_row_it_belongs_to() {
   };
 
   const session = new FOSTrailSession(window);
-  const engine = new FOSContextEngine(window);
+  // Its own engine on its own store, so it is named apart from the window's.
+  const scratch = new FOSContextEngine(window);
   registerCleanupFunction(async () => {
-    engine.detach();
+    scratch.detach();
     session.detach();
     await store.close();
   });
 
-  await engine.attach({ session, store, field });
-  await engine.settled;
+  await scratch.attach({ session, store, field });
+  await scratch.settled;
   Assert.ok(announce, "the engine is listening to the Field");
 
   const [node] = session.store.nodes();

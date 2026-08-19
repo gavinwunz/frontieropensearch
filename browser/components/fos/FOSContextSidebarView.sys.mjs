@@ -218,12 +218,20 @@ export function crossingRows(crossings, currentTrailId, now) {
  * away. A page's outgoing links are the author's associations; the questions
  * you typed while reading it are yours, and nothing has ever kept them.
  *
- * **What is already on the surface is left out.** A question asked in the
- * context this panel is describing is listed under "Questions asked" a few
- * rows down, so repeating it here is the panel telling the user something they
- * can already see — the same rule that excludes the current trail from the
- * crossings. What is left is the questions this page provoked on *other*
- * enquiries, which is the part nothing else in the browser can answer.
+ * **Nothing is excluded for appearing elsewhere, and that was measured rather
+ * than assumed.** The first build of this left out any question already listed
+ * under "Questions asked" below, by analogy with the crossings dropping the
+ * current trail. It is not the same case, and running it proved so: with one
+ * enquiry pinned — one tab, one trail, or `context <mark>` held — every
+ * question a page provoked is also a question of the active context, and the
+ * section was empty in exactly the sustained work it exists for.
+ *
+ * The analogy fails because the crossings' excluded row carries *no*
+ * information: "this page is on the trail you are looking at" is true of every
+ * page by construction. A repeated question carries real information — which
+ * of this enquiry's questions came from *here* — and the two sections are one
+ * set of facts indexed two ways, along the enquiry and along the page. That is
+ * what a backlink is, and indexing something twice is the point of it.
  *
  * **One row per question, at its first asking.** A question asked here twice is
  * one thing this page made you want to know; the claim is not "you asked this
@@ -234,21 +242,17 @@ export function crossingRows(crossings, currentTrailId, now) {
  *
  * @param {object[]} questions Rows from `FOSContextStore.questionsFrom`.
  * @param {object} [options]
- * @param {Set<number>} [options.exclude] Query ids already shown elsewhere.
  * @param {number} [options.limit] How many rows to keep.
  * @param {number} [options.now] Unix ms.
  * @returns {{rows: object[], total: number}} Rows earliest first, and how many
- *   distinct questions there were before the limit.
+ *   distinct questions this page has provoked, before the limit.
  */
 export function questionRows(
   questions,
-  { exclude = new Set(), limit = QUESTION_LIMIT, now = Date.now() } = {}
+  { limit = QUESTION_LIMIT, now = Date.now() } = {}
 ) {
   const byIntent = new Map();
   for (const query of questions) {
-    if (exclude.has(query.id)) {
-      continue;
-    }
     // The normalised intent is what the engine itself matches on, so it is the
     // key that already decides elsewhere whether two questions are the same
     // question. Falling back to the raw text keeps a query the normaliser
@@ -395,24 +399,17 @@ export function sidebarFor(
   // Crossings first, then this: a crossing is rarer, so when both are present
   // the rarer one is worth the top of the panel. Both are about the page, and
   // this one reads the edge the other way round.
-  const provoked = questionRows(questions, {
-    exclude: new Set(queries.map(query => query.id)),
-    now,
-  });
+  const provoked = questionRows(questions, { now });
   if (provoked.rows.length) {
     const total = provoked.total;
     const shown = provoked.rows.length;
     sections.push({
       id: "provoked",
       title: "This page made you ask",
-      // The count is of what this page provoked on other enquiries, which is
-      // what the section holds after the exclusion — saying "you have asked N
-      // questions here" would count rows the panel is deliberately not showing
-      // and leave the arithmetic looking broken.
       note:
         shown === total
-          ? `${plural(total, "question")} asked here, on other enquiries.`
-          : `${plural(total, "question")} asked here on other enquiries — ` +
+          ? `You have asked ${plural(total, "question")} while on this page.`
+          : `You have asked ${plural(total, "question")} while on this page — ` +
             `the ${shown} most recent are shown.`,
       rows: provoked.rows,
     });

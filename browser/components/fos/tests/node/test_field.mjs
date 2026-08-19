@@ -655,7 +655,11 @@ test("a restored position is the position, not an approximation of it", () => {
     at,
     "a card comes back exactly where it was left"
   );
-  assert.equal(card.pinned, true, "and comes back owned, not merely positioned");
+  assert.equal(
+    card.pinned,
+    true,
+    "and comes back owned, not merely positioned"
+  );
 });
 
 test("a restored card displaces a seeded one rather than yielding to it", () => {
@@ -706,11 +710,17 @@ test("restoring two saved positions cannot make them fight", () => {
   // in any order lands both. This is the property that lets the restore apply
   // them one at a time without a resolver.
   const a = { x: 100, y: 100 };
-  const b = { x: 100 + field.geometry.cardWidth + field.geometry.minGap, y: 100 };
+  const b = {
+    x: 100 + field.geometry.cardWidth + field.geometry.minGap,
+    y: 100,
+  };
   assert.equal(field.pinAt(cards[0].node_id, a).ok, true);
   assert.equal(field.pinAt(cards[1].node_id, b).ok, true);
   assert.deepEqual(
-    { x: field.cardForNode(cards[0].node_id).x, y: field.cardForNode(cards[0].node_id).y },
+    {
+      x: field.cardForNode(cards[0].node_id).x,
+      y: field.cardForNode(cards[0].node_id).y,
+    },
     a,
     "the first is still where it was put after the second arrives"
   );

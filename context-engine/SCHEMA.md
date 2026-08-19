@@ -162,6 +162,15 @@ A search or command-bar entry. `raw` is exactly what was typed or spoken;
 | `input_mode` | TEXT | `keyboard` \| `voice`. |
 | `created_at` | INTEGER | |
 
+**The two node columns are two different edges and both are read.**
+`trail_node_id` is where the question *went* — attached once the navigation it
+started has arrived, which is why it is null until then and stays null for a
+question that opened nothing. `source_node_id` is where it was *asked from*: the
+page on screen when the command bar took the line. `store.questionsFrom(url)`
+reads the second one, keyed by URL rather than by node so that it reaches every
+visit to the same document, and the sidebar shows it as "This page made you ask"
+beside the crossings — the same edge read the other way round.
+
 ### `visit`
 
 What actually happened at a node. Outcome is the signal that makes ranking by
@@ -178,6 +187,10 @@ for far more than one that was bounced off.
 
 `outcome` is derived, not asked for: `bounced` under a dwell threshold, `read`
 above it, `saved` on an explicit user act.
+
+`started_at` is written and never read: `dwell_ms` is accumulated as it goes and
+is the only form anything asks for. Kept as the raw record behind a derived
+number, and noted here so a later audit does not read it as a gap.
 
 ### `entity`
 
