@@ -1331,3 +1331,53 @@ about the collapse metric by taking finished trails out of the population it has
 to guess over.
 
 No gated job needed: nothing here wants weights.
+
+## Run 42 — 2026-08-19 — the schema audit, and a promise the design made twice
+
+Ran item 1 off the last run's list: every column in the schema checked for a
+reader and a writer, tests excluded, because a column whose only writer is a test
+is exactly the thing being looked for. Five hits. Four are notes — `source_node_id`
+and `visit.started_at` are written and never read, `context.centroid` was already
+documented as unwritten (a false positive, and a useful control: the method finds
+undocumented gaps rather than odd-looking columns), and the `embedding` table is
+deliberately dead but said so only in a module a schema reader has no reason to
+open, so `SCHEMA.md` now says it.
+
+The fifth was the run. **`field_placement` had neither a reader nor a writer.**
+The store's `placeCard` was called by nothing but its own unit test and no SQL
+anywhere read the table back — so the Field's arrangement did not survive a
+restart, and `FIELD.md` promises it does in the strongest terms the design uses:
+§4's "not to make room, not to rebalance a region, **not on restart**", and §9's
+acceptance property 2. Everything needed had been built and nothing joined it:
+the table, the `moved_by_user_at` column documented as "the whole point of the
+table", the store method with a COALESCE protecting a human timestamp, and the
+model's `pinned` flag. Three parties each did their half.
+
+**Only what a human chose is persisted.** `#seed` is deterministic and its own
+comment says a restored session re-seeds to the arrangement it produced last
+time, so an auto-placed card costs a row and carries no information — and worse,
+a row would freeze a position the system is still entitled to revise. So
+`moved_by_user_at IS NOT NULL` is both the filter and the meaning.
+
+The dependency only runs one way. Pillar A announces where a card was put and
+never learns what a database is; pillar C listens, translates node ids to row
+ids, and hands positions back at the next start. A window whose store fails to
+open still gets a Field, seeded as always. One announcement per gesture, not per
+pointer move — every move commits to the model, so persisting each would record
+every position the card passed through as though it had been chosen.
+
+Two things fell out of the design rather than out of taste. Restored positions
+are applied *before* the rest is seeded, because seeding never displaces and the
+reverse order could move a pinned card. And a region's height is a ratchet that
+is not itself persisted, so a position saved low in a grown region comes back out
+of bounds; growing to fit is what §6's capacity ladder already says, where
+refusing would silently destroy a position somebody chose.
+
+Tests: 291 node, xpcshell clean, **841 browser-chrome checks, 0 failures** — the
+whole FOS suite, up from 807. **Nine mutations, all nine caught**, across the
+model, the store, the surface and the engine. No bug found by the mutation pass
+this time, which is itself worth recording after run 41.
+
+Docs: `FIELD.md` §9 says what now persists and what deliberately does not,
+`SCHEMA.md` marks the `embedding` table vestigial, `IDEAS.md` run 42 carries the
+audit and the restoration reasoning.
