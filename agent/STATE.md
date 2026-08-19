@@ -46,64 +46,56 @@ record surviving a profile refresh, and surviving being unreadable.**
 
 Nothing waits on a person. **Nothing is running — the harness is free.**
 
-Run 48 took item 1 off the list and finished it. Both clearing dialogs now say
-what they will take out of the Context Engine before they take it: Clear Recent
-History, on the line under "Browsing & download history", and Forget About This
-Site, under its list of categories.
+Run 49 took item 1 off the list by finding that it was not a task. It had sat at
+the top since run 32 on the strength of a real number with the wrong cause
+attached, and nothing in the way it was measured could have told the difference.
 
-The line is counts *and* names — "This also takes 128 pages, 46 questions and 3
-trails out of your Context Engine, including the context “reverse mortgage
-rates”." A count alone would have been strictly less than the store can say,
-because a context's `label` is derived from its own material and so names an
-afternoon of work that no host name and no clock reading can be read for. Three
-names, contexts before trails; the counts have already said how many, so the
-names need no "and 4 more".
+`#onResize` does one of two things — the overview's reposition fast path, or a
+full `render` when that path refuses — and **nothing counted which.**
+`resizePasses` deliberately counts neither, and is right not to; the coalescing
+claim is about neither. So a sustained resize that is slow because it rebuilds
+was indistinguishable from one that is slow for reasons outside this module.
 
-**The preview is the delete.** `FOSContextStore.previewForget` runs `forgetHost`
-or `forgetRange` for real, inside their own transaction, and rolls that
-transaction back. The alternative — a second set of counting queries beside the
-deleting ones — would restate the four rules in `#forget`, and nothing would
-ever fail a test for its having stopped agreeing with them: the dialog would go
-quietly wrong in exactly the proportion that `#forget` improved. Rolling back
-means throwing, because `executeTransaction` commits unless its body rejects,
-and the summary rides out on the exception because nothing else survives a
-rollback. Clearing *everything* needs no rollback at all, since `forgetAll`'s
-summary already **is** its count query.
+Counting them: over a 30-frame sustained resize of the crowded overview, 18–21
+passes and **0 rebuilds, in every one of five runs.** The fast path already
+covers the whole gesture. There is no rebuild in it to extend the fast path
+over. The 18.27ms render figure is honest and is the cost of a *level switch* —
+a keystroke, once — not of a resize frame.
 
-The labels are on the preview and deliberately **not** on `ForgetSummary`. That
-summary is broadcast on `fos-context-forgotten` *after* the delete, and a
-notification naming what was just forgotten is a record of the thing the user
-asked to have no record of.
+The burst benchmark could not have said so, and is wrong in two ways that both
+flatter it: it never timed the pass (the events register a frame callback and
+the clock is read again before that frame runs), and its writes were no-ops (the
+window never changed size, so the reposition wrote every declaration the value
+already on the element). `resize-pass-script` / `resize-pass-layout` take both
+faults out — stage genuinely resized, pass bracketed by two frame callbacks
+registered either side of it. **One real pass is ~2.0ms** (1.60 script, 0.44
+layout). At 19 passes over 30 frames that is ~1.3ms a frame against a ~23ms gap:
+**the Field's script is ~5% of the gap it was blamed for.** The rest is the
+engine painting 489 boxes that are genuinely changing size — and not thumbnails,
+which this benchmark never paints.
 
-Two edits outside `browser/components/fos/`, one hidden element and one guarded
-call each — **the first Firefox *surfaces* the fork has had to touch rather
-than the services behind them**, and they are in `ARCHITECTURE.md` §7's table
-with the reason.
+`will-change: transform` on `.fos-field-mininest` was the obvious lever and was
+**measured over four runs a side and rejected**: gaps of 15.2/18.0/21.8/24.0ms
+promoted against 25.6/24.3/22.5/20.2ms baseline. Overlapping distributions; a
+3.4ms mean difference on a metric whose own spread is 20–26ms is not a result.
+One run a side looked like a 10ms win. `IDEAS.md` run 49 has the table so it
+stays rejected.
 
-Green: **248 xpcshell subtests in the store file** (up from 220), **322 node
-checks** (up from 311), **901 FOS browser-chrome checks** (up from 883), 0
-failures across the whole suite. **Eighteen mutations, all eighteen caught** —
-eight against the store's preview, six against the sentence, four against the
-dialog wiring. Lint clean on every changed file.
+Green: 322 node checks, 0 failures. Full FOS suite running as `fossuite49`.
 
 `main` is at `phase-3`. `agent/dev` is pushed through this run's commits.
 
 ## Next task
 
-1. **Sustained resize of the crowded overview.** `IDEAS.md` run 32, unchanged:
-   the burst is fixed but one rebuild is 18.27ms p50, longer than a frame.
-   Extend the reposition fast path to cover what `render` rebuilds. Now the top
-   of the list — the forgetting thread that ran from run 44 to run 48 is done.
-
-2. **Why this build has no remote tabs.** Unchanged. Next step is
+1. **Why this build has no remote tabs.** Unchanged. Next step is
    `UrlbarProviderRemoteTabs.isActive` in a driven browser with
    `services.sync.username` set, not more reading.
 
-3. **The rails still overlay the page**, and **the 17 timed-out urlbar files**,
+2. **The rails still overlay the page**, and **the 17 timed-out urlbar files**,
    and **a region's height is a ratchet** (`FIELD.md` §6) — all unchanged, all
    belonging with the Field's restructure rather than piecemeal.
 
-4. **A new lens.** Runs 44, 46 and 47 each found a defect by asking what Firefox
+3. **A new lens.** Runs 44, 46 and 47 each found a defect by asking what Firefox
    does *to* this component's data, and that question is exhausted. The
    candidate run 47 left is the reverse: what this component does to
    *Firefox's* data — the fork writes to Places through `FOSActions`, and

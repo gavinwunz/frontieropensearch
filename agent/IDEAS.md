@@ -3914,3 +3914,114 @@ https://www.saasui.design/blog/saas-destructive-actions-confirmation-ux-patterns
 `toolkit/modules/Sqlite.sys.mjs` (`executeTransaction`);
 `browser/base/content/sanitizeDialog.js` (the data-size line this sits beside)
 
+
+## Run 49 — the top of the task list was chasing something that does not happen
+
+**Not a search.** This is a measurement, and the finding is that the item that
+had been at the top of "Next task" since run 32 rests on a premise that is no
+longer true. Recorded here rather than in the journal alone because the useful
+part is the method: the number that justified the task was real, and the cause
+attached to it was not, and nothing in the way it was measured could have told
+the difference.
+
+### What the item said
+
+`STATE.md` item 1, carried unchanged from run 32: *the burst is fixed but one
+rebuild is 18.27ms p50, longer than a frame. Extend the reposition fast path to
+cover what `render` rebuilds.* Behind it, run 32's table: a sustained resize of
+the crowded overview costs ~41ms a frame against a ~20ms control, and one
+`crowded-overview-render` is 18.27ms, so the rebuild was read as the gap.
+
+### What is actually happening
+
+`#repositionOverview` returns a boolean and `#onResize` falls back to `render`
+when it is false, and **nothing counted which of the two ran.** `resizePasses`
+deliberately counts neither — its comment says so, and for its own purpose it is
+right. So a sustained resize that is slow because it rebuilds and a sustained
+resize that is slow for reasons outside this module were indistinguishable from
+the outside, and the two have nothing in common as problems.
+
+Counting them says, over five runs of the loop:
+
+| | |
+| --- | --- |
+| passes during a 30-frame sustained resize | 18–21 |
+| of those, rebuilds | **0, every run** |
+
+The fast path already covers the whole gesture. There is no rebuild in it to
+extend the fast path over. Run 21 built that path and run 32 measured the
+gesture afterwards without checking whether the path was running — the 18.27ms
+render figure is honest, and it is the cost of a *level switch*, which is a
+keystroke that happens once, not of a resize frame.
+
+### What one real pass costs, and why the burst could not say
+
+The burst benchmark is wrong in two ways that both flatter it, and neither is
+visible from its number:
+
+1. **It never times the pass.** The resize events register a frame callback;
+   `performance.now()` is read again before that frame has run. What it timed
+   was ten event dispatches.
+2. **Its writes are no-ops.** The window never changes size, so the reposition
+   writes every declaration the value already on the element. That invalidates
+   nothing and costs no layout — so the flush that lands in the next iteration
+   measures a clean tree.
+
+`resize-pass-script` / `resize-pass-layout` take both faults out: the stage is
+given a genuinely different size, and the pass is bracketed by two frame
+callbacks registered either side of it, which run in the same frame in
+registration order. One real pass over the 480-card worst case:
+
+| | p50 | p95 |
+| --- | --- | --- |
+| `resize-pass-script` | 1.60ms | 2.34ms |
+| `resize-pass-layout` | 0.44ms | 0.55ms |
+
+**~2.0ms.** At 19 passes over 30 frames that is ~1.3ms a frame, against a
+measured gap of ~23ms. **The Field's script is about 5% of the gap it was being
+blamed for.** The other 95% is the engine painting 489 boxes that are genuinely
+changing size, and the miniatures in this benchmark carry no thumbnails at all
+— so it is not image rasterisation either, it is simply that many boxes.
+
+### The one lever tried, measured, and rejected
+
+`will-change: transform` on `.fos-field-mininest`, so a scale change is a
+compositor matrix over an already-rasterised layer rather than a repaint. Run 21
+argued this is the case where a transform is faithful rather than a shortcut,
+so it was the obvious candidate. Four runs a side, gap over the control:
+
+| | run 1 | run 2 | run 3 | run 4 | mean |
+| --- | --- | --- | --- | --- | --- |
+| promoted | 15.2 | 18.0 | 21.8 | 24.0 | 19.7ms |
+| baseline | 25.6 | 24.3 | 22.5 | 20.2 | 23.1ms |
+
+**Reject.** The distributions overlap across most of their range and a 3.4ms
+mean difference on a metric whose own spread is 20–26ms is not a result. Four
+runs a side is what it took to see that; one run a side looked like a 10ms win
+and would have been committed. Do not re-propose this without an instrument
+that can resolve better than the run-to-run noise — which, given the numbers
+above, means the gesture needs a harness with the window manager out of it, and
+that is a different piece of work from the fix it would be evaluating.
+
+### What to do about the 22ms
+
+**Nothing, and now for a stated reason rather than by deferral.** It is paint of
+the deliberate worst case — twelve trails, 480 cards — during a gesture that is
+rare while the overview is up, and it is not this module's script. The only
+lever that would move it is painting fewer boxes, which is a change to what the
+overview *is* rather than to how it is drawn, and the overview showing
+everything is the whole of §2. Item 1 comes off the list.
+
+### The transferable part
+
+**A fallback that is never taken and a fast path that is never reached look the
+same from the outside.** The gap between the two numbers — 1.19ms for the burst,
+~23ms for the gesture — was in front of every run since 32 and read as "these
+measure different things", which was true and was also the whole answer sitting
+unexamined. When two measurements of the same code disagree by 20x, the
+disagreement is the finding; the reconciling sentence is a hypothesis, and it
+needs its own counter before it is allowed to become a task.
+
+**Sources:** none — this run's evidence is
+`browser/components/fos/tests/browser/browser_zzfieldperf.js` and five runs of
+it.
